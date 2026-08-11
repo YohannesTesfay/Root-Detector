@@ -4,7 +4,7 @@
 {% import 'base/modals.html'          as     base_modals %}
 {% from   'roots/main_container.html' import main_container %}
 {% from   'roots/detection_tab.html'  import filetable_row_template %}
-{% from   'roots/modals.html'         import modal_settings %}
+{% from   'roots/modals.html'         import modal_settings, modal_pipeline %}
 
 {% set app = "RootDetectorApp" %}
 
@@ -26,6 +26,7 @@
     {{ main_container(app)       | indent }}
 
     {{ modal_settings()          | indent }}
+    {{ modal_pipeline()          | indent }}
     {{ base_modals.modal_training_progress()      | indent }}
     {{ base_modals.modal_loading_files_progress() | indent }}
 

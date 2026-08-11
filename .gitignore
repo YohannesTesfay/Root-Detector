@@ -9,3 +9,4 @@ tests/logs
 sync_models.py
 venv*
 .deno
+.playwright-cli/

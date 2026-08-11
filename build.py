@@ -35,7 +35,15 @@ shutil.copy('models/pretrained_models.txt', build_dir+'/models/')
 if 'linux' in sys.platform:
     os.symlink('/main/main', build_dir+'/main.run')
 else:
-    open(build_dir+'/main.bat', 'w').write(r'SET ROOT_PATH=%~dp0'+'\nmain\main.exe %*'+'\npause')
+    launcher = (
+        '@echo off\n'
+        'cd /d "%~dp0"\n'
+        'set "ROOT_PATH=%~dp0"\n'
+        'main\\main.exe %*\n'
+        'pause\n'
+    )
+    open(build_dir+'/main.bat', 'w').write(launcher)
+    open(build_dir+'/Start RootDetector.bat', 'w').write(launcher)
 shutil.rmtree('./build')
 os.remove('./main.spec')
 

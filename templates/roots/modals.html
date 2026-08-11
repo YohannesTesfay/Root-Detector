@@ -99,3 +99,29 @@
 </div>
 {% endmacro %}
 
+
+{% macro modal_pipeline() %}
+<div class="ui large modal" id="pipeline-status-modal">
+  <div class="header">Analysis Progress</div>
+  <div class="content">
+    <div class="ui progress" id="pipeline-progress">
+      <div class="bar"><div class="progress"></div></div>
+    </div>
+    <p id="pipeline-current-message">Preparing analysis...</p>
+    <div class="ui negative message" id="pipeline-error-message" style="display:none"></div>
+    <div style="max-height:45vh; overflow:auto;">
+      <table class="ui compact celled table" id="pipeline-status-table">
+        <thead>
+          <tr><th>Image or pair</th><th>Stage</th><th>Status</th><th>Details</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="ui negative button" id="pipeline-cancel-button" onclick="RootPipeline.on_cancel()">Cancel</button>
+    <button class="ui button" id="pipeline-retry-button" onclick="RootPipeline.on_retry_failed()" style="display:none">Retry failed</button>
+    <button class="ui positive button" id="pipeline-close-button" style="display:none">Close</button>
+  </div>
+</div>
+{% endmacro %}
