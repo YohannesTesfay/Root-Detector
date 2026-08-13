@@ -1,9 +1,13 @@
 
 {% macro modal_settings() %}
 <!-- Settings -->
-<div class="ui tiny modal" id="settings-dialog">
-    <i class="close icon"></i>
-    <div class="header"> Settings </div>
+<div class="ui tiny modal" id="settings-dialog" role="dialog" aria-modal="true"
+     aria-labelledby="settings-dialog-title">
+    <button type="button" class="ui icon close button" aria-label="Close settings"
+            title="Close settings">
+      <i class="close icon" aria-hidden="true"></i>
+    </button>
+    <div class="header" id="settings-dialog-title"> Settings </div>
   
     <div class="ui form content">
       
@@ -87,13 +91,14 @@
 
   
      <div class="actions">
-        <div class="ui negative button">
+        <button type="button" class="ui negative button" title="Close without saving changes">
           Cancel
-        </div>
-        <div class="ui positive right labeled icon button" id="settings-ok-button">
+        </button>
+        <button type="button" class="ui positive right labeled icon button" id="settings-ok-button"
+                title="Save settings">
           Save
           <i class="checkmark icon"></i>
-        </div>
+        </button>
       </div>
     </div>
 </div>

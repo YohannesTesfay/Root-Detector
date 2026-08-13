@@ -193,11 +193,11 @@ Recommended release sequence:
 1. Push the branch and open a pull request against the fork's `main` branch.
 2. Review and merge after the Docker and browser results are recorded.
 3. In GitHub, open **Actions → Build Windows Binaries → Run workflow** and choose the desired branch or tag.
-4. Wait for the Windows job and download its `binaries` workflow artifact.
+4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
 5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
 6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
 
-The workflow now fetches and verifies models before building and uses `actions/upload-artifact@v4` instead of the retired v3 action. PyInstaller cannot cross-build a Windows application from macOS or Linux, so the Windows package remains unverified until this workflow and a real Windows acceptance test pass.
+The workflow fetches and verifies models before building and uses Node-24-native checkout, Python-setup, and artifact actions. It publishes only the full portable ZIP; the legacy partial update ZIP is not a user artifact. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every package still requires a real Windows acceptance test.
 
 ## Build Commands
 
@@ -208,7 +208,7 @@ python fetch_pretrained_models.py
 python build.py --zip --prune-torchlibs
 ```
 
-Artifacts are written under `builds/`. The full ZIP is the package for new users. The smaller `.update.zip` only updates an existing installation and must not be offered as the complete download.
+Artifacts are written under `builds/`. The full ZIP is the package for new users. The builder still creates a smaller legacy `.update.zip`, but the GitHub workflow intentionally does not publish it because it is incomplete without a compatible existing installation and has no automatic compatibility or rollback mechanism.
 
 ## Fork Workflow
 
@@ -230,7 +230,7 @@ Keep commits focused and explicitly mention changes to the model manifest, gener
 - Cache contents and automated run state are temporary and not resumable after restart.
 - Inference is sequential and progress between model operations is more precise than progress inside an operation.
 - Filename-based pairing requires supported dates and cannot yet be edited through a dedicated pairing interface.
-- The browser training form and backend do not agree on the learning-rate field.
+- Browser training uses `learning_rate`; the backend also accepts the legacy CLI/API alias `lr`. Conflicting dual values are rejected, and the effective value is returned by the training endpoint.
 - The application is a trusted local desktop service, not a hardened multi-user server.
 - Windows packaging, signing, macOS/Linux distributables, accessibility, and dependency modernization remain open roadmap work.
 

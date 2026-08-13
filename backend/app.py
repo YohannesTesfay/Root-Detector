@@ -149,9 +149,14 @@ class App(BaseApp):
     #override    #TODO: unify
     def training(self):
         requestform  = flask.request.get_json(force=True)
-        options      = requestform['options']
-        if options['training_type'] not in ['detection', 'exclusion_mask']:
-            raise NotImplementedError()
+        try:
+            options = backend.training.parse_training_options(requestform['options'])
+        except (KeyError, backend.training.TrainingOptionsError) as exc:
+            return flask.jsonify({
+                'code': 'invalid_training_options',
+                'message': str(exc),
+                'retryable': False,
+            }), 400
 
         imagefiles   = requestform['filenames']
         imagefiles   = [os.path.join(self.cache_path, fname) for fname in imagefiles]
@@ -159,6 +164,13 @@ class App(BaseApp):
         if not all([os.path.exists(fname) for fname in imagefiles]) or not all(targetfiles):
             flask.abort(404)
         
-        backend.training.start_training(imagefiles, targetfiles, options, self.settings)
-        return 'OK'
+        result = backend.training.start_training(imagefiles, targetfiles, options, self.settings)
+        return flask.jsonify({
+            'result': result,
+            'effective_options': {
+                'training_type': options['training_type'],
+                'epochs': options['epochs'],
+                'learning_rate': options['learning_rate'],
+            },
+        })
     

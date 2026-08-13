@@ -4,7 +4,11 @@ RootPipeline = class {
 
     static on_files_ready(){
         this.active_run_id = undefined
-        $('#pipeline-run-button').toggleClass('disabled', Object.keys(GLOBAL.files).length == 0)
+        const disabled = Object.keys(GLOBAL.files).length == 0
+        $('#pipeline-run-button')
+            .toggleClass('disabled', disabled)
+            .prop('disabled', disabled)
+            .attr('aria-disabled', String(disabled))
     }
 
     static async on_run_analysis(event){
@@ -163,9 +167,14 @@ RootPipeline = class {
     }
 
     static set_running(running){
-        $('#pipeline-run-button').toggleClass('disabled loading', running)
-        $('#settings-button, label[for="input_images"], label[for="input_folder"], label[for="input_masks"], .process-all')
+        const run_disabled = running || Object.keys(GLOBAL.files).length == 0
+        $('#pipeline-run-button')
+            .toggleClass('disabled loading', run_disabled)
+            .prop('disabled', run_disabled)
+            .attr('aria-disabled', String(run_disabled))
+        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, .process-all')
             .toggleClass('disabled', running)
+            .prop('disabled', running)
         $('#input_images, #input_folder, #input_masks').prop('disabled', running)
     }
 

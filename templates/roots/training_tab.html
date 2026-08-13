@@ -30,6 +30,11 @@
     <div class="ui divider"></div>
 
     {{ base_training_tab.lr_epochs_fields(label="Hyperparameters") }}
+
+    <p class="ui tiny info message" id="training-learning-rate-help">
+      The selected learning rate is used exactly as entered. The command-line option
+      <code>--lr</code> remains supported for compatibility.
+    </p>
     
     <div class="ui divider"></div>
 
@@ -48,6 +53,7 @@
     $('#training-model-type-field .checkbox')
         .checkbox({onChange: _ => {{trainingmodule}}.refresh_tab() } )
         .checkbox('set checked')
+    $('#training-learning-rate').attr('aria-describedby', 'training-learning-rate-help')
 </script>
 {{ base_training_tab.save_model_field(trainingmodule) | indent }}
 </div>

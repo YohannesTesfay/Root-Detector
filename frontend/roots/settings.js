@@ -2,6 +2,34 @@
 
 RootsSettings = class extends BaseSettings{
 
+    static on_settings(){
+        super.on_settings()
+        const $dialog = $('#settings-dialog')
+        $dialog.off('keydown.rootdetector-focus').on('keydown.rootdetector-focus', event => {
+            if(event.key != 'Tab')
+                return
+            const selector = [
+                'button:not([disabled])',
+                'input:not([type="hidden"]):not([disabled])',
+                '.ui.dropdown[tabindex]:not(.disabled)',
+                '[tabindex]:not([tabindex="-1"])',
+            ].join(',')
+            const focusable = [...new Set($dialog.find(selector).filter(':visible').get())]
+            if(!focusable.length)
+                return
+            const first = focusable[0]
+            const last = focusable[focusable.length - 1]
+            if(event.shiftKey && document.activeElement == first){
+                event.preventDefault()
+                last.focus()
+            } else if(!event.shiftKey && document.activeElement == last){
+                event.preventDefault()
+                first.focus()
+            }
+        })
+        setTimeout(() => $('#settings-active-model').focus(), 0)
+    }
+
     //override
     static async load_settings(){
         const data = await super.load_settings();
