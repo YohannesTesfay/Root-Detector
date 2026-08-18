@@ -2,10 +2,15 @@
 
 RootsSettings = class extends BaseSettings{
 
+    static settings_keydown_handler = undefined
+
     static on_settings(){
         super.on_settings()
         const $dialog = $('#settings-dialog')
-        $dialog.off('keydown.rootdetector-focus').on('keydown.rootdetector-focus', event => {
+        const dialog = $dialog[0]
+        if(this.settings_keydown_handler)
+            dialog.removeEventListener('keydown', this.settings_keydown_handler, true)
+        this.settings_keydown_handler = event => {
             if(event.key != 'Tab')
                 return
             const selector = [
@@ -17,17 +22,17 @@ RootsSettings = class extends BaseSettings{
             const focusable = [...new Set($dialog.find(selector).filter(':visible').get())]
             if(!focusable.length)
                 return
-            const first = focusable[0]
-            const last = focusable[focusable.length - 1]
-            if(event.shiftKey && document.activeElement == first){
-                event.preventDefault()
-                last.focus()
-            } else if(!event.shiftKey && document.activeElement == last){
-                event.preventDefault()
-                first.focus()
-            }
-        })
-        setTimeout(() => $('#settings-active-model').focus(), 0)
+            const current = focusable.indexOf(document.activeElement)
+            const direction = event.shiftKey ? -1 : 1
+            const next = current < 0
+                ? 0
+                : (current + direction + focusable.length) % focusable.length
+            event.preventDefault()
+            event.stopPropagation()
+            focusable[next].focus()
+        }
+        dialog.addEventListener('keydown', this.settings_keydown_handler, true)
+        setTimeout(() => $dialog.find('button.close')[0]?.focus(), 0)
     }
 
     //override

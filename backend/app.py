@@ -78,6 +78,10 @@ class App(BaseApp):
             'n_matched_points'   : result['n_matched_points'],
             'tracking_model'     : result['tracking_model'],
             'segmentation_model' : result['segmentation_model'],
+            'tracking_matcher'   : result.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
             'statistics'         : result['statistics'],
         })
     

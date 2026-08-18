@@ -62,15 +62,29 @@ RootPipeline = class {
         }
     }
 
-    static async on_cancel(){
+    static async on_cancel(event){
+        event?.preventDefault()
+        event?.stopPropagation()
         if(!this.active_run_id)
-            return
+            return false
+        const $button = $('#pipeline-cancel-button')
+            .prop('disabled', true)
+            .attr('aria-disabled', 'true')
+            .addClass('disabled loading')
+            .text('Cancelling...')
+        this.set_message('Cancelling analysis. Waiting for the active operation to stop safely...')
+        $('#pipeline-status-modal').modal({closable:false})
         try {
             await this.request(`/api/pipeline/runs/${this.active_run_id}/cancel`, 'POST')
-            this.set_message('Cancellation requested. The current model operation will finish first.')
         } catch(error) {
             this.show_error(this.error_message(error))
+            $button
+                .prop('disabled', false)
+                .attr('aria-disabled', 'false')
+                .removeClass('disabled loading')
+                .text('Cancel')
         }
+        return false
     }
 
     static async on_retry_failed(){
@@ -99,10 +113,17 @@ RootPipeline = class {
     }
 
     static render(run){
-        this.set_progress(run.progress.finished, run.progress.total)
+        const active_fraction = run.current?.progress ?? 0
+        this.set_progress(run.progress.finished + active_fraction, run.progress.total)
         const current = run.current
-        if(current)
-            this.set_message(`${this.pretty_state(current.stage)}: ${current.item_id}`)
+        if(run.state == 'cancelling')
+            this.set_message('Cancelling analysis. Waiting for the active operation to stop safely...')
+        else if(current)
+            this.set_message(
+                current.description
+                    ? `${this.pretty_state(current.stage)}: ${current.description}`
+                    : `${this.pretty_state(current.stage)}: ${current.item_id}`
+            )
         else
             this.set_message(this.run_message(run))
 
@@ -120,9 +141,14 @@ RootPipeline = class {
         }
 
         const terminal = this.terminal_states.includes(run.state)
-        $('#pipeline-cancel-button').toggle(!terminal)
+        $('#pipeline-cancel-button')
+            .toggle(!terminal)
+            .prop('disabled', run.state == 'cancelling')
+            .attr('aria-disabled', String(run.state == 'cancelling'))
+            .toggleClass('disabled loading', run.state == 'cancelling')
+            .text(run.state == 'cancelling' ? 'Cancelling...' : 'Cancel')
         $('#pipeline-close-button').toggle(terminal)
-        const retryable = terminal && items.some(item => ['failed', 'skipped'].includes(item.state))
+        const retryable = terminal && items.some(item => ['failed', 'skipped', 'cancelled'].includes(item.state))
         $('#pipeline-retry-button').toggle(retryable).toggleClass('disabled', !retryable)
         $('#pipeline-status-modal').modal({closable: terminal})
     }
@@ -141,6 +167,10 @@ RootPipeline = class {
         $('#pipeline-status-table tbody').empty()
         $('#pipeline-error-message').hide().text('')
         $('#pipeline-cancel-button').show()
+            .prop('disabled', false)
+            .attr('aria-disabled', 'false')
+            .removeClass('disabled loading')
+            .text('Cancel')
         $('#pipeline-retry-button, #pipeline-close-button').hide()
         $('#pipeline-status-modal').modal({closable:false, duration:0}).modal('show')
     }

@@ -65,7 +65,7 @@ Use **Download All** in the relevant tab to save results before closing the appl
 - **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **Start RootDetector.bat** again. Existing verified downloads are reused.
 - **An image is rejected:** use PNG, JPEG, TIFF, or TIF and ensure the file is not damaged.
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.
-- **Tracking says “too many roots”:** increase the threshold in Settings only if the computer has enough memory.
+- **Tracking says “too many roots”:** this safety limit prevents excessive memory use. Use a suitable lower-root pair for tracking; raise the threshold only for a deliberate expert run on adequately resourced hardware.
 - **Tracking requires review:** too few reliable automatic matches were found. Inspect or correct the pair manually.
 
 ## Data and Privacy
