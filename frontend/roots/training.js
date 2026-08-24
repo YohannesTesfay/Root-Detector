@@ -3,6 +3,7 @@
 RootsTraining = class extends BaseTraining {
     static active_run_id = undefined
     static terminal_states = ['completed', 'cancelled', 'failed']
+    static training_states = {}
 
     //override
     static refresh_tab(){
@@ -21,29 +22,37 @@ RootsTraining = class extends BaseTraining {
         const training_type = $('#training-model-type').dropdown('get value');
         return {
             training_type       : training_type,
-            lr                  : Number($('#training-learning-rate')[0].value),
+            learning_rate       : Number($('#training-learning-rate')[0].value),
             epochs              : Number($('#training-number-of-epochs')[0].value),
         };
     }
 
     static async on_start_training(){
+        if(this.active_run_id)
+            return
+
         const filenames = this.get_selected_files()
+        const options = this.get_training_options()
+        this.training_states[options.training_type] = 'running'
+        $('#training-new-modelname-field').hide()
         try {
             this.show_modal()
             await this.upload_training_data(filenames)
             const run = await RootSecurity.request('/api/training/runs', 'POST', {
                 filenames: filenames,
-                options: this.get_training_options(),
+                options: options,
             })
             this.active_run_id = run.id
-            const result = await this.poll_until_finished()
+            const result = await this.poll_until_finished(options)
             await GLOBAL.App.Settings.load_settings()
+            this.update_model_info()
             return result
         } catch(error) {
             console.error(error)
-            this.fail_modal()
+            this.training_states[options.training_type] = 'failed'
             const diagnostic = error?.responseJSON?.diagnostic_id
             const message = error?.responseJSON?.message ?? error?.message ?? 'Training failed.'
+            this.fail_modal(message)
             $('body').toast({
                 message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
                 class: 'error',
@@ -54,27 +63,28 @@ RootsTraining = class extends BaseTraining {
         }
     }
 
-    static async poll_until_finished(){
+    static async poll_until_finished(options){
         while(this.active_run_id){
             const run = await RootSecurity.request(
                 `/api/training/runs/${this.active_run_id}`,
                 'GET',
             )
             $('#training-modal .progress').progress({
-                percent: run.progress * 100,
+                percent: Math.min(Number(run.progress) * 100, 99),
                 autoSuccess: false,
             })
             $('#training-modal .label').text(
                 run.state == 'cancelling' ? 'Stopping training...' : 'Training in progress...'
             )
             if(this.terminal_states.includes(run.state)){
+                this.training_states[options.training_type] = run.state
                 if(run.state == 'completed')
                     this.success_modal()
                 else if(run.state == 'cancelled')
                     this.interrupted_modal()
                 else {
-                    this.fail_modal()
                     const message = run.error?.message ?? run.result?.message ?? 'Training failed.'
+                    this.fail_modal(message)
                     const diagnostic = run.error?.diagnostic_id
                     $('body').toast({
                         message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
@@ -90,6 +100,61 @@ RootsTraining = class extends BaseTraining {
         }
     }
 
+    static show_modal(){
+        super.show_modal()
+        $('#training-modal #cancel-training-button')
+            .prop('disabled', false)
+            .attr('aria-disabled', 'false')
+            .removeClass('disabled loading')
+            .show()
+        $('#training-modal #retry-training-button, #training-modal #close-training-button').hide()
+    }
+
+    static interrupted_modal(){
+        const $progress = $('#training-modal .ui.progress')
+        $progress.removeClass('active success').addClass('error')
+        $progress.find('.label').text('Training interrupted. You can retry with the same settings.')
+        $('#training-modal #cancel-training-button').hide()
+        $('#training-modal #retry-training-button, #training-modal #close-training-button').show()
+        $('#training-modal').modal({closable:true})
+    }
+
+    static fail_modal(message){
+        const $progress = $('#training-modal .ui.progress')
+        $progress.removeClass('active success').addClass('error')
+        $progress.find('.label').text(
+            message || 'Training failed. Review the console details, then retry.'
+        )
+        $('#training-modal #cancel-training-button').hide()
+        $('#training-modal #retry-training-button, #training-modal #close-training-button').show()
+        $('#training-modal').modal({closable:true})
+    }
+
+    static success_modal(){
+        const $progress = $('#training-modal .ui.progress')
+        $progress.progress({percent:100, autoSuccess:false})
+            .removeClass('active error').addClass('success')
+        $progress.find('.label').text('Training finished')
+        $('#training-modal #cancel-training-button, #training-modal #retry-training-button').hide()
+        $('#training-modal #close-training-button').show()
+        $('#training-modal').modal({closable:true})
+    }
+
+    static on_retry_training(){
+        $('#training-modal').modal('hide')
+        return this.on_start_training()
+    }
+
+    static upload_training_data(filenames){
+        const uploads = filenames.map(filename => upload_file_to_flask(GLOBAL.files[filename]))
+        const segmentations = filenames
+            .map(filename => GLOBAL.files[filename].results.segmentation)
+            .filter(segmentation => segmentation instanceof Blob)
+        return Promise.all(uploads.concat(
+            segmentations.map(segmentation => upload_file_to_flask(segmentation))
+        ))
+    }
+
     //override
     static update_model_info(){
         const model_type  = $('#training-model-type').dropdown('get value');
@@ -97,16 +162,33 @@ RootsTraining = class extends BaseTraining {
             return;
         
         super.update_model_info(model_type)
+        const state = this.training_states[model_type]
+        if(state == 'cancelled' || state == 'failed' || state == 'running'){
+            $('#training-new-modelname-field').hide()
+            if(GLOBAL.settings.active_models[model_type] == '')
+                $('#training-model-info-label').text(
+                    state == 'cancelled'
+                        ? '[INTERRUPTED - NOT SAVABLE]'
+                        : '[INCOMPLETE - NOT SAVABLE]'
+                )
+        }
     }
 
     static update_number_of_training_files_info(){
         const n = this.get_selected_files().length;
         $('#training-number-of-files-info-label').text(n)
         $('#training-number-of-files-info-message').removeClass('hidden')
+        $('#start-training-button')
+            .prop('disabled', n == 0)
+            .attr('aria-disabled', String(n == 0))
     }
 
     static async on_cancel_training(){
-        $('#training-modal #cancel-training-button').addClass('disabled')
+        const $button = $('#training-modal #cancel-training-button')
+            .prop('disabled', true)
+            .attr('aria-disabled', 'true')
+            .addClass('disabled loading')
+        $('#training-modal .label').text('Stopping training safely...')
         try {
             if(this.active_run_id)
                 await RootSecurity.request(
@@ -115,8 +197,11 @@ RootsTraining = class extends BaseTraining {
                 )
             else
                 await RootSecurity.request('/stop_training', 'POST')
-            $('#training-modal .label').text('Stopping training...')
         } catch(error) {
+            $button
+                .prop('disabled', false)
+                .attr('aria-disabled', 'false')
+                .removeClass('disabled loading')
             $('body').toast({message:'Stopping failed.', class:'error'})
         }
         return false

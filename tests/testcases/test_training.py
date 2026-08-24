@@ -45,7 +45,6 @@ def options(**overrides):
 
 
 @pytest.mark.parametrize('invalid', [
-    {'training_type': 'detection', 'epochs': 3, 'learning_rate': 0.1},
     {'training_type': 'tracking', 'epochs': 3, 'lr': 0.1},
     {'training_type': 'detection', 'epochs': 0, 'lr': 0.1},
     {'training_type': 'detection', 'epochs': 3, 'lr': float('nan')},
@@ -152,7 +151,7 @@ def test_request_stop_reaches_all_loaded_models():
     assert model.stop_calls == 1
 
 
-def test_training_endpoint_rejects_old_field_and_reports_result(tmp_path, monkeypatch):
+def test_training_endpoint_accepts_public_field_and_reports_result(tmp_path, monkeypatch):
     class WebSettings(FakeSettings):
         exmask_enabled = False
         too_many_roots = 100000
@@ -180,7 +179,7 @@ def test_training_endpoint_rejects_old_field_and_reports_result(tmp_path, monkey
         'X-RootDetector-Token': app.session_token,
     }
 
-    old_field = client.post('/training', json={
+    public_field = client.post('/training', json={
         'filenames': ['sample.tiff'],
         'options': {
             'training_type': 'detection',
@@ -188,8 +187,8 @@ def test_training_endpoint_rejects_old_field_and_reports_result(tmp_path, monkey
             'learning_rate': 0.1,
         },
     }, headers=headers)
-    assert old_field.status_code == 400
-    assert old_field.get_json()['code'] == 'invalid_training_options'
+    assert public_field.status_code == 200
+    assert public_field.get_json()['state'] == 'completed'
 
     monkeypatch.setattr(
         training,

@@ -527,6 +527,13 @@ class App(BaseApp):
             return self.json_error('training_busy', str(exc), 409, retryable=True)
         run.wait()
         snapshot = run.snapshot()
+        # Preserve the compact response fields expected by released packaged
+        # clients while exposing the asynchronous run metadata as well.
+        training_result = snapshot.get('result') or {}
+        snapshot['training_result'] = training_result
+        snapshot['result'] = 'OK' if snapshot['state'] == 'completed' else snapshot['state'].upper()
+        snapshot['message'] = training_result.get('message', '')
+        snapshot['effective_options'] = dict(run.options)
         return flask.jsonify(snapshot), 500 if snapshot['state'] == 'failed' else 200
 
     def save_model(self):

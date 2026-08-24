@@ -118,7 +118,9 @@ RootsFileInput = class extends BaseFileInput{
     static async refresh_filetable(files){
         const promise  = BaseFileInput.refresh_filetable(files)
         const promise2 = RootTracking.set_input_files(files)
-        return Promise.all([promise, promise2])
+        const result = await Promise.all([promise, promise2])
+        RootDetectorApp.enhance_accessibility()
+        return result
     }
 
     //override

@@ -144,7 +144,7 @@ python main.py --training \
   --output retrained-model.pt.zip
 ```
 
-Tracking remains browser-only. Training accepts the same strict fields in browser and CLI: `training_type`, `epochs`, and `lr`. Browser training starts an asynchronous run, polls progress, and can enter `queued`, `running`, `cancelling`, `completed`, `cancelled`, or `failed`. Only a completed run can be saved. Legacy released models are wrapped so swallowed runtime errors become failures, while newly built model sources return the state directly. A full released-model training run is still required on each supported CPU/GPU target before release.
+Tracking remains browser-only. Browser/API training uses `training_type`, `epochs`, and `learning_rate`; the command-line option `--lr` and API field `lr` remain compatibility aliases. If both API names are supplied, their values must match. Browser training starts an asynchronous run, polls progress, and can enter `queued`, `running`, `cancelling`, `completed`, `cancelled`, or `failed`. Only a completed run can be saved. Legacy released models are wrapped so swallowed runtime errors become failures, while newly built model sources return the state directly. A full released-model training run is still required on each supported CPU/GPU target before release.
 
 CLI commands now return meaningful process exit codes: `0` for success, `1` for failure or invalid input, `2` when image processing produced partial results, and `130` for cancelled processing or training. Running `python main.py` without a CLI operation still starts the browser application.
 
@@ -186,7 +186,7 @@ Responses include content-type, referrer, frame, permissions, and Content Securi
 
 The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct archive inspection shows `main.bat`, `main/main.exe`, and `models/pretrained_models.txt`; it does not contain `main.py`. Its launcher sets `ROOT_PATH`, runs `main\main.exe`, and pauses so the console remains visible.
 
-The release builder in this repository produces the same directory-bundle/full-ZIP format. Future packages built from this branch preserve `main.bat` and add `Start RootDetector.bat` as a descriptive alias.
+The release builder in this repository produces the same directory-bundle/full-ZIP format. Packages preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the source commit and Actions run.
 
 The launcher:
 
@@ -212,11 +212,11 @@ Recommended release sequence:
 1. Push the branch and open a pull request against the fork's `main` branch.
 2. Review and merge after the Docker and browser results are recorded.
 3. In GitHub, open **Actions → Build Windows Binaries → Run workflow** and choose the desired branch or tag.
-4. Wait for the Windows job and download its `binaries` workflow artifact.
+4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
 5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
 6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
 
-The workflow now fetches and verifies models before building and uses `actions/upload-artifact@v4` instead of the retired v3 action. PyInstaller cannot cross-build a Windows application from macOS or Linux, so the Windows package remains unverified until this workflow and a real Windows acceptance test pass.
+The workflow fetches and verifies models before building and uses the Node-24-native checkout, Python setup, and artifact actions. It publishes only the full portable ZIP. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every release candidate still requires a real Windows acceptance test.
 
 ## Build Commands
 
@@ -227,7 +227,7 @@ python fetch_pretrained_models.py
 python build.py --zip --prune-torchlibs
 ```
 
-Artifacts are written under `builds/`. The full ZIP is the package for new users. The smaller `.update.zip` only updates an existing installation and must not be offered as the complete download.
+Artifacts are written under `builds/`. The full ZIP is the package for new users. The builder retains a smaller legacy `.update.zip` for compatible existing installations, but the workflow does not publish it because it lacks standalone dependencies, compatibility checks, and rollback.
 
 ## Fork Workflow
 
@@ -249,7 +249,7 @@ Keep commits focused and explicitly mention changes to the model manifest, gener
 - Cache contents and automated run state are temporary and not resumable after restart.
 - Inference is sequential and progress between model operations is more precise than progress inside an operation.
 - Filename-based pairing requires supported dates and cannot yet be edited through a dedicated pairing interface.
-- The browser training form and backend do not agree on the learning-rate field.
+- Browser training uses `learning_rate`; the backend also accepts the legacy `lr` compatibility alias.
 - The application is a trusted local desktop service, not a hardened multi-user server.
 - Windows packaging, signing, macOS/Linux distributables, accessibility, and dependency modernization remain open roadmap work.
 

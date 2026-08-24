@@ -24,6 +24,10 @@ class TrainingValidationError(ValueError):
     """Raised when a training request cannot be executed as supplied."""
 
 
+# Retain the exception name used by the Windows-tested compatibility layer.
+TrainingOptionsError = TrainingValidationError
+
+
 @dataclass(frozen=True)
 class TrainingResult:
     state: str
@@ -49,11 +53,12 @@ def training_progress_callback(value):
 
 
 def parse_training_options(options:tp.Any) -> tp.Dict[str, tp.Any]:
-    """Return the one accepted web/CLI training schema."""
+    """Normalize the public and legacy learning-rate field names."""
     if not isinstance(options, dict):
         raise TrainingValidationError('Training options must be a JSON object.')
-    required = {'training_type', 'epochs', 'lr'}
-    unknown = set(options) - required
+    allowed = {'training_type', 'epochs', 'learning_rate', 'lr'}
+    required = {'training_type', 'epochs'}
+    unknown = set(options) - allowed
     missing = required - set(options)
     if unknown:
         raise TrainingValidationError(
@@ -63,6 +68,8 @@ def parse_training_options(options:tp.Any) -> tp.Dict[str, tp.Any]:
         raise TrainingValidationError(
             'Missing training option(s): {}.'.format(', '.join(sorted(missing)))
         )
+    if 'learning_rate' not in options and 'lr' not in options:
+        raise TrainingValidationError('Missing training option: learning_rate.')
 
     training_type = options['training_type']
     if training_type not in {'detection', 'exclusion_mask'}:
@@ -76,10 +83,22 @@ def parse_training_options(options:tp.Any) -> tp.Dict[str, tp.Any]:
     if epochs < 1 or epochs > 10000 or epochs != options['epochs']:
         raise TrainingValidationError('Epochs must be between 1 and 10000.')
 
-    if isinstance(options['lr'], bool):
+    public_rate = options.get('learning_rate')
+    legacy_rate = options.get('lr')
+    if public_rate is not None and legacy_rate is not None:
+        try:
+            rates_match = math.isclose(float(public_rate), float(legacy_rate))
+        except (TypeError, ValueError):
+            rates_match = False
+        if not rates_match:
+            raise TrainingValidationError(
+                'learning_rate and the legacy lr option must match.'
+            )
+    rate = public_rate if public_rate is not None else legacy_rate
+    if isinstance(rate, bool):
         raise TrainingValidationError('Learning rate must be a number.')
     try:
-        learning_rate = float(options['lr'])
+        learning_rate = float(rate)
     except (TypeError, ValueError) as exc:
         raise TrainingValidationError('Learning rate must be a number.') from exc
     if not math.isfinite(learning_rate) or learning_rate <= 0 or learning_rate > 1:
@@ -88,6 +107,8 @@ def parse_training_options(options:tp.Any) -> tp.Dict[str, tp.Any]:
     return {
         'training_type': training_type,
         'epochs': epochs,
+        'learning_rate': learning_rate,
+        # Normalized legacy alias for released model and CLI integrations.
         'lr': learning_rate,
     }
 
@@ -172,6 +193,22 @@ def _normalize_model_result(
     )
 
 
+def _restore_previous_model(settings, training_type, previous_model_name):
+    """Discard partial weights by reloading the last saved model."""
+    if not previous_model_name or not hasattr(settings, 'load_model'):
+        return False
+    try:
+        restored = settings.load_model(training_type, previous_model_name)
+    except Exception as exc:
+        print('[WARNING] Could not restore the pre-training model: {}'.format(exc))
+        return False
+    if restored is None:
+        return False
+    settings.models[training_type] = restored
+    settings.active_models[training_type] = previous_model_name
+    return True
+
+
 def start_training(
     imagefiles,
     targetfiles,
@@ -212,7 +249,7 @@ def start_training(
                 imagefiles,
                 targetfiles,
                 epochs=options['epochs'],
-                lr=options['lr'],
+                lr=options['learning_rate'],
                 num_workers='auto' if 'win' not in sys.platform else 0,
                 callback=monitored_callback,
                 ds_kwargs={'tmpdir': get_cache_path()},
@@ -228,14 +265,25 @@ def start_training(
     finally:
         try:
             if model is not None:
-                model.cpu()
+                try:
+                    model.cpu()
+                except Exception as exc:
+                    result = TrainingResult(
+                        'failed',
+                        'Training cleanup failed: {}'.format(
+                            str(exc) or exc.__class__.__name__
+                        ),
+                        exc.__class__.__name__,
+                    )
         finally:
             GLOBALS.processing_lock.release()
 
-    if not result.completed and previous_model_name:
-        # The object may have been partly modified, so force an explicit model
-        # reload before it can be used as a named release model again.
-        settings.active_models[training_type] = ''
+    if not result.completed:
+        restored = _restore_previous_model(settings, training_type, previous_model_name)
+        if not restored:
+            # The object may have been partly modified; never expose it as a
+            # named release model when an explicit reload was unavailable.
+            settings.active_models[training_type] = ''
     return result
 
 

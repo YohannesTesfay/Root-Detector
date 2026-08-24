@@ -1,8 +1,10 @@
 {% macro load_exclude_masks_item(app) %}
-<label for="input_masks" class="ui icon item">
+<button type="button" class="ui icon item" id="load-exclude-masks-button"
+        title="Load optional exclusion-mask images, such as masks for tape"
+        onclick="document.getElementById('input_masks').click()">
     <i class="images red icon"></i>
     Load Exclude Masks
-  </label>
+  </button>
   <input type="file" id="input_masks" style="display:none" onclick="this.value=null;"
          onchange="{{ app }}.FileInput.on_exclusionmasks_select(event)" accept="image/*" multiple>
 {% endmacro %}
@@ -11,49 +13,61 @@
 {% macro top_menu(app) %}
 <div class="ui container menu page-wide">
   <div class="header item" style="padding-top:0; padding-bottom:0">
-    <img class="logo" src="logo.svg">
+    <img class="logo" src="logo.svg" alt="RootDetector">
   </div>
 
-  <a class="ui simple dropdown item">
+  <div class="ui simple dropdown item" role="button" tabindex="0"
+       aria-haspopup="menu" aria-label="Open file import menu"
+       onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){ event.preventDefault(); $(this).dropdown('show'); }">
     <i class="file icon"></i>
     <span class="text">Files</span>
     <i class="dropdown icon"></i>
     <div class="ui menu">
-      <label for="input_images" class="ui icon item">
+      <button type="button" class="ui icon item" id="load-input-images-button"
+              title="Choose one or more root images"
+              onclick="document.getElementById('input_images').click()">
         <i class="images outline icon"></i>
         Load Input Images
-      </label>
+      </button>
       <input type="file" id="input_images" style="display:none"
              onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*" multiple>
 
-      <label for="input_folder" class="ui icon item">
+      <button type="button" class="ui icon item" id="load-input-folder-button"
+              title="Choose a folder containing root images"
+              onclick="document.getElementById('input_folder').click()">
         <i class="folder outline icon"></i>
         Load Input Folder
-      </label>
+      </button>
       <input type="file" id="input_folder" style="display:none"
              onchange="{{ app }}.FileInput.on_inputfolder_select(event)" webkitdirectory directory multiple>
 
       <div class="ui divider"></div>
 
-      <label for="annotations-input" class="ui icon item">
+      <button type="button" class="ui icon item" id="load-annotations-button"
+              title="Load existing segmentation annotations or a results ZIP"
+              onclick="document.getElementById('annotations-input').click()">
         <i class="images icon"></i>
         Load Annotations
-      </label>
+      </button>
       <input type="file" id="annotations-input" style="display:none"
              onchange="{{ app }}.FileInput.on_annotations_select(event)" accept="image/*, application/zip, application/x-zip-compressed" multiple>
 
       {{ load_exclude_masks_item(app) | indent(6) }}
     </div>
-  </a>
+  </div>
 
-  <a class="ui simple item" id="settings-button" onclick="{{ app }}.Settings.on_settings()">
+  <button type="button" class="ui simple item" id="settings-button"
+          title="Choose models, processing limits, and compute device"
+          onclick="{{ app }}.Settings.on_settings()">
     <i class="wrench icon"></i>
     <span class="text">Settings</span>
-  </a>
+  </button>
 
-  <a class="ui primary disabled item" id="pipeline-run-button" onclick="RootPipeline.on_run_analysis(event)">
+  <button type="button" class="ui primary disabled item" id="pipeline-run-button"
+          title="Run detection for every image, then tracking for every valid pair"
+          disabled aria-disabled="true" onclick="RootPipeline.on_run_analysis(event)">
     <i class="play icon"></i>
     Run Analysis
-  </a>
+  </button>
 </div>
 {% endmacro %}
