@@ -7,6 +7,7 @@
 **Scientific/job checkpoint:** T-005 and T-006 implementation and regression coverage added 12 August 2026.
 **Windows acceptance checkpoint:** **PASS.** The 24 August 2026 full retest at `4b64890` cleared packaged tracking cancellation/retry, export, memory cleanup, and Settings keyboard access. The focused retest of `e9b86bb` from Actions run `32685037316` then passed two complete Training Stop -> Interrupted -> Retry -> Completed cycles. PR #3 has no remaining packaged-Windows blocker.
 **Branch synchronization checkpoint:** PR #3 was merged into `fix/core-automation`; fork `main` was merged into that branch as `bea78d0`. Its exact head passed Actions run `32690969751` and produced the single `RootDetector-Windows-portable` artifact. The core branch was then merged into `feature/reliability-security-hardening`; the combined 98-test fast suite and two released-model smoke/equivalence tests pass.
+**Fork integration checkpoint:** `fix/core-automation` was merged into fork `main` as `01de4e8`, then the resulting `origin/main` was merged back into `feature/reliability-security-hardening` without content conflicts.
 **Purpose:** make RootDetector scientifically reliable, secure as a local web application, maintainable, and straightforward to install and use on Windows, macOS, and Linux.
 
 This plan covers the complete application: detection, exclusion masks, tracking, training, CLI, Flask service, browser interface, model distribution, tests, packaging, and contributor workflow. Priorities are **P0** (incorrect or unsafe behavior), **P1** (required for a dependable release), **P2** (major usability or maintainability gain), and **P3** (advanced capability).
@@ -40,9 +41,9 @@ Keep the tested core branch, fork `main`, and the larger feature branch behind e
 
 1. **Validated core and narrow follow-up — complete.** Preserve the broad `4b64890` report and focused `e9b86bb` training retest as release evidence. PR #3 is merged into `fix/core-automation`.
 2. **Core/main workflow conflict — complete.** Fork `main` was merged into the core branch while retaining the accepted Node-24-native workflow and its single full-portable artifact contract. Actions run `32690969751` passed for exact head `bea78d0`.
-3. **Human core artifact approval — pending.** Download and inspect the `bea78d0` artifact, confirm `BUILD-INFO.txt`, launch it, and perform the intended approval check. Only then merge `fix/core-automation` into fork `main`; keep the branch until that merge is verified.
-4. **Feature synchronization — implemented locally.** The updated core is merged into `feature/reliability-security-hardening` without reverting asynchronous jobs, request security, content-addressed caches, scientific export fixes, or the application-owned matcher. The combined Docker suites pass 98 fast and two real-model tests.
-5. **Feature qualification — next.** Push the synchronized feature branch, build its own Windows artifact, run focused browser and packaged-Windows acceptance, then merge it into fork `main` only after the already-approved core merge. Continue Phase 0 below after that evidence is recorded.
+3. **Core merge into fork main — complete.** The accepted core branch is present in fork `main` as merge commit `01de4e8`.
+4. **Feature synchronization — complete.** The updated fork `main` is merged into `feature/reliability-security-hardening` without reverting asynchronous jobs, request security, content-addressed caches, scientific export fixes, or the application-owned matcher. The combined Docker suites pass 98 fast and two real-model tests.
+5. **Feature qualification — next.** Keep the fork PR in draft, build the feature branch's own Windows artifact, and run focused browser and packaged-Windows acceptance. Mark the PR ready and merge only after that evidence is recorded; then prepare a deliberately scoped upstream contribution strategy.
 
 The current `.update.zip` is not an installer or automatic updater. It contains only `main/main.exe` and generated `static/` assets for manual replacement in a compatible existing installation; it omits launchers and most runtime files. New users must receive the full ZIP. A future updater requires signed manifests, compatibility checks, atomic replacement, rollback, and explicit user consent.
 
@@ -285,6 +286,7 @@ Create/Open Project -> Import & Validate -> Detect -> Review/Correct
 Target **WCAG 2.2 AA** for all primary workflows.
 
 - Add `<!doctype html>`, language, charset, and viewport metadata; semantic landmarks/headings; meaningful image alternatives; real buttons and links; accessible names; and valid label/input relationships.
+- Correct the Settings dialog's visually mis-styled `X` control with a narrowly scoped icon-button style, while retaining its accessible name, keyboard operation, visible focus, touch target, and modal-close behavior. Apply the same close-control pattern consistently to other dialogs.
 - Make every action operable by keyboard. Provide visible focus, logical focus order, dialog focus trapping/restoration, skip links, and non-drag alternatives. Announce progress, errors, selection, and completion through appropriate live regions.
 - Never rely on color, icon, hover, modifier keys, or font weight alone. Meet text/UI contrast, honor reduced motion, and provide high-contrast and color-blind-safe themes.
 - Replace fixed-size panels/tables with responsive reflow for laptop, tablet, zoomed, and 320-CSS-pixel layouts. Use adequate touch targets and test 200%/400% zoom.
