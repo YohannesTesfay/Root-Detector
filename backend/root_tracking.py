@@ -1,32 +1,57 @@
-import os, typing as tp, zipfile, json
+import csv
+import io
+import json
+import os
+import typing as tp
+import zipfile
 import torch, torchvision
 import numpy as np
 import scipy.ndimage
 import PIL.Image
 import skimage.morphology
 
-
-import backend
 from backend import GLOBALS
-from backend import paths
+from backend import write_as_png
+from backend import jobs
+from backend import postprocessing
+from backend import root_detection
+from backend import tracking_matcher
+from base.backend.pubsub import PubSub
+from base.backend import paths
 
-class TOO_MANY_ROOTS_ERROR:
-    ...
+
+class TooManyRootsError:
+    """Sentinel returned when tracking is intentionally skipped for safety."""
+
+
+TOO_MANY_ROOTS_ERROR = TooManyRootsError()
+TrackingStatus = tp.Union[bool, TooManyRootsError]
+TrackingResult = tp.Dict[str, tp.Any]
+FilePairs = tp.Sequence[tp.Sequence[str]]
 
 
 
-def process(filename0, filename1, settings, previous_data:dict=None):
+def process(
+    filename0:str,
+    filename1:str,
+    settings:tp.Any,
+    previous_data:tp.Optional[tp.Dict[str, tp.Any]]=None,
+) -> tp.Union[TrackingResult, TooManyRootsError]:
     print(f'Performing root tracking on files {filename0} and {filename1}')
+    jobs.raise_if_cancelled(settings)
     matchmodel = settings.models['tracking']
 
     seg0f, seg0 = ensure_segmentation(filename0, settings)
+    jobs.raise_if_cancelled(settings)
     seg1f, seg1 = ensure_segmentation(filename1, settings)
+    jobs.raise_if_cancelled(settings)
     TOO_MANY_ROOTS_THRESHOLD = settings.too_many_roots
     if should_skip_because_too_many_roots(seg0, seg1, TOO_MANY_ROOTS_THRESHOLD):
         cache_output_for_download(filename0, filename1, TOO_MANY_ROOTS_ERROR, {})
         return TOO_MANY_ROOTS_ERROR
     
     exmask0     = ensure_exclusionmask(filename0, settings)
+    jobs.raise_if_cancelled(settings)
     #exmask1     = ensure_exclusionmask(filename1, settings)  #not required
 
     outputname  = f'{filename0}.{os.path.basename(filename1)}'
@@ -35,8 +60,40 @@ def process(filename0, filename1, settings, previous_data:dict=None):
         img0    = torchvision.transforms.ToTensor()(PIL.Image.open(filename0))
         img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
         with GLOBALS.processing_lock:
+            jobs.raise_if_cancelled(settings)
             device  = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
-            output  = matchmodel.bruteforce_match(img0, img1, seg0, seg1, matchmodel, n=5000, cyclic_threshold=4, dev=device) #TODO: larger n
+            def on_progress(value, phase):
+                jobs.raise_if_cancelled(settings)
+                operation_callback = getattr(
+                    settings,
+                    'operation_progress_callback',
+                    None,
+                )
+                if operation_callback is not None:
+                    operation_callback(value, phase)
+                PubSub.publish({
+                    'progress': value,
+                    'image': '{} -> {}'.format(
+                        os.path.basename(filename0),
+                        os.path.basename(filename1),
+                    ),
+                    'stage': 'tracking',
+                    'description': phase,
+                })
+
+            output = tracking_matcher.match_images(
+                matchmodel,
+                img0,
+                img1,
+                seg0,
+                seg1,
+                n=5000,
+                cyclic_threshold=4,
+                device=device,
+                progress_callback=on_progress,
+                cancellation_check=lambda: jobs.raise_if_cancelled(settings),
+            )
+            jobs.raise_if_cancelled(settings)
             print()
             print(len(output['points0']))
             print('Matched percentage:', output['matched_percentage'])
@@ -45,6 +102,7 @@ def process(filename0, filename1, settings, previous_data:dict=None):
             output['n_matched_points'] = len(output['points0'])
             output['tracking_model']     = settings.active_models['tracking']
             output['segmentation_model'] = settings.active_models['detection']
+            output['tracking_matcher'] = tracking_matcher.provenance()
     else:
         output      = {
             'points0'            : np.asarray(previous_data['points0']).reshape(-1,2),
@@ -52,6 +110,10 @@ def process(filename0, filename1, settings, previous_data:dict=None):
             'n_matched_points'   : previous_data['n_matched_points'],
             'tracking_model'     : previous_data['tracking_model'],
             'segmentation_model' : previous_data['segmentation_model'],
+            'tracking_matcher'   : previous_data.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
         }
         corrections = np.array(previous_data['corrections']).reshape(-1,4)
         if len(corrections)>0:
@@ -71,6 +133,7 @@ def process(filename0, filename1, settings, previous_data:dict=None):
     else:
         #dummy interpolation map
         imap    = matchmodel.interpolation_map(np.zeros([1,2]), np.zeros([1,2]), seg0.shape)
+    jobs.raise_if_cancelled(settings)
     
     np.save(f'{outputname}.imap.npy', imap.astype('float16'))  #f16 to save space & time
 
@@ -80,6 +143,7 @@ def process(filename0, filename1, settings, previous_data:dict=None):
         warped_exmask0 = matchmodel.warp(exmask0, imap)
     gmap           = matchmodel.create_growth_map_rgba( warped_seg0>0.5, seg1>0.5, )
     gmap           = paste_exclusionmask(gmap, warped_exmask0)
+    jobs.raise_if_cancelled(settings)
 
     output_file_rgb  = f'{outputname}.growthmap.png'
     output_file_rgba = f'{outputname}.growthmap_rgba.png'
@@ -97,24 +161,18 @@ def process(filename0, filename1, settings, previous_data:dict=None):
     return output
 
 
-def ensure_segmentation(input_image_path:str, settings:'backend.Settings') -> (str, np.ndarray):
+def ensure_segmentation(input_image_path:str, settings:tp.Any) -> tp.Tuple[str, np.ndarray]:
     '''Run root detection (without a threshold) or load a cached result'''
-    segf = f'{input_image_path}.segmentation.cache.png'
-    if not os.path.exists(segf):
-        seg = backend.root_detection.run_model(input_image_path, settings, 'detection', threshold=None)
-        backend.write_as_png(segf, seg)
-    else:
-        seg = PIL.Image.open(segf).convert('L') / np.float32(255)
-    return segf, seg
+    return root_detection.ensure_soft_segmentation(input_image_path, settings)
 
 
-def ensure_exclusionmask(input_image_path:str, settings:'backend.Settings') -> np.ndarray:
+def ensure_exclusionmask(input_image_path:str, settings:tp.Any) -> tp.Optional[np.ndarray]:
     '''Run exclusion mask detection (if enabled) or load a custom mask or retrieve a cached result'''
     exmaskf = f'{input_image_path}.exclusionmask.cache.png'
     if not os.path.exists(exmaskf):
-        exmask = backend.root_detection.maybe_compute_exclusionmask(input_image_path, settings)
+        exmask = root_detection.maybe_compute_exclusionmask(input_image_path, settings)
         if exmask is not None:
-            backend.write_as_png(exmaskf, exmask)
+            write_as_png(exmaskf, exmask)
     else:
         exmask = PIL.Image.open(exmaskf).convert('L') / np.float32(255)
     return exmask
@@ -162,9 +220,9 @@ def compute_statistics(turnovermap_rgba):
     turnovermap    = turnovermap_from_rgba(turnovermap_rgba)
     turnovermap_sk = skeletonized_turnovermap(turnovermap)
 
-    kimura_same   = backend.postprocessing.kimura_length(turnovermap_sk==1)
-    kimura_decay  = backend.postprocessing.kimura_length(turnovermap_sk==2)
-    kimura_growth = backend.postprocessing.kimura_length(turnovermap_sk==3)
+    kimura_same   = postprocessing.kimura_length(turnovermap_sk==1)
+    kimura_decay  = postprocessing.kimura_length(turnovermap_sk==2)
+    kimura_growth = postprocessing.kimura_length(turnovermap_sk==3)
 
     return {
         'sum_same' :        int( (turnovermap==1).sum() ),
@@ -196,7 +254,7 @@ def should_skip_because_too_many_roots(
 def cache_output_for_download(
     filename0: str,
     filename1: str,
-    success:   tp.Union[bool, TOO_MANY_ROOTS_ERROR],
+    success:   TrackingStatus,
     output:    tp.Dict[str, tp.Any],
 ) -> None:
     dirname     =   paths.get_cache_path()
@@ -213,7 +271,7 @@ def cache_output_for_download(
         )
     )
 
-    if success == TOO_MANY_ROOTS_ERROR:
+    if isinstance(success, TooManyRootsError):
         return
 
     open(f'{outputname}.json', 'w').write(
@@ -225,6 +283,10 @@ def cache_output_for_download(
             'n_matched_points'      : output['n_matched_points'],
             'tracking_model'        : output['tracking_model'],
             'segmentation_model'    : output['segmentation_model'],
+            'tracking_matcher'      : output.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
         })
     )
 
@@ -232,7 +294,7 @@ def statistics_to_csv(
     stats:     tp.Dict[str, tp.Any],
     filename0: str,
     filename1: str,
-    success:   tp.Union[bool, TOO_MANY_ROOTS_ERROR],
+    success:   TrackingStatus,
     include_header=True
 ) -> str:
     '''Convert statistics from Python dicts as computed in process() to CSV'''
@@ -251,9 +313,9 @@ def statistics_to_csv(
     }
 
     data = [
-        filename0,                    filename1,    
-        stats.get('sum_negative',''), stats.get('sum_exmask',''),
+        filename0,                    filename1,
         stats.get('sum_same',''),     stats.get('sum_decay',''),    stats.get('sum_growth',''),
+        stats.get('sum_negative',''), stats.get('sum_exmask',''),
         stats.get('sum_same_sk',''),  stats.get('sum_decay_sk',''), stats.get('sum_growth_sk',''),
         stats.get('kimura_same',''),  stats.get('kimura_decay',''), stats.get('kimura_growth',''),
         status_map[success],
@@ -261,16 +323,17 @@ def statistics_to_csv(
 
     #sanity check
     if len(header) != len(data):
-        print('[ERROR] CSV data length mismatch:', header, data)
-        return
+        raise RuntimeError('CSV data length mismatch: {} != {}'.format(len(header), len(data)))
     
-    return ';\n'.join([
-        ','.join(header) if include_header else '',
-        ','.join(map(str,data))
-    ])
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    if include_header:
+        writer.writerow(header)
+    writer.writerow(data)
+    return output.getvalue()
 
 
-def collect_result_files(filename0:str, filename1:str) -> tp.Union[tp.List[str], None]:
+def collect_result_files(filename0:str, filename1:str) -> tp.Optional[tp.List[str]]:
     cache_path = paths.get_cache_path()
     files = [
         os.path.join(cache_path, filename0+'.segmentation.cache.png'),
@@ -284,20 +347,26 @@ def collect_result_files(filename0:str, filename1:str) -> tp.Union[tp.List[str],
         return files
     #else: return None
 
-def combine_csv_statistics(file_pairs:tp.Tuple[str, str]) -> str:
+def combine_csv_statistics(file_pairs:FilePairs) -> str:
     cache_path         = paths.get_cache_path()
-    csv_combined_lines = []
-    for i, (filename0, filename1) in enumerate(file_pairs):
+    combined = io.StringIO(newline='')
+    writer = csv.writer(combined)
+    header_written = False
+    for filename0, filename1 in file_pairs:
         csv_file   = os.path.join(cache_path, f'{filename0}.{filename1}.csv')
-        lines      = open(csv_file, 'r').read().strip().split('\n')
-        if i==0:
-            csv_combined_lines.append(lines[0])
-        csv_combined_lines.append(lines[1])
-    return '\n'.join(csv_combined_lines)
+        with open(csv_file, 'r', newline='') as source:
+            rows = list(csv.reader(source))
+        if len(rows) < 2:
+            continue
+        if not header_written:
+            writer.writerow(rows[0])
+            header_written = True
+        writer.writerow(rows[1])
+    return combined.getvalue()
 
     
 
-def compile_results_into_zip(file_pairs:tp.Tuple[str,str]) -> str:
+def compile_results_into_zip(file_pairs:FilePairs) -> str:
     '''Create a zip file containing the processed tracking results.
        (Doing this here in Python because frontend passes out if too many files)'''
     
@@ -316,4 +385,3 @@ def compile_results_into_zip(file_pairs:tp.Tuple[str,str]) -> str:
         combined_stats = combine_csv_statistics(file_pairs)
         resultzip.writestr('statistics.csv', combined_stats)
     return os.path.basename(resultpath)
-

@@ -35,7 +35,46 @@ shutil.copy('models/pretrained_models.txt', build_dir+'/models/')
 if 'linux' in sys.platform:
     os.symlink('/main/main', build_dir+'/main.run')
 else:
-    open(build_dir+'/main.bat', 'w').write(r'SET ROOT_PATH=%~dp0'+'\nmain\main.exe %*'+'\npause')
+    launcher = (
+        '@echo off\n'
+        'cd /d "%~dp0"\n'
+        'set "ROOT_PATH=%~dp0"\n'
+        'main\\main.exe %*\n'
+        'pause\n'
+    )
+    open(build_dir+'/main.bat', 'w').write(launcher)
+    open(build_dir+'/Start RootDetector.bat', 'w').write(launcher)
+
+repository = os.environ.get('GITHUB_REPOSITORY', 'local/source build')
+commit = os.environ.get('GITHUB_SHA', '')
+if not commit:
+    try:
+        commit = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            universal_newlines=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        commit = 'unknown'
+run_id = os.environ.get('GITHUB_RUN_ID', 'local')
+run_url = (
+    'https://github.com/{}/actions/runs/{}'.format(repository, run_id)
+    if run_id != 'local' and repository != 'local/source build'
+    else 'local build'
+)
+build_info = (
+    'RootDetector portable build\n'
+    'Repository: {}\n'
+    'Commit: {}\n'
+    'Build UTC: {}\n'
+    'GitHub Actions run: {}\n'
+    'Package: full portable ZIP (the legacy partial update ZIP is not published)\n'
+).format(
+    repository,
+    commit,
+    datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+    run_url,
+)
+open(build_dir+'/BUILD-INFO.txt', 'w').write(build_info)
 shutil.rmtree('./build')
 os.remove('./main.spec')
 

@@ -5,6 +5,7 @@ import flask
 
 import backend
 import backend.training
+import backend.pipeline
 import backend.settings
 from . import root_detection
 from . import root_tracking
@@ -13,16 +14,28 @@ from . import root_tracking
 
 class App(BaseApp):
     def __init__(self, *args, **kw):
+        # Packaged Windows releases contain the manifest but fetch the large
+        # verified model files on first launch. Source/Docker users can prefetch
+        # them explicitly to make startup deterministic.
         backend.settings.ensure_pretrained_models()
         
         super().__init__(*args, **kw)
+        self.training_results = {}
         if self.is_reloader:
             return
 
+        self.pipeline_manager = backend.pipeline.PipelineManager(
+            self.settings,
+            cache_path=self.cache_path,
+        )
 
         self.route('/process_root_tracking', methods=['GET', 'POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>')(self.postprocess_detection)
         self.route('/compile_tracking_results', methods=['POST'])(self.compile_tracking_results)
+        self.route('/api/pipeline/runs', methods=['POST'])(self.create_pipeline_run)
+        self.route('/api/pipeline/runs/<run_id>', methods=['GET'])(self.get_pipeline_run)
+        self.route('/api/pipeline/runs/<run_id>/cancel', methods=['POST'])(self.cancel_pipeline_run)
+        self.route('/api/pipeline/runs/<run_id>/retry', methods=['POST'])(self.retry_pipeline_run)
 
     def postprocess_detection(self, filename):
         #FIXME: code duplication
@@ -37,19 +50,23 @@ class App(BaseApp):
     
 
     def process_root_tracking(self):
-        if flask.request.method=='GET':
-            fname0 = os.path.join(self.cache_path, flask.request.args['filename0'])
-            fname1 = os.path.join(self.cache_path, flask.request.args['filename1'])
-            result = root_tracking.process(fname0, fname1, self.settings)
-        elif flask.request.method=='POST':
+        if flask.request.method=='POST':
             data   = flask.request.get_json(force=True)
             fname0 = os.path.join(self.cache_path, data['filename0'])
             fname1 = os.path.join(self.cache_path, data['filename1'])
             result = root_tracking.process(fname0, fname1, self.settings, data)
+        else:
+            fname0 = os.path.join(self.cache_path, flask.request.args['filename0'])
+            fname1 = os.path.join(self.cache_path, flask.request.args['filename1'])
+            result = root_tracking.process(fname0, fname1, self.settings)
         
-        if result == root_tracking.TOO_MANY_ROOTS_ERROR:
-            print('[ERROR]: TOO MANY ROOTS')
-            return flask.Response("TOO_MANY_ROOTS", status=500)
+        if isinstance(result, root_tracking.TooManyRootsError):
+            return flask.jsonify({
+                'success': 'TOO_MANY_ROOTS',
+                'state': 'skipped',
+                'code': 'too_many_roots',
+                'message': 'Tracking was skipped because the configured root threshold was exceeded.',
+            })
         
         return flask.jsonify({
             'points0':         result['points0'].tolist(),
@@ -62,6 +79,10 @@ class App(BaseApp):
             'n_matched_points'   : result['n_matched_points'],
             'tracking_model'     : result['tracking_model'],
             'segmentation_model' : result['segmentation_model'],
+            'tracking_matcher'   : result.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
             'statistics'         : result['statistics'],
         })
     
@@ -69,12 +90,78 @@ class App(BaseApp):
         file_pairs = flask.request.get_json(force=True)['file_pairs']
         return root_tracking.compile_results_into_zip(file_pairs)
 
+    def create_pipeline_run(self):
+        request_data = flask.request.get_json(force=True) or {}
+        try:
+            run = self.pipeline_manager.create(
+                request_data.get('filenames', []),
+                request_data.get('file_pairs', []),
+            )
+        except ValueError as exc:
+            return flask.jsonify({
+                'code': 'invalid_pipeline_request',
+                'message': str(exc),
+                'retryable': False,
+            }), 400
+        except RuntimeError as exc:
+            return flask.jsonify({
+                'code': 'pipeline_busy',
+                'message': str(exc),
+                'retryable': True,
+            }), 409
+        return flask.jsonify(run.snapshot()), 202
+
+    def get_pipeline_run(self, run_id):
+        try:
+            return flask.jsonify(self.pipeline_manager.get(run_id).snapshot())
+        except KeyError as exc:
+            return flask.jsonify({
+                'code': 'pipeline_not_found',
+                'message': str(exc),
+                'retryable': False,
+            }), 404
+
+    def cancel_pipeline_run(self, run_id):
+        try:
+            run = self.pipeline_manager.get(run_id)
+        except KeyError as exc:
+            return flask.jsonify({
+                'code': 'pipeline_not_found',
+                'message': str(exc),
+                'retryable': False,
+            }), 404
+        run.request_cancel()
+        return flask.jsonify(run.snapshot()), 202
+
+    def retry_pipeline_run(self, run_id):
+        try:
+            run = self.pipeline_manager.get(run_id)
+            run.retry_failed()
+        except KeyError as exc:
+            return flask.jsonify({
+                'code': 'pipeline_not_found',
+                'message': str(exc),
+                'retryable': False,
+            }), 404
+        except RuntimeError as exc:
+            return flask.jsonify({
+                'code': 'pipeline_not_retryable',
+                'message': str(exc),
+                'retryable': False,
+            }), 409
+        return flask.jsonify(run.snapshot()), 202
+
     #override    #TODO: unify
     def training(self):
         requestform  = flask.request.get_json(force=True)
-        options      = requestform['options']
-        if options['training_type'] not in ['detection', 'exclusion_mask']:
-            raise NotImplementedError()
+        try:
+            options = backend.training.parse_training_options(requestform['options'])
+        except (KeyError, backend.training.TrainingOptionsError) as exc:
+            return flask.jsonify({
+                'code': 'invalid_training_options',
+                'message': str(exc),
+                'retryable': False,
+            }), 400
 
         imagefiles   = requestform['filenames']
         imagefiles   = [os.path.join(self.cache_path, fname) for fname in imagefiles]
@@ -82,6 +169,45 @@ class App(BaseApp):
         if not all([os.path.exists(fname) for fname in imagefiles]) or not all(targetfiles):
             flask.abort(404)
         
-        backend.training.start_training(imagefiles, targetfiles, options, self.settings)
-        return 'OK'
+        result = backend.training.start_training(imagefiles, targetfiles, options, self.settings)
+        if not isinstance(result, backend.training.TrainingResult):
+            legacy_states = {
+                'OK': 'completed',
+                'INTERRUPTED': 'cancelled',
+                'FAILED': 'failed',
+            }
+            result = backend.training.TrainingResult(
+                legacy_states.get(result, 'failed'),
+            )
+        self.training_results[options['training_type']] = result
+        response = result.to_dict()
+        response.update({
+            # Keep the old field for clients built before explicit states.
+            'result': {
+                'completed': 'OK',
+                'cancelled': 'INTERRUPTED',
+                'failed': 'FAILED',
+            }[result.state],
+            'effective_options': {
+                'training_type': options['training_type'],
+                'epochs': options['epochs'],
+                'learning_rate': options['learning_rate'],
+            },
+        })
+        return flask.jsonify(response), 500 if result.state == 'failed' else 200
+
+    def stop_training(self):
+        backend.training.request_stop(self.settings)
+        return flask.jsonify({'stop_requested': True})
+
+    def save_model(self):
+        modeltype = flask.request.args.get('options[training_type]', 'detection')
+        result = self.training_results.get(modeltype)
+        if result is None or not result.completed:
+            return flask.jsonify({
+                'code': 'training_not_completed',
+                'message': 'Only a successfully completed training run can be saved.',
+                'retryable': False,
+            }), 409
+        return super().save_model()
     
