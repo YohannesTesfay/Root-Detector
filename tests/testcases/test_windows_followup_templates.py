@@ -38,6 +38,10 @@ def test_training_can_be_closed_or_retried_after_interruption():
     assert 'id="retry-training-button"' in template
     assert 'id="close-training-button"' in template
     assert 'Training interrupted. You can retry' in training
+    assert "response.state" in training
+    assert "Math.min(Number(data.progress) * 100, 99)" in training
+    assert "$('#training-new-modelname-field').hide()" in training
+    assert '[INTERRUPTED - NOT SAVABLE]' in training
     assert '<button type="button" class="ui violet basic fluid button"' in training_tab
     assert 'for="training-learning-rate"' in training_tab
     assert 'for="training-number-of-epochs"' in training_tab
