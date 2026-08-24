@@ -4,6 +4,7 @@ import torch
 
 class Settings(BaseSettings):
     exmask_enabled: bool
+    tracking_exclusion_policy: str
     use_gpu: bool
     too_many_roots: int
 
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     def get_defaults(cls):
         defaults = tp.cast(tp.Dict[str, tp.Any], super().get_defaults())
         defaults['exmask_enabled'] = False
+        defaults['tracking_exclusion_policy'] = 'union'
         defaults['use_gpu']        = False
         defaults['too_many_roots'] = 100000
         return defaults

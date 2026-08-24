@@ -3,6 +3,7 @@ import io
 import json
 import os
 import typing as tp
+import warnings
 import zipfile
 import torch, torchvision
 import numpy as np
@@ -11,9 +12,11 @@ import PIL.Image
 import skimage.morphology
 
 from backend import GLOBALS
-from backend import write_as_png
+from backend import jobs
 from backend import postprocessing
 from backend import root_detection
+from backend import tracking_matcher
+from base.backend.pubsub import PubSub
 from base.backend import paths
 
 
@@ -25,6 +28,17 @@ TOO_MANY_ROOTS_ERROR = TooManyRootsError()
 TrackingStatus = tp.Union[bool, TooManyRootsError]
 TrackingResult = tp.Dict[str, tp.Any]
 FilePairs = tp.Sequence[tp.Sequence[str]]
+TRACKING_CSV_SCHEMA = 2
+EXCLUSION_MASK_POLICIES = {'union', 'intersection', 'first', 'second'}
+DEFAULT_EXCLUSION_MASK_POLICY = 'union'
+TRACKING_CSV_FIELDS = [
+    'Filename 1', 'Filename 2',
+    'same pixels', 'decay pixels', 'growth pixels',
+    'background pixels', 'mask pixels',
+    'same skeleton pixels', 'decay skeleton pixels', 'growth skeleton pixels',
+    'same kimura length', 'decay kimura length', 'growth kimura length',
+    'status',
+]
 
 
 
@@ -35,17 +49,25 @@ def process(
     previous_data:tp.Optional[tp.Dict[str, tp.Any]]=None,
 ) -> tp.Union[TrackingResult, TooManyRootsError]:
     print(f'Performing root tracking on files {filename0} and {filename1}')
+    jobs.raise_if_cancelled(settings)
     matchmodel = settings.models['tracking']
 
     seg0f, seg0 = ensure_segmentation(filename0, settings)
+    jobs.raise_if_cancelled(settings)
     seg1f, seg1 = ensure_segmentation(filename1, settings)
+    jobs.raise_if_cancelled(settings)
     TOO_MANY_ROOTS_THRESHOLD = settings.too_many_roots
     if should_skip_because_too_many_roots(seg0, seg1, TOO_MANY_ROOTS_THRESHOLD):
         cache_output_for_download(filename0, filename1, TOO_MANY_ROOTS_ERROR, {})
         return TOO_MANY_ROOTS_ERROR
     
-    exmask0     = ensure_exclusionmask(filename0, settings)
-    #exmask1     = ensure_exclusionmask(filename1, settings)  #not required
+    exmask0 = ensure_exclusionmask(filename0, settings)
+    jobs.raise_if_cancelled(settings)
+    exmask1 = ensure_exclusionmask(filename1, settings)
+    jobs.raise_if_cancelled(settings)
+    exclusion_policy = validate_exclusion_mask_policy(
+        getattr(settings, 'tracking_exclusion_policy', DEFAULT_EXCLUSION_MASK_POLICY)
+    )
 
     outputname  = f'{filename0}.{os.path.basename(filename1)}'
     
@@ -53,8 +75,40 @@ def process(
         img0    = torchvision.transforms.ToTensor()(PIL.Image.open(filename0))
         img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
         with GLOBALS.processing_lock:
+            jobs.raise_if_cancelled(settings)
             device  = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
-            output  = matchmodel.bruteforce_match(img0, img1, seg0, seg1, matchmodel, n=5000, cyclic_threshold=4, dev=device) #TODO: larger n
+            def on_progress(value, phase):
+                jobs.raise_if_cancelled(settings)
+                operation_callback = getattr(
+                    settings,
+                    'operation_progress_callback',
+                    None,
+                )
+                if operation_callback is not None:
+                    operation_callback(value, phase)
+                PubSub.publish({
+                    'progress': value,
+                    'image': '{} -> {}'.format(
+                        os.path.basename(filename0),
+                        os.path.basename(filename1),
+                    ),
+                    'stage': 'tracking',
+                    'description': phase,
+                })
+
+            output = tracking_matcher.match_images(
+                matchmodel,
+                img0,
+                img1,
+                seg0,
+                seg1,
+                n=5000,
+                cyclic_threshold=4,
+                device=device,
+                progress_callback=on_progress,
+                cancellation_check=lambda: jobs.raise_if_cancelled(settings),
+            )
+            jobs.raise_if_cancelled(settings)
             print()
             print(len(output['points0']))
             print('Matched percentage:', output['matched_percentage'])
@@ -63,6 +117,7 @@ def process(
             output['n_matched_points'] = len(output['points0'])
             output['tracking_model']     = settings.active_models['tracking']
             output['segmentation_model'] = settings.active_models['detection']
+            output['tracking_matcher'] = tracking_matcher.provenance()
     else:
         output      = {
             'points0'            : np.asarray(previous_data['points0']).reshape(-1,2),
@@ -70,6 +125,10 @@ def process(
             'n_matched_points'   : previous_data['n_matched_points'],
             'tracking_model'     : previous_data['tracking_model'],
             'segmentation_model' : previous_data['segmentation_model'],
+            'tracking_matcher'   : previous_data.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
         }
         corrections = np.array(previous_data['corrections']).reshape(-1,4)
         if len(corrections)>0:
@@ -89,6 +148,7 @@ def process(
     else:
         #dummy interpolation map
         imap    = matchmodel.interpolation_map(np.zeros([1,2]), np.zeros([1,2]), seg0.shape)
+    jobs.raise_if_cancelled(settings)
     
     np.save(f'{outputname}.imap.npy', imap.astype('float16'))  #f16 to save space & time
 
@@ -96,8 +156,15 @@ def process(
     warped_exmask0 = None
     if exmask0 is not None:
         warped_exmask0 = matchmodel.warp(exmask0, imap)
+    combined_exmask = combine_exclusion_masks(
+        warped_exmask0,
+        exmask1,
+        exclusion_policy,
+        seg1.shape,
+    )
     gmap           = matchmodel.create_growth_map_rgba( warped_seg0>0.5, seg1>0.5, )
-    gmap           = paste_exclusionmask(gmap, warped_exmask0)
+    gmap           = paste_exclusionmask(gmap, combined_exmask)
+    jobs.raise_if_cancelled(settings)
 
     output_file_rgb  = f'{outputname}.growthmap.png'
     output_file_rgba = f'{outputname}.growthmap_rgba.png'
@@ -108,6 +175,14 @@ def process(
     output['growthmap_rgba'] = output_file_rgba
     output['segmentation0']  = seg0f
     output['segmentation1']  = seg1f
+    output['exclusion_mask_policy'] = exclusion_policy
+    output['exclusion_masks'] = {
+        'observation0_present': exmask0 is not None,
+        'observation1_present': exmask1 is not None,
+        'observation0_pixels': _mask_pixel_count(exmask0),
+        'observation1_pixels': _mask_pixel_count(exmask1),
+        'combined_pixels': _mask_pixel_count(combined_exmask),
+    }
 
     output['statistics']     = compute_statistics(gmap)
     
@@ -122,14 +197,62 @@ def ensure_segmentation(input_image_path:str, settings:tp.Any) -> tp.Tuple[str, 
 
 def ensure_exclusionmask(input_image_path:str, settings:tp.Any) -> tp.Optional[np.ndarray]:
     '''Run exclusion mask detection (if enabled) or load a custom mask or retrieve a cached result'''
-    exmaskf = f'{input_image_path}.exclusionmask.cache.png'
-    if not os.path.exists(exmaskf):
-        exmask = root_detection.maybe_compute_exclusionmask(input_image_path, settings)
-        if exmask is not None:
-            write_as_png(exmaskf, exmask)
-    else:
-        exmask = PIL.Image.open(exmaskf).convert('L') / np.float32(255)
-    return exmask
+    return root_detection.maybe_compute_exclusionmask(input_image_path, settings)
+
+
+def validate_exclusion_mask_policy(policy:tp.Any) -> str:
+    if policy not in EXCLUSION_MASK_POLICIES:
+        raise ValueError(
+            'Invalid tracking exclusion-mask policy. Choose one of: {}.'.format(
+                ', '.join(sorted(EXCLUSION_MASK_POLICIES))
+            )
+        )
+    return tp.cast(str, policy)
+
+
+def _binary_mask(mask:tp.Optional[np.ndarray], shape:tp.Tuple[int, ...]) -> np.ndarray:
+    if mask is None:
+        return np.zeros(shape, dtype=bool)
+    array = np.asarray(mask).squeeze()
+    if array.shape != shape:
+        raise ValueError(
+            'Exclusion mask shape {} does not match tracking image shape {}.'.format(
+                array.shape,
+                shape,
+            )
+        )
+    return array > 0.5
+
+
+def _mask_pixel_count(mask:tp.Optional[np.ndarray]) -> int:
+    if mask is None:
+        return 0
+    return int((np.asarray(mask).squeeze() > 0.5).sum())
+
+
+def combine_exclusion_masks(
+    warped_observation0:tp.Optional[np.ndarray],
+    observation1:tp.Optional[np.ndarray],
+    policy:str=DEFAULT_EXCLUSION_MASK_POLICY,
+    shape:tp.Optional[tp.Tuple[int, ...]]=None,
+) -> tp.Optional[np.ndarray]:
+    """Combine both observation masks in observation-1 coordinates."""
+    policy = validate_exclusion_mask_policy(policy)
+    if warped_observation0 is None and observation1 is None:
+        return None
+    resolved_shape = shape
+    if resolved_shape is None:
+        source = observation1 if observation1 is not None else warped_observation0
+        resolved_shape = tuple(np.asarray(source).squeeze().shape)
+    first = _binary_mask(warped_observation0, resolved_shape)
+    second = _binary_mask(observation1, resolved_shape)
+    if policy == 'union':
+        return first | second
+    if policy == 'intersection':
+        return first & second
+    if policy == 'first':
+        return first
+    return second
 
 
 class COLORS:
@@ -142,7 +265,7 @@ class COLORS:
 def paste_exclusionmask(turnovermap_rgba:np.ndarray, exmask:tp.Union[np.ndarray, None]) -> np.ndarray:
     if exmask is None:
         return turnovermap_rgba
-    return np.where(exmask[...,None]>0, COLORS.EXMASK, turnovermap_rgba).astype('uint8')
+    return np.where(np.asarray(exmask)[...,None]>0.5, COLORS.EXMASK, turnovermap_rgba).astype('uint8')
 
 
 def skeletonized_turnovermap(gmap):
@@ -237,8 +360,43 @@ def cache_output_for_download(
             'n_matched_points'      : output['n_matched_points'],
             'tracking_model'        : output['tracking_model'],
             'segmentation_model'    : output['segmentation_model'],
+            'tracking_matcher'      : output['tracking_matcher'],
+            'segmentation0'         : os.path.basename(output['segmentation0']),
+            'segmentation1'         : os.path.basename(output['segmentation1']),
+            'growthmap'             : os.path.basename(output['growthmap']),
+            'exclusion_mask_policy' : output['exclusion_mask_policy'],
+            'exclusion_masks'       : output['exclusion_masks'],
         })
     )
+
+
+def _statistics_record(
+    stats:tp.Dict[str, tp.Any],
+    filename0:str,
+    filename1:str,
+    success:TrackingStatus,
+) -> tp.Dict[str, tp.Any]:
+    status_map = {
+        True: 'OK',
+        False: 'WARNING: No matching roots found',
+        TOO_MANY_ROOTS_ERROR: 'SKIPPED: Too many roots',
+    }
+    return {
+        'Filename 1': filename0,
+        'Filename 2': filename1,
+        'same pixels': stats.get('sum_same', ''),
+        'decay pixels': stats.get('sum_decay', ''),
+        'growth pixels': stats.get('sum_growth', ''),
+        'background pixels': stats.get('sum_negative', ''),
+        'mask pixels': stats.get('sum_exmask', ''),
+        'same skeleton pixels': stats.get('sum_same_sk', ''),
+        'decay skeleton pixels': stats.get('sum_decay_sk', ''),
+        'growth skeleton pixels': stats.get('sum_growth_sk', ''),
+        'same kimura length': stats.get('kimura_same', ''),
+        'decay kimura length': stats.get('kimura_decay', ''),
+        'growth kimura length': stats.get('kimura_growth', ''),
+        'status': status_map[success],
+    }
 
 def statistics_to_csv(
     stats:     tp.Dict[str, tp.Any],
@@ -248,49 +406,32 @@ def statistics_to_csv(
     include_header=True
 ) -> str:
     '''Convert statistics from Python dicts as computed in process() to CSV'''
-    header = [
-        'Filename 1',           'Filename 2', 
-        'same pixels',          'decay pixels',          'growth pixels',
-        'background pixels',    'mask pixels',
-        'same skeleton pixels', 'decay skeleton pixels', 'growth skeleton pixels',
-        'same kimura length',   'decay kimura length',   'growth kimura length',
-        'status',
-    ]
-    status_map = {
-        True                 : 'OK',
-        False                : 'WARNING: No matching roots found',
-        TOO_MANY_ROOTS_ERROR : 'SKIPPED: Too many roots'
-    }
-
-    data = [
-        filename0,                    filename1,
-        stats.get('sum_same',''),     stats.get('sum_decay',''),    stats.get('sum_growth',''),
-        stats.get('sum_negative',''), stats.get('sum_exmask',''),
-        stats.get('sum_same_sk',''),  stats.get('sum_decay_sk',''), stats.get('sum_growth_sk',''),
-        stats.get('kimura_same',''),  stats.get('kimura_decay',''), stats.get('kimura_growth',''),
-        status_map[success],
-    ]
-
-    #sanity check
-    if len(header) != len(data):
-        raise RuntimeError('CSV data length mismatch: {} != {}'.format(len(header), len(data)))
-    
     output = io.StringIO(newline='')
-    writer = csv.writer(output)
+    writer = csv.DictWriter(output, fieldnames=TRACKING_CSV_FIELDS, extrasaction='raise')
     if include_header:
-        writer.writerow(header)
-    writer.writerow(data)
+        writer.writeheader()
+    writer.writerow(_statistics_record(stats, filename0, filename1, success))
     return output.getvalue()
 
 
 def collect_result_files(filename0:str, filename1:str) -> tp.Optional[tp.List[str]]:
     cache_path = paths.get_cache_path()
+    metadata_path = os.path.join(cache_path, f'{filename0}.{filename1}.json')
+    try:
+        with open(metadata_path, 'r') as source:
+            metadata = json.load(source)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+    segmentation0 = metadata.get('segmentation0', filename0 + '.segmentation.cache.png')
+    segmentation1 = metadata.get('segmentation1', filename1 + '.segmentation.cache.png')
+    growthmap = metadata.get('growthmap', f'{filename0}.{filename1}.growthmap.png')
     files = [
-        os.path.join(cache_path, filename0+'.segmentation.cache.png'),
-        os.path.join(cache_path, filename1+'.segmentation.cache.png'),
-        os.path.join(cache_path, f'{filename0}.{filename1}.growthmap.png'),
+        os.path.join(cache_path, os.path.basename(segmentation0)),
+        os.path.join(cache_path, os.path.basename(segmentation1)),
+        os.path.join(cache_path, os.path.basename(growthmap)),
         os.path.join(cache_path, f'{filename0}.{filename1}.csv'),
-        os.path.join(cache_path, f'{filename0}.{filename1}.json'),
+        metadata_path,
 
     ]
     if all(map(os.path.exists, files)):
@@ -307,11 +448,21 @@ def combine_csv_statistics(file_pairs:FilePairs) -> str:
         with open(csv_file, 'r', newline='') as source:
             rows = list(csv.reader(source))
         if len(rows) < 2:
+            warnings.warn('Skipping incomplete tracking CSV: {}'.format(csv_file))
+            continue
+        if rows[0] != TRACKING_CSV_FIELDS:
+            warnings.warn(
+                'Skipping tracking CSV with an unsupported or legacy schema: {}'.format(csv_file)
+            )
             continue
         if not header_written:
             writer.writerow(rows[0])
             header_written = True
-        writer.writerow(rows[1])
+        for row in rows[1:]:
+            if len(row) != len(TRACKING_CSV_FIELDS):
+                warnings.warn('Skipping malformed tracking CSV row in {}'.format(csv_file))
+                continue
+            writer.writerow(row)
     return combined.getvalue()
 
     
@@ -322,6 +473,7 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
     
     cache_path = paths.get_cache_path()
     resultpath = os.path.join(cache_path, 'tracking_results.zip')
+    pair_exclusion_masks = []
     with zipfile.ZipFile(resultpath, 'w') as resultzip:
         for filename0, filename1 in file_pairs:
             outputname   = f'{filename0}.{filename1}'
@@ -330,8 +482,41 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
                 print(f'[ERROR] could not find tracking results for {outputname}')
                 continue
 
-            for f in result_files:
-                resultzip.write(f, os.path.join(outputname, os.path.basename(f)))
+            archive_names = [
+                filename0 + '.segmentation.cache.png',
+                filename1 + '.segmentation.cache.png',
+            ] + [os.path.basename(path) for path in result_files[2:]]
+            for path, archive_name in zip(result_files, archive_names):
+                resultzip.write(path, os.path.join(outputname, archive_name))
+            try:
+                with open(os.path.join(cache_path, f'{filename0}.{filename1}.json'), 'r') as source:
+                    pair_metadata = json.load(source)
+                pair_exclusion_masks.append({
+                    'filename0': filename0,
+                    'filename1': filename1,
+                    'policy': pair_metadata.get(
+                        'exclusion_mask_policy',
+                        'legacy-first-observation-only',
+                    ),
+                    'masks': pair_metadata.get('exclusion_masks'),
+                    'matcher': pair_metadata.get('tracking_matcher'),
+                })
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
         combined_stats = combine_csv_statistics(file_pairs)
         resultzip.writestr('statistics.csv', combined_stats)
+        resultzip.writestr(
+            'tracking-results-manifest.json',
+            json.dumps({
+                'tracking_csv_schema': TRACKING_CSV_SCHEMA,
+                'exclusion_mask_coordinate_system': 'observation1',
+                'pair_exclusion_masks': pair_exclusion_masks,
+                'tracking_matcher_schema': 1,
+                'migration_warning': (
+                    'Tracking CSV files exported by RootDetector before schema 2 may have '
+                    'background, mask, same, decay, and growth values under incorrect headers. '
+                    'Re-export those analyses before comparing or aggregating them.'
+                ),
+            }, indent=2, sort_keys=True),
+        )
     return os.path.basename(resultpath)

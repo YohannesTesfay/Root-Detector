@@ -63,7 +63,7 @@ RootPipeline = class {
             return
         try {
             await this.request(`/api/pipeline/runs/${this.active_run_id}/cancel`, 'POST')
-            this.set_message('Cancellation requested. The current model operation will finish first.')
+            this.set_message('Cancellation requested. RootDetector is stopping at the next safe checkpoint.')
         } catch(error) {
             this.show_error(this.error_message(error))
         }
@@ -97,8 +97,10 @@ RootPipeline = class {
     static render(run){
         this.set_progress(run.progress.finished, run.progress.total)
         const current = run.current
-        if(current)
-            this.set_message(`${this.pretty_state(current.stage)}: ${current.item_id}`)
+        if(current){
+            const detail = current.description ? ` — ${current.description}` : ''
+            this.set_message(`${this.pretty_state(current.stage)}: ${current.item_id}${detail}`)
+        }
         else
             this.set_message(this.run_message(run))
 
@@ -106,7 +108,10 @@ RootPipeline = class {
         const items = Object.values(run.images).concat(run.pairs)
         for(const item of items){
             const label = item.filename ?? `${item.filename0} → ${item.filename1}`
-            const message = item.error?.message ?? ''
+            const diagnostic = item.error?.diagnostic_id
+            const message = item.error?.message
+                ? `${item.error.message}${diagnostic ? ` [${diagnostic}]` : ''}`
+                : ''
             const $row = $('<tr>')
             $('<td>').text(label).appendTo($row)
             $('<td>').text(item.stage).appendTo($row)
@@ -118,7 +123,9 @@ RootPipeline = class {
         const terminal = this.terminal_states.includes(run.state)
         $('#pipeline-cancel-button').toggle(!terminal)
         $('#pipeline-close-button').toggle(terminal)
-        const retryable = terminal && items.some(item => ['failed', 'skipped'].includes(item.state))
+        const retryable = terminal && items.some(
+            item => ['failed', 'skipped', 'cancelled'].includes(item.state)
+        )
         $('#pipeline-retry-button').toggle(retryable).toggleClass('disabled', !retryable)
         $('#pipeline-status-modal').modal({closable: terminal})
     }
@@ -180,11 +187,6 @@ RootPipeline = class {
     }
 
     static request(url, method, data=undefined){
-        return $.ajax({
-            url: url,
-            method: method,
-            contentType: data == undefined ? undefined : 'application/json',
-            data: data == undefined ? undefined : JSON.stringify(data),
-        })
+        return RootSecurity.request(url, method, data)
     }
 }

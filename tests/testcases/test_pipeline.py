@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from backend.pipeline import PipelineManager
-from backend import root_tracking
+from backend import jobs, root_tracking
 
 
 class FakeSettings:
@@ -187,6 +187,87 @@ def test_pipeline_cancel_marks_queued_work(tmp_path):
     assert result['state'] == 'cancelled'
     assert result['images']['first.png']['state'] == 'completed'
     assert result['images']['second.png']['state'] == 'cancelled'
+
+
+def test_pipeline_cooperatively_cancels_active_item_and_retries_it(tmp_path):
+    filename = 'active.png'
+    create_inputs(str(tmp_path), [filename])
+    started = __import__('threading').Event()
+    allow_success = {'value': False}
+
+    def detect(path, settings):
+        started.set()
+        if not allow_success['value']:
+            assert settings.cancel_event.wait(2)
+            jobs.raise_if_cancelled(settings)
+        return detection_result(path)
+
+    manager = PipelineManager(
+        FakeSettings(),
+        cache_path=str(tmp_path),
+        detection_func=detect,
+        tracking_func=tracking_result,
+    )
+    run = manager.create([filename], [])
+    assert started.wait(1)
+    run.request_cancel()
+    assert run.wait(2)
+    assert run.snapshot()['images'][filename]['state'] == 'cancelled'
+
+    allow_success['value'] = True
+    run.retry_failed()
+    assert run.wait(2)
+    snapshot = run.snapshot()
+    assert snapshot['state'] == 'completed'
+    assert snapshot['images'][filename]['state'] == 'completed'
+    assert snapshot['images'][filename]['attempts'] == 2
+
+
+def test_pipeline_failure_includes_diagnostic_id(tmp_path):
+    filename = 'broken.png'
+    create_inputs(str(tmp_path), [filename])
+    manager = PipelineManager(
+        FakeSettings(),
+        cache_path=str(tmp_path),
+        detection_func=lambda *_args: (_ for _ in ()).throw(RuntimeError('broken')),
+        tracking_func=tracking_result,
+    )
+    run = manager.create([filename], [])
+    assert run.wait(2)
+    error = run.snapshot()['images'][filename]['error']
+    assert error['code'] == 'detection_failed'
+    assert len(error['diagnostic_id']) == 12
+
+
+def test_pipeline_exposes_active_tracking_batch_progress(tmp_path):
+    filenames = ['first.png', 'second.png']
+    create_inputs(str(tmp_path), filenames)
+    progress_reported = __import__('threading').Event()
+    release = __import__('threading').Event()
+
+    def track(path0, path1, settings):
+        settings.operation_progress_callback(0.625, 'matching batch 5 of 8')
+        progress_reported.set()
+        assert release.wait(2)
+        return tracking_result(path0, path1, settings)
+
+    manager = PipelineManager(
+        FakeSettings(),
+        cache_path=str(tmp_path),
+        detection_func=lambda path, _settings: detection_result(path),
+        tracking_func=track,
+    )
+    run = manager.create(filenames, [filenames])
+    assert progress_reported.wait(1)
+    current = run.snapshot()['current']
+    assert current == {
+        'stage': 'tracking',
+        'item_id': 'first.png::second.png',
+        'progress': 0.625,
+        'description': 'matching batch 5 of 8',
+    }
+    release.set()
+    assert run.wait(2)
 
 
 def test_pipeline_reports_too_many_roots_as_skipped(tmp_path):

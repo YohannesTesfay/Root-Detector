@@ -48,7 +48,7 @@ RootsFileInput = class extends BaseFileInput{
             throw new Error(`Duplicate filenames are not supported: ${[...new Set(duplicates)].join(', ')}`)
 
         if(!window.location.href.startsWith('file://'))
-            await $.get('/clear_cache')
+            await RootSecurity.request('/clear_cache', 'POST')
 
         GLOBAL.files = []
         for(const file of files)
@@ -145,7 +145,10 @@ RootsFileInput = class extends BaseFileInput{
 
             //upload to flask & postprocess
             await upload_file_to_flask(resultfile)
-            const result = await $.get(`/postprocess_detection/${resultfile.name}`)
+            const result = await RootSecurity.request(
+                `/postprocess_detection/${encodeURIComponent(resultfile.name)}`,
+                'POST',
+            )
             await App.Detection.set_results(filename, result)
         }
     }

@@ -12,6 +12,8 @@ from base.backend.app import get_cache_path
 
 from . import root_detection
 from . import root_tracking
+from . import jobs
+from . import security
 
 
 TERMINAL_ITEM_STATES = {
@@ -41,14 +43,23 @@ def _snapshot_settings(settings):
 
 
 def _error(stage:str, item_id:str, exc:Exception, retryable:bool=True) -> dict:
-    return {
-        'code': '{}_failed'.format(stage),
-        'message': str(exc) or exc.__class__.__name__,
-        'item_id': item_id,
-        'stage': stage,
-        'retryable': retryable,
-        'type': exc.__class__.__name__,
-    }
+    payload = jobs.error_payload(
+        '{}_failed'.format(stage),
+        str(exc) or exc.__class__.__name__,
+        stage,
+        item_id=item_id,
+        retryable=retryable,
+        error_type=exc.__class__.__name__,
+    )
+    print(
+        '[ERROR {}] {} failed for {}: {}'.format(
+            payload['diagnostic_id'],
+            stage,
+            item_id,
+            payload['message'],
+        )
+    )
+    return payload
 
 
 def _serialize_detection(result:dict) -> dict:
@@ -71,6 +82,21 @@ def _serialize_tracking(result:dict) -> dict:
         'n_matched_points': int(result['n_matched_points']),
         'tracking_model': result['tracking_model'],
         'segmentation_model': result['segmentation_model'],
+        'tracking_matcher': copy.deepcopy(result.get('tracking_matcher', {
+            'name': 'released-model-internal-matcher',
+            'version': 0,
+        })),
+        'exclusion_mask_policy': result.get(
+            'exclusion_mask_policy',
+            root_tracking.DEFAULT_EXCLUSION_MASK_POLICY,
+        ),
+        'exclusion_masks': copy.deepcopy(result.get('exclusion_masks', {
+            'observation0_present': False,
+            'observation1_present': False,
+            'observation0_pixels': 0,
+            'observation1_pixels': 0,
+            'combined_pixels': 0,
+        })),
         'statistics': copy.deepcopy(result['statistics']),
     }
 
@@ -95,7 +121,9 @@ class PipelineRun:
         self.detection_func = detection_func or root_detection.process_image
         self.tracking_func = tracking_func or root_tracking.process
         self.cancel_event = threading.Event()
+        self.settings.cancel_event = self.cancel_event
         self.lock = threading.RLock()
+        self.settings.operation_progress_callback = self._operation_progress
         self.thread = None
 
         self.images = {}
@@ -107,6 +135,7 @@ class PipelineRun:
                 'stage': 'detection',
                 'result': None,
                 'error': None,
+                'attempts': 0,
             }
 
         self.pairs = []
@@ -120,6 +149,7 @@ class PipelineRun:
                 'stage': 'tracking',
                 'result': None,
                 'error': None,
+                'attempts': 0,
             })
 
     def start(self) -> None:
@@ -143,13 +173,13 @@ class PipelineRun:
             if self.state not in TERMINAL_RUN_STATES:
                 raise RuntimeError('Cannot retry an active pipeline run.')
             for item in self.images.values():
-                if item['state'] == 'failed':
+                if item['state'] in ['failed', 'cancelled']:
                     item.update(state='queued', result=None, error=None)
             for item in self.pairs:
-                if item['state'] in ['failed', 'skipped']:
+                if item['state'] in ['failed', 'skipped', 'cancelled']:
                     item.update(state='queued', result=None, error=None)
             if not self._queued_items():
-                raise RuntimeError('No failed or skipped items are available to retry.')
+                raise RuntimeError('No failed, skipped, or cancelled items are available to retry.')
             self.state = 'queued'
             self.start()
 
@@ -204,7 +234,20 @@ class PipelineRun:
 
     def _set_current(self, stage:str, item_id:str) -> None:
         with self.lock:
-            self.current = {'stage': stage, 'item_id': item_id}
+            self.current = {
+                'stage': stage,
+                'item_id': item_id,
+                'progress': 0.0,
+                'description': '',
+            }
+            self.updated_at = time.time()
+
+    def _operation_progress(self, value:float, description:str='') -> None:
+        with self.lock:
+            if self.current is None:
+                return
+            self.current['progress'] = max(0.0, min(1.0, float(value)))
+            self.current['description'] = description
             self.updated_at = time.time()
 
     def _cancel_remaining(self) -> None:
@@ -226,11 +269,20 @@ class PipelineRun:
                     break
 
                 self._set_current('detection', filename)
-                self._set_item(item, state='detecting', error=None)
+                self._set_item(
+                    item,
+                    state='detecting',
+                    error=None,
+                    attempts=item['attempts'] + 1,
+                )
                 try:
                     image_path = os.path.join(self.cache_path, filename)
                     result = self.detection_func(image_path, self.settings)
                     self._set_item(item, state='completed', result=_serialize_detection(result))
+                except jobs.OperationCancelled:
+                    self._set_item(item, state='cancelled', result=None, error=None)
+                    self._cancel_remaining()
+                    break
                 except Exception as exc:
                     traceback.print_exc()
                     self._set_item(item, state='failed', error=_error('detection', filename, exc))
@@ -252,11 +304,17 @@ class PipelineRun:
                         'item_id': item['id'],
                         'stage': 'tracking',
                         'retryable': True,
+                        'diagnostic_id': jobs.new_diagnostic_id(),
                     })
                     continue
 
                 self._set_current('tracking', item['id'])
-                self._set_item(item, state='tracking', error=None)
+                self._set_item(
+                    item,
+                    state='tracking',
+                    error=None,
+                    attempts=item['attempts'] + 1,
+                )
                 try:
                     path0 = os.path.join(self.cache_path, filename0)
                     path1 = os.path.join(self.cache_path, filename1)
@@ -268,10 +326,15 @@ class PipelineRun:
                             'item_id': item['id'],
                             'stage': 'tracking',
                             'retryable': True,
+                            'diagnostic_id': jobs.new_diagnostic_id(),
                         })
                     else:
                         state = 'completed' if result['success'] else 'review_required'
                         self._set_item(item, state=state, result=_serialize_tracking(result))
+                except jobs.OperationCancelled:
+                    self._set_item(item, state='cancelled', result=None, error=None)
+                    self._cancel_remaining()
+                    break
                 except Exception as exc:
                     traceback.print_exc()
                     self._set_item(item, state='failed', error=_error('tracking', item['id'], exc))
@@ -367,15 +430,21 @@ class PipelineManager:
             raise ValueError('Input filenames must be unique.')
 
         for filename in filenames:
-            if not filename or os.path.basename(filename) != filename:
-                raise ValueError('Invalid input filename: {!r}'.format(filename))
-            extension = os.path.splitext(filename)[1].lower()
-            if extension not in SUPPORTED_IMAGE_EXTENSIONS:
-                raise ValueError(
-                    'Unsupported input format for {}. Use PNG, JPEG, TIFF, or TIF.'.format(filename)
+            try:
+                security.safe_resolve(
+                    self.cache_path,
+                    filename,
+                    SUPPORTED_IMAGE_EXTENSIONS,
+                    must_exist=True,
                 )
-            if not os.path.isfile(os.path.join(self.cache_path, filename)):
-                raise ValueError('Uploaded input is missing: {}'.format(filename))
+            except security.ValidationError as exc:
+                if exc.code == 'file_not_found':
+                    raise ValueError('Uploaded input is missing: {}'.format(filename))
+                if exc.code == 'unsupported_file_type':
+                    raise ValueError(
+                        'Unsupported input format for {}. Use PNG, JPEG, TIFF, or TIF.'.format(filename)
+                    )
+                raise ValueError(str(exc))
 
         pairs = []
         known = set(filenames)

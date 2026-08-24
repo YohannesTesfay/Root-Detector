@@ -10,6 +10,7 @@ x-rootdetector-core: &rootdetector-core
     INSTANCE_PATH: /workspace
     ROOT_PATH: /workspace
     PYTHONPATH: /workspace
+    ROOTDETECTOR_ALLOW_CONTAINER_BIND: "1"
   volumes:
     - .:/workspace
 
@@ -39,8 +40,13 @@ services:
         tests/testcases/test_postprocessing.py
         tests/testcases/test_pipeline.py
         tests/testcases/test_pipeline_api.py
+        tests/testcases/test_security.py
         tests/testcases/test_segmentation_cache.py
+        tests/testcases/test_training.py
+        tests/testcases/test_training_jobs.py
         tests/testcases/test_tracking_csv.py
+        tests/testcases/test_tracking_masks.py
+        tests/testcases/test_tracking_matcher.py
 
   model-fetch:
     <<: *rootdetector-core
