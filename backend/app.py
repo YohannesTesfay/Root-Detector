@@ -20,6 +20,7 @@ class App(BaseApp):
         backend.settings.ensure_pretrained_models()
         
         super().__init__(*args, **kw)
+        self.training_results = {}
         if self.is_reloader:
             return
 
@@ -78,6 +79,10 @@ class App(BaseApp):
             'n_matched_points'   : result['n_matched_points'],
             'tracking_model'     : result['tracking_model'],
             'segmentation_model' : result['segmentation_model'],
+            'tracking_matcher'   : result.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
             'statistics'         : result['statistics'],
         })
     
@@ -149,9 +154,14 @@ class App(BaseApp):
     #override    #TODO: unify
     def training(self):
         requestform  = flask.request.get_json(force=True)
-        options      = requestform['options']
-        if options['training_type'] not in ['detection', 'exclusion_mask']:
-            raise NotImplementedError()
+        try:
+            options = backend.training.parse_training_options(requestform['options'])
+        except (KeyError, backend.training.TrainingOptionsError) as exc:
+            return flask.jsonify({
+                'code': 'invalid_training_options',
+                'message': str(exc),
+                'retryable': False,
+            }), 400
 
         imagefiles   = requestform['filenames']
         imagefiles   = [os.path.join(self.cache_path, fname) for fname in imagefiles]
@@ -159,6 +169,45 @@ class App(BaseApp):
         if not all([os.path.exists(fname) for fname in imagefiles]) or not all(targetfiles):
             flask.abort(404)
         
-        backend.training.start_training(imagefiles, targetfiles, options, self.settings)
-        return 'OK'
+        result = backend.training.start_training(imagefiles, targetfiles, options, self.settings)
+        if not isinstance(result, backend.training.TrainingResult):
+            legacy_states = {
+                'OK': 'completed',
+                'INTERRUPTED': 'cancelled',
+                'FAILED': 'failed',
+            }
+            result = backend.training.TrainingResult(
+                legacy_states.get(result, 'failed'),
+            )
+        self.training_results[options['training_type']] = result
+        response = result.to_dict()
+        response.update({
+            # Keep the old field for clients built before explicit states.
+            'result': {
+                'completed': 'OK',
+                'cancelled': 'INTERRUPTED',
+                'failed': 'FAILED',
+            }[result.state],
+            'effective_options': {
+                'training_type': options['training_type'],
+                'epochs': options['epochs'],
+                'learning_rate': options['learning_rate'],
+            },
+        })
+        return flask.jsonify(response), 500 if result.state == 'failed' else 200
+
+    def stop_training(self):
+        backend.training.request_stop(self.settings)
+        return flask.jsonify({'stop_requested': True})
+
+    def save_model(self):
+        modeltype = flask.request.args.get('options[training_type]', 'detection')
+        result = self.training_results.get(modeltype)
+        if result is None or not result.completed:
+            return flask.jsonify({
+                'code': 'training_not_completed',
+                'message': 'Only a successfully completed training run can be saved.',
+                'retryable': False,
+            }), 409
+        return super().save_model()
     

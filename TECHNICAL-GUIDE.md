@@ -48,7 +48,7 @@ Detection retains a soft root-probability array for tracking and separately crea
 
 The JSON manifest records the schema, artifact kind, input name/hash/size, selected model name/hash/size, storage type, and array shape. A changed input or detection model invalidates the cache. Detection and tracking therefore segment each compatible image once.
 
-Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. It matches points, interpolates a deformation field, warps the first probability map, and creates RGB/RGBA turnover maps. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
+Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. The released model extracts descriptors; the application matches them in bounded batches with progress and cancellation checks between batches. It then interpolates a deformation field, warps the first probability map, and creates RGB/RGBA turnover maps. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
 
 Tracking exports include cached segmentations, a growth map, matched-point/model metadata in JSON, pair CSV statistics, and combined `tracking_results.zip`. CSV output uses the declared same/decay/growth/background/mask column order and Python's CSV quoting.
 
@@ -152,7 +152,7 @@ Tracking remains browser-only. Training is still part of the legacy path and has
 | `POST /file_upload` | Store an uploaded file in the cache |
 | `POST /api/pipeline/runs` | Validate sources/pairs and start a run |
 | `GET /api/pipeline/runs/<id>` | Return progress, item states, errors, and results |
-| `POST /api/pipeline/runs/<id>/cancel` | Request cancellation between operations |
+| `POST /api/pipeline/runs/<id>/cancel` | Request cooperative cancellation of the active operation |
 | `POST /api/pipeline/runs/<id>/retry` | Retry failed detections and failed/skipped pairs |
 | `GET /process_image/<name>` | Run the legacy single-image detection path |
 | `GET/POST /process_root_tracking` | Run or manually correct one tracking pair |
@@ -167,7 +167,7 @@ The service has no authentication, CSRF protection, or multi-user isolation. Kee
 
 The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct archive inspection shows `main.bat`, `main/main.exe`, and `models/pretrained_models.txt`; it does not contain `main.py`. Its launcher sets `ROOT_PATH`, runs `main\main.exe`, and pauses so the console remains visible.
 
-The release builder in this repository produces the same directory-bundle/full-ZIP format. Future packages built from this branch preserve `main.bat` and add `Start RootDetector.bat` as a descriptive alias.
+The release builder in this repository produces the same directory-bundle/full-ZIP format. Future packages built from this branch preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the exact source commit and GitHub Actions run.
 
 The launcher:
 
@@ -193,11 +193,11 @@ Recommended release sequence:
 1. Push the branch and open a pull request against the fork's `main` branch.
 2. Review and merge after the Docker and browser results are recorded.
 3. In GitHub, open **Actions → Build Windows Binaries → Run workflow** and choose the desired branch or tag.
-4. Wait for the Windows job and download its `binaries` workflow artifact.
+4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
 5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
 6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
 
-The workflow now fetches and verifies models before building and uses `actions/upload-artifact@v4` instead of the retired v3 action. PyInstaller cannot cross-build a Windows application from macOS or Linux, so the Windows package remains unverified until this workflow and a real Windows acceptance test pass.
+The workflow fetches and verifies models before building and uses Node-24-native checkout, Python-setup, and artifact actions. It publishes only the full portable ZIP; the legacy partial update ZIP is intentionally not a user artifact. Verify `BUILD-INFO.txt` when recording acceptance evidence. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every package still requires a real Windows acceptance test.
 
 ## Build Commands
 
@@ -208,7 +208,7 @@ python fetch_pretrained_models.py
 python build.py --zip --prune-torchlibs
 ```
 
-Artifacts are written under `builds/`. The full ZIP is the package for new users. The smaller `.update.zip` only updates an existing installation and must not be offered as the complete download.
+Artifacts are written under `builds/`. The full ZIP is the package for new users. The builder still creates a smaller legacy `.update.zip`, but the GitHub workflow intentionally does not publish it because it is incomplete without a compatible existing installation and has no automatic compatibility or rollback mechanism.
 
 ## Fork Workflow
 
@@ -228,9 +228,9 @@ Keep commits focused and explicitly mention changes to the model manifest, gener
 
 - Python 3.7, PyTorch 1.10, Flask 2.0, PyInstaller 5.1, and the runtime download approach are legacy.
 - Cache contents and automated run state are temporary and not resumable after restart.
-- Inference is sequential and progress between model operations is more precise than progress inside an operation.
+- Inference is sequential. Tracking reports bounded-batch progress and can cancel between matching batches; cancellation during a single released-model descriptor extraction remains cooperative rather than instantaneous.
 - Filename-based pairing requires supported dates and cannot yet be edited through a dedicated pairing interface.
-- The browser training form and backend do not agree on the learning-rate field.
+- Browser training uses `learning_rate`; the backend also accepts the legacy CLI/API alias `lr`. Conflicting dual values are rejected, and the effective value is returned by the training endpoint.
 - The application is a trusted local desktop service, not a hardened multi-user server.
 - Windows packaging, signing, macOS/Linux distributables, accessibility, and dependency modernization remain open roadmap work.
 

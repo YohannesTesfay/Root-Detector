@@ -9,10 +9,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.7'
           #cache: 'pip' # caching pip dependencies
@@ -27,8 +27,8 @@ jobs:
         run: python build.py --zip --prune-torchlibs
 
       - name: Archive binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: binaries
-          path: builds/*.zip
+          name: RootDetector-Windows-portable
+          path: builds/*_DigIT_RootDetector.zip
           if-no-files-found: error

@@ -41,6 +41,9 @@ services:
         tests/testcases/test_pipeline_api.py
         tests/testcases/test_segmentation_cache.py
         tests/testcases/test_tracking_csv.py
+        tests/testcases/test_tracking_matcher.py
+        tests/testcases/test_training_options.py
+        tests/testcases/test_windows_followup_templates.py
 
   model-fetch:
     <<: *rootdetector-core

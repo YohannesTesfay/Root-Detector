@@ -12,8 +12,11 @@ import skimage.morphology
 
 from backend import GLOBALS
 from backend import write_as_png
+from backend import jobs
 from backend import postprocessing
 from backend import root_detection
+from backend import tracking_matcher
+from base.backend.pubsub import PubSub
 from base.backend import paths
 
 
@@ -35,16 +38,20 @@ def process(
     previous_data:tp.Optional[tp.Dict[str, tp.Any]]=None,
 ) -> tp.Union[TrackingResult, TooManyRootsError]:
     print(f'Performing root tracking on files {filename0} and {filename1}')
+    jobs.raise_if_cancelled(settings)
     matchmodel = settings.models['tracking']
 
     seg0f, seg0 = ensure_segmentation(filename0, settings)
+    jobs.raise_if_cancelled(settings)
     seg1f, seg1 = ensure_segmentation(filename1, settings)
+    jobs.raise_if_cancelled(settings)
     TOO_MANY_ROOTS_THRESHOLD = settings.too_many_roots
     if should_skip_because_too_many_roots(seg0, seg1, TOO_MANY_ROOTS_THRESHOLD):
         cache_output_for_download(filename0, filename1, TOO_MANY_ROOTS_ERROR, {})
         return TOO_MANY_ROOTS_ERROR
     
     exmask0     = ensure_exclusionmask(filename0, settings)
+    jobs.raise_if_cancelled(settings)
     #exmask1     = ensure_exclusionmask(filename1, settings)  #not required
 
     outputname  = f'{filename0}.{os.path.basename(filename1)}'
@@ -53,8 +60,40 @@ def process(
         img0    = torchvision.transforms.ToTensor()(PIL.Image.open(filename0))
         img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
         with GLOBALS.processing_lock:
+            jobs.raise_if_cancelled(settings)
             device  = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
-            output  = matchmodel.bruteforce_match(img0, img1, seg0, seg1, matchmodel, n=5000, cyclic_threshold=4, dev=device) #TODO: larger n
+            def on_progress(value, phase):
+                jobs.raise_if_cancelled(settings)
+                operation_callback = getattr(
+                    settings,
+                    'operation_progress_callback',
+                    None,
+                )
+                if operation_callback is not None:
+                    operation_callback(value, phase)
+                PubSub.publish({
+                    'progress': value,
+                    'image': '{} -> {}'.format(
+                        os.path.basename(filename0),
+                        os.path.basename(filename1),
+                    ),
+                    'stage': 'tracking',
+                    'description': phase,
+                })
+
+            output = tracking_matcher.match_images(
+                matchmodel,
+                img0,
+                img1,
+                seg0,
+                seg1,
+                n=5000,
+                cyclic_threshold=4,
+                device=device,
+                progress_callback=on_progress,
+                cancellation_check=lambda: jobs.raise_if_cancelled(settings),
+            )
+            jobs.raise_if_cancelled(settings)
             print()
             print(len(output['points0']))
             print('Matched percentage:', output['matched_percentage'])
@@ -63,6 +102,7 @@ def process(
             output['n_matched_points'] = len(output['points0'])
             output['tracking_model']     = settings.active_models['tracking']
             output['segmentation_model'] = settings.active_models['detection']
+            output['tracking_matcher'] = tracking_matcher.provenance()
     else:
         output      = {
             'points0'            : np.asarray(previous_data['points0']).reshape(-1,2),
@@ -70,6 +110,10 @@ def process(
             'n_matched_points'   : previous_data['n_matched_points'],
             'tracking_model'     : previous_data['tracking_model'],
             'segmentation_model' : previous_data['segmentation_model'],
+            'tracking_matcher'   : previous_data.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
         }
         corrections = np.array(previous_data['corrections']).reshape(-1,4)
         if len(corrections)>0:
@@ -89,6 +133,7 @@ def process(
     else:
         #dummy interpolation map
         imap    = matchmodel.interpolation_map(np.zeros([1,2]), np.zeros([1,2]), seg0.shape)
+    jobs.raise_if_cancelled(settings)
     
     np.save(f'{outputname}.imap.npy', imap.astype('float16'))  #f16 to save space & time
 
@@ -98,6 +143,7 @@ def process(
         warped_exmask0 = matchmodel.warp(exmask0, imap)
     gmap           = matchmodel.create_growth_map_rgba( warped_seg0>0.5, seg1>0.5, )
     gmap           = paste_exclusionmask(gmap, warped_exmask0)
+    jobs.raise_if_cancelled(settings)
 
     output_file_rgb  = f'{outputname}.growthmap.png'
     output_file_rgba = f'{outputname}.growthmap_rgba.png'
@@ -237,6 +283,10 @@ def cache_output_for_download(
             'n_matched_points'      : output['n_matched_points'],
             'tracking_model'        : output['tracking_model'],
             'segmentation_model'    : output['segmentation_model'],
+            'tracking_matcher'      : output.get('tracking_matcher', {
+                'name': 'released-model-internal-matcher',
+                'version': 0,
+            }),
         })
     )
 

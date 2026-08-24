@@ -20,7 +20,7 @@ RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Dow
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
 2. Open the extracted folder and double-click **`main.bat`**.
 3. Keep the console window open. RootDetector starts its local service and opens the interface in your default browser.
-4. On the first start, allow time for required model and PyTorch files to download. Internet access is required.
+4. On the first start, allow time for required model and PyTorch files to download. Internet access to `download.pytorch.org`, `github.com`, and the configured model hosts is required. If a proxy or firewall blocks a download, correct the connection and run the launcher again.
 
 The published 2023 Windows package uses `main.bat` to launch `main\main.exe`. It contains no `main.py`. New packages built from this repository preserve `main.bat` and also provide the more descriptive `Start RootDetector.bat` alias.
 
@@ -62,9 +62,10 @@ Use **Download All** in the relevant tab to save results before closing the appl
 ## Common Problems
 
 - **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.
+- **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **Start RootDetector.bat** again. Existing verified downloads are reused.
 - **An image is rejected:** use PNG, JPEG, TIFF, or TIF and ensure the file is not damaged.
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.
-- **Tracking says “too many roots”:** increase the threshold in Settings only if the computer has enough memory.
+- **Tracking says “too many roots”:** this safety limit prevents excessive memory use. Use a suitable lower-root pair for tracking; raise the threshold only for a deliberate expert run on adequately resourced hardware.
 - **Tracking requires review:** too few reliable automatic matches were found. Inspect or correct the pair manually.
 
 ## Data and Privacy
