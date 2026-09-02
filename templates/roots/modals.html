@@ -175,6 +175,11 @@
     </div>
   </div>
   <div class="actions">
+    <a class="ui button" id="pipeline-diagnostics-button" href="/api/diagnostics"
+       download="RootDetector-diagnostics.zip"
+       title="Download logs and system details without input images">
+      Download diagnostics
+    </a>
     <button type="button" class="ui red button" id="pipeline-cancel-button"
             onclick="return RootPipeline.on_cancel(event)" title="Stop the active analysis safely">
       Cancel

@@ -56,6 +56,30 @@ def test_pipeline_cancel_waits_for_backend_acknowledgement():
     assert "run.state == 'cancelling'" in pipeline
 
 
+def test_large_batch_upload_is_resumable_and_errors_are_readable():
+    template = read('templates/roots/modals.html')
+    pipeline = read('frontend/roots/pipeline.js')
+    file_input = read('frontend/roots/file_input.js')
+    security = read('frontend/roots/security.js')
+
+    assert 'id="pipeline-diagnostics-button"' in template
+    assert 'RootsFileInput.ensure_uploaded' in pipeline
+    assert 'Already uploaded in this session.' in pipeline
+    assert 'max_attempts: 3' in pipeline
+    assert "status == 0" in file_input
+    assert '[object Object]' not in pipeline
+    assert 'responseJSON?.message' in security
+    assert 'The connection to the local RootDetector process was interrupted.' in security
+
+
+def test_packaged_startup_failures_remain_actionable():
+    startup = read('main.py')
+
+    assert 'packaged_startup_error' in startup
+    assert 'logs\\\\rootdetector.log' in startup
+    assert 'raise SystemExit(exit_code)' in startup
+
+
 def test_windows_workflow_uploads_only_the_full_portable_zip():
     workflow = read('.github/workflows/build.yml')
 

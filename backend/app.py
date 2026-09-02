@@ -10,6 +10,7 @@ import signal
 import tempfile
 import urllib.parse
 import flask
+from werkzeug.exceptions import HTTPException
 
 import backend
 import backend.jobs
@@ -18,6 +19,7 @@ import backend.training_jobs
 import backend.pipeline
 import backend.security
 import backend.settings
+import backend.diagnostics
 from . import root_detection
 from . import root_tracking
 
@@ -26,6 +28,7 @@ from . import root_tracking
 class App(BaseApp):
     def __init__(self, *args, **kw):
         self.session_token = secrets.token_urlsafe(32)
+        backend.diagnostics.configure_logging()
         # Packaged Windows releases contain the manifest but fetch the large
         # verified model files on first launch. Source/Docker users can prefetch
         # them explicitly to make startup deterministic.
@@ -54,6 +57,7 @@ class App(BaseApp):
         self.view_functions['images'] = self.images
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
+        self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
         self.route('/process_root_tracking', methods=['POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>', methods=['POST'])(self.postprocess_detection)
         self.route('/compile_tracking_results', methods=['POST'])(self.compile_tracking_results)
@@ -74,6 +78,7 @@ class App(BaseApp):
         self.after_request(self.add_security_headers)
         self.register_error_handler(backend.security.ValidationError, self.handle_validation_error)
         self.register_error_handler(413, self.handle_request_too_large)
+        self.register_error_handler(Exception, self.handle_unexpected_error)
 
     @staticmethod
     def json_error(code, message, status, retryable=False, stage='api'):
@@ -152,6 +157,26 @@ class App(BaseApp):
             413,
         )
 
+    def handle_unexpected_error(self, error):
+        if isinstance(error, HTTPException):
+            return error
+        payload = backend.jobs.error_payload(
+            'internal_error',
+            'RootDetector encountered an unexpected error. Download diagnostics and retry.',
+            'api',
+            item_id=flask.request.path,
+            retryable=True,
+            error_type=error.__class__.__name__,
+        )
+        backend.diagnostics.log_exception(
+            payload['diagnostic_id'],
+            'api',
+            flask.request.path,
+            error,
+            self.settings,
+        )
+        return flask.jsonify(payload), 500
+
     def get_session(self):
         return flask.jsonify({
             'token': self.session_token,
@@ -161,6 +186,15 @@ class App(BaseApp):
                 'max_image_pixels': backend.security.MAX_IMAGE_PIXELS,
             },
         })
+
+    def download_diagnostics(self):
+        archive = backend.diagnostics.build_diagnostics_archive(self.settings)
+        return flask.send_file(
+            archive,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='RootDetector-diagnostics.zip',
+        )
 
     def file_upload(self):
         files = flask.request.files.getlist('files')
@@ -215,6 +249,12 @@ class App(BaseApp):
                 else:
                     os.replace(temporary, destination)
                 uploaded.append(dict(metadata, name=name, reused=reused))
+                backend.diagnostics.logger().info(
+                    'Upload accepted: name=%s size=%s reused=%s.',
+                    name,
+                    metadata.get('bytes'),
+                    reused,
+                )
             return flask.jsonify({'files': uploaded})
         finally:
             for _name, temporary, _destination, _metadata in pending:

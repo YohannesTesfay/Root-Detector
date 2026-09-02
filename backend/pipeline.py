@@ -14,6 +14,7 @@ from . import root_detection
 from . import root_tracking
 from . import jobs
 from . import security
+from . import diagnostics
 
 
 TERMINAL_ITEM_STATES = {
@@ -42,7 +43,13 @@ def _snapshot_settings(settings):
     return snapshot
 
 
-def _error(stage:str, item_id:str, exc:Exception, retryable:bool=True) -> dict:
+def _error(
+    stage:str,
+    item_id:str,
+    exc:Exception,
+    retryable:bool=True,
+    settings=None,
+) -> dict:
     payload = jobs.error_payload(
         '{}_failed'.format(stage),
         str(exc) or exc.__class__.__name__,
@@ -51,14 +58,7 @@ def _error(stage:str, item_id:str, exc:Exception, retryable:bool=True) -> dict:
         retryable=retryable,
         error_type=exc.__class__.__name__,
     )
-    print(
-        '[ERROR {}] {} failed for {}: {}'.format(
-            payload['diagnostic_id'],
-            stage,
-            item_id,
-            payload['message'],
-        )
-    )
+    diagnostics.log_exception(payload['diagnostic_id'], stage, item_id, exc, settings)
     return payload
 
 
@@ -136,6 +136,7 @@ class PipelineRun:
                 'result': None,
                 'error': None,
                 'attempts': 0,
+                'elapsed_seconds': None,
             }
 
         self.pairs = []
@@ -150,6 +151,7 @@ class PipelineRun:
                 'result': None,
                 'error': None,
                 'attempts': 0,
+                'elapsed_seconds': None,
             })
 
     def start(self) -> None:
@@ -260,6 +262,12 @@ class PipelineRun:
             self.state = 'running'
             self.updated_at = time.time()
 
+        diagnostics.logger().info(
+            'Pipeline %s started with %d images and %d pairs.',
+            self.id,
+            len(self.images),
+            len(self.pairs),
+        )
         try:
             for filename, item in self.images.items():
                 if item['state'] != 'queued':
@@ -269,6 +277,7 @@ class PipelineRun:
                     break
 
                 self._set_current('detection', filename)
+                item_started_at = time.time()
                 self._set_item(
                     item,
                     state='detecting',
@@ -284,8 +293,50 @@ class PipelineRun:
                     self._cancel_remaining()
                     break
                 except Exception as exc:
-                    traceback.print_exc()
-                    self._set_item(item, state='failed', error=_error('detection', filename, exc))
+                    if (
+                        getattr(self.settings, 'use_gpu', False)
+                        and root_detection.is_retryable_accelerator_error(exc)
+                    ):
+                        first_error = _error(
+                            'detection',
+                            filename,
+                            exc,
+                            settings=self.settings,
+                        )
+                        diagnostics.logger().warning(
+                            '[%s] Retrying %s once after accelerator cleanup.',
+                            first_error['diagnostic_id'],
+                            filename,
+                        )
+                        self._operation_progress(0.0, 'retrying once after GPU memory cleanup')
+                        root_detection.recover_accelerator_memory()
+                        self._set_item(item, attempts=item['attempts'] + 1)
+                        try:
+                            result = self.detection_func(image_path, self.settings)
+                            self._set_item(
+                                item,
+                                state='completed',
+                                result=_serialize_detection(result),
+                            )
+                            continue
+                        except jobs.OperationCancelled:
+                            self._set_item(item, state='cancelled', result=None, error=None)
+                            self._cancel_remaining()
+                            break
+                        except Exception as retry_exc:
+                            exc = retry_exc
+                    self._set_item(
+                        item,
+                        state='failed',
+                        error=_error(
+                            'detection',
+                            filename,
+                            exc,
+                            settings=self.settings,
+                        ),
+                    )
+                finally:
+                    self._set_item(item, elapsed_seconds=time.time() - item_started_at)
 
             for item in self.pairs:
                 if item['state'] != 'queued':
@@ -309,6 +360,7 @@ class PipelineRun:
                     continue
 
                 self._set_current('tracking', item['id'])
+                item_started_at = time.time()
                 self._set_item(
                     item,
                     state='tracking',
@@ -337,14 +389,31 @@ class PipelineRun:
                     break
                 except Exception as exc:
                     traceback.print_exc()
-                    self._set_item(item, state='failed', error=_error('tracking', item['id'], exc))
+                    self._set_item(
+                        item,
+                        state='failed',
+                        error=_error(
+                            'tracking',
+                            item['id'],
+                            exc,
+                            settings=self.settings,
+                        ),
+                    )
+                finally:
+                    self._set_item(item, elapsed_seconds=time.time() - item_started_at)
         except Exception as exc:
             traceback.print_exc()
             with self.lock:
                 self.state = 'failed'
                 self.current = {
                     'stage': 'pipeline',
-                    'error': _error('pipeline', self.id, exc, retryable=False),
+                    'error': _error(
+                        'pipeline',
+                        self.id,
+                        exc,
+                        retryable=False,
+                        settings=self.settings,
+                    ),
                 }
                 self.updated_at = time.time()
             return
@@ -359,6 +428,11 @@ class PipelineRun:
             else:
                 self.state = 'completed'
             self.updated_at = time.time()
+        diagnostics.logger().info(
+            'Pipeline %s finished with state %s.',
+            self.id,
+            self.state,
+        )
 
 
 class PipelineManager:

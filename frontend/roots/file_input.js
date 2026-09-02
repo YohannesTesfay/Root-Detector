@@ -1,12 +1,58 @@
 
 
 RootsFileInput = class extends BaseFileInput{
+    static uploaded_files = new Map()
+
     static show_file_error(error){
         console.error(error)
         $('body').toast({
-            message: error?.message ?? String(error),
+            message: RootSecurity.error_message(error, 'The selected files could not be loaded.'),
             class: 'error', displayTime: 0, closeIcon: true,
         })
+    }
+
+    static file_identity(file){
+        return [file.name, file.size, file.lastModified ?? 0, file.type ?? ''].join('\u0000')
+    }
+
+    static reset_uploaded_files(){
+        this.uploaded_files = new Map()
+    }
+
+    static is_retryable_upload_error(error){
+        const status = Number(error?.status ?? 0)
+        return status == 0 || [408, 425, 429].includes(status) || status >= 500
+    }
+
+    static async ensure_uploaded(file, options={}){
+        const identity = this.file_identity(file)
+        if(this.uploaded_files.get(file.name) == identity)
+            return {skipped: true, attempts: 0}
+
+        const max_attempts = Math.max(1, Number(options.max_attempts ?? 3))
+        for(let attempt = 1; attempt <= max_attempts; attempt += 1){
+            try {
+                const request = upload_file_to_flask(file)
+                if(options.on_request)
+                    options.on_request(request)
+                const response = await request
+                this.uploaded_files.set(file.name, identity)
+                return {response: response, skipped: false, attempts: attempt}
+            } catch(error) {
+                const will_retry = (
+                    attempt < max_attempts
+                    && this.is_retryable_upload_error(error)
+                    && !options.is_cancelled?.()
+                )
+                if(!will_retry)
+                    throw error
+                const delay = 500 * attempt
+                options.on_retry?.(attempt + 1, max_attempts, delay, error)
+                await sleep(delay)
+            } finally {
+                options.on_request?.(undefined)
+            }
+        }
     }
 
     static async on_inputfiles_select(event){
@@ -50,6 +96,7 @@ RootsFileInput = class extends BaseFileInput{
         if(!window.location.href.startsWith('file://'))
             await RootSecurity.request('/clear_cache', 'POST')
 
+        this.reset_uploaded_files()
         GLOBAL.files = []
         for(const file of files)
             GLOBAL.files[file.name] = new InputFile(file)
@@ -146,7 +193,7 @@ RootsFileInput = class extends BaseFileInput{
             )
 
             //upload to flask & postprocess
-            await upload_file_to_flask(resultfile)
+            await this.ensure_uploaded(resultfile)
             const result = await RootSecurity.request(
                 `/postprocess_detection/${encodeURIComponent(resultfile.name)}`,
                 'POST',
@@ -174,7 +221,7 @@ RootsFileInput = class extends BaseFileInput{
             
                         const new_name = `${remove_file_extension(inputfile.name)}.exclusionmask.png`
                         const maskfile = rename_file(selected_mask, new_name)
-                        await upload_file_to_flask(maskfile)
+                        await this.ensure_uploaded(maskfile)
                     }
                 }
             }

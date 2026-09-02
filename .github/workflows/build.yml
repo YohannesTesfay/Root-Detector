@@ -23,6 +23,9 @@ jobs:
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
 
+      - name: Test browser-side upload reliability
+        run: node tests/testcases_js/test_upload_reliability_node.js
+
       - name: Build
         run: python build.py --zip --prune-torchlibs
 

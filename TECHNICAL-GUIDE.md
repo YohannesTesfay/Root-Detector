@@ -96,6 +96,8 @@ docker compose -f compose.core.yml run --rm test-smoke
 
 `test-fast` uses fake models and covers state transitions, continuation after failure, retry, active cancellation, training jobs, matching-batch cancellation/progress, exclusion-mask policies/provenance, settings snapshots, request validation, model download integrity, cache invalidation, and CSV mapping. `test-smoke` loads the released models, processes two dated TIFF fixtures, completes tracking, verifies the export ZIP, and compares the application-owned matcher arrays exactly with the function embedded in the released package.
 
+`node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. The Windows build workflow runs this dependency-free Node check before packaging.
+
 On the August 2026 Intel macOS Docker reference host, the expanded 75-test fast run took about 2.4 seconds and the two-test released-model smoke/equivalence run about 10.4 seconds with warm caches.
 
 ## Native Source Development
@@ -188,6 +190,8 @@ The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct arc
 
 The release builder in this repository produces the same directory-bundle/full-ZIP format. Packages preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the source commit and Actions run.
 
+Runtime diagnostics are written to `logs/rootdetector.log` beside the portable application and rotated at 5 MiB with three backups. `GET /api/diagnostics` produces a support ZIP containing those logs, `BUILD-INFO.txt`, and a privacy-limited system snapshot. It excludes input images, results, and environment variables; logs can contain research filenames and technical paths and should be reviewed before sharing. Pipeline error IDs correlate the browser message with log entries.
+
 The launcher:
 
 1. Changes the working directory to the extracted package, including paths containing spaces.
@@ -215,6 +219,8 @@ Recommended release sequence:
 4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
 5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
 6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
+
+For the large-batch GPU qualification, follow [WINDOWS-GPU-ACCEPTANCE.md](WINDOWS-GPU-ACCEPTANCE.md). Keep candidate releases marked as prereleases until that checklist passes on `ExPlEco_ML_Desk`.
 
 The workflow fetches and verifies models before building and uses the Node-24-native checkout, Python setup, and artifact actions. It publishes only the full portable ZIP. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every release candidate still requires a real Windows acceptance test.
 

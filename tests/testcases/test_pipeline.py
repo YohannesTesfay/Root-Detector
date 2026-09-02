@@ -9,6 +9,7 @@ from backend import jobs, root_tracking
 
 class FakeSettings:
     mode = 'initial'
+    use_gpu = False
     active_models = {
         'detection': 'fake-detection',
         'tracking': 'fake-tracking',
@@ -114,6 +115,35 @@ def test_pipeline_retries_only_failed_items(tmp_path):
     assert len(attempts) == 2
     assert result['state'] == 'completed'
     assert result['images'][filename]['state'] == 'completed'
+
+
+def test_pipeline_retries_cuda_allocation_failure_once(tmp_path):
+    filename = 'gpu-retry.png'
+    create_inputs(str(tmp_path), [filename])
+    attempts = []
+
+    def detect(path, _settings):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise RuntimeError('CUDA out of memory while allocating a tensor')
+        return detection_result(path)
+
+    settings = FakeSettings()
+    settings.use_gpu = True
+    manager = PipelineManager(
+        settings,
+        cache_path=str(tmp_path),
+        detection_func=detect,
+        tracking_func=tracking_result,
+    )
+    run = manager.create([filename], [])
+    assert run.wait(5)
+
+    result = run.snapshot()
+    assert result['state'] == 'completed'
+    assert result['images'][filename]['state'] == 'completed'
+    assert result['images'][filename]['attempts'] == 2
+    assert len(attempts) == 2
 
 
 def test_pipeline_rejects_missing_and_duplicate_inputs(tmp_path):

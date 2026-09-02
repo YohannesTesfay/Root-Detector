@@ -1,6 +1,10 @@
 RootPipeline = class {
     static active_run_id = undefined
     static terminal_states = ['completed', 'completed_with_errors', 'cancelled', 'failed']
+    static phase = 'idle'
+    static upload_cancel_requested = false
+    static current_upload_request = undefined
+    static upload_rows = new Map()
 
     static on_files_ready(){
         this.active_run_id = undefined
@@ -24,38 +28,103 @@ RootPipeline = class {
 
         this.set_running(true)
         this.show_modal()
-        this.set_message('Uploading input images...')
+        this.phase = 'upload'
+        this.upload_cancel_requested = false
+        this.set_message('Preparing analysis: uploading input images...')
         this.set_progress(0, filenames.length)
 
+        let current_filename = undefined
+        let uploaded = 0
         try {
-            let uploaded = 0
             for(const filename of filenames){
-                await upload_file_to_flask(GLOBAL.files[filename])
+                if(this.upload_cancel_requested)
+                    break
+                current_filename = filename
+                this.render_upload(filename, 'uploading', 'Sending to the local RootDetector process...')
+                const upload = await RootsFileInput.ensure_uploaded(GLOBAL.files[filename], {
+                    max_attempts: 3,
+                    on_request: request => this.current_upload_request = request,
+                    is_cancelled: () => this.upload_cancel_requested,
+                    on_retry: (attempt, total, delay, error) => {
+                        const detail = RootSecurity.error_message(error)
+                        this.render_upload(
+                            filename,
+                            'retrying',
+                            `Attempt ${attempt} of ${total} after ${delay} ms — ${detail}`,
+                        )
+                        this.set_message(
+                            `Upload interrupted for ${filename}; retrying attempt ${attempt} of ${total}...`
+                        )
+                    },
+                })
+                if(this.upload_cancel_requested)
+                    break
                 uploaded += 1
                 this.set_progress(uploaded, filenames.length)
-                this.set_message(`Uploaded ${uploaded} of ${filenames.length} images.`)
+                this.render_upload(
+                    filename,
+                    'ready',
+                    upload.skipped ? 'Already uploaded in this session.' : `Uploaded in ${upload.attempts} attempt(s).`,
+                )
+                this.set_message(`Prepared ${uploaded} of ${filenames.length} images.`)
             }
 
+            if(this.upload_cancel_requested){
+                this.show_upload_cancelled(current_filename)
+                return
+            }
+
+            current_filename = undefined
+            this.phase = 'starting'
+            this.set_message('All images are ready. Starting detection and tracking...')
             const response = await this.request('/api/pipeline/runs', 'POST', {
                 filenames: filenames,
                 file_pairs: RootTracking.get_file_pairs(),
             })
             this.active_run_id = response.id
+            this.phase = 'analysis'
             await this.poll_until_finished()
         } catch(error) {
             console.error('Pipeline start failed.', error)
-            this.show_error(this.error_message(error))
+            if(this.upload_cancel_requested)
+                this.show_upload_cancelled(current_filename)
+            else {
+                const stage = this.phase == 'upload' ? 'Upload' : 'Analysis startup'
+                const item = current_filename ? ` for ${current_filename}` : ''
+                const message = `${stage} failed${item}: ${this.error_message(error)}`
+                if(current_filename)
+                    this.render_upload(current_filename, 'failed', this.error_message(error))
+                this.show_error(message)
+            }
             this.set_running(false)
+        } finally {
+            this.current_upload_request = undefined
         }
     }
 
     static async poll_until_finished(){
+        let interrupted_requests = 0
         while(this.active_run_id){
-            const run = await this.request(`/api/pipeline/runs/${this.active_run_id}`, 'GET')
+            let run
+            try {
+                run = await this.request(`/api/pipeline/runs/${this.active_run_id}`, 'GET')
+                interrupted_requests = 0
+            } catch(error) {
+                interrupted_requests += 1
+                if(interrupted_requests > 5 || !RootsFileInput.is_retryable_upload_error(error))
+                    throw error
+                this.set_message(
+                    `Connection interrupted; reconnecting to the active analysis `
+                    + `(attempt ${interrupted_requests} of 5)...`
+                )
+                await sleep(1000 * interrupted_requests)
+                continue
+            }
             this.render(run)
             if(this.terminal_states.includes(run.state)){
                 await this.apply_results(run)
                 this.set_running(false)
+                this.phase = 'idle'
                 return run
             }
             await sleep(300)
@@ -65,6 +134,17 @@ RootPipeline = class {
     static async on_cancel(event){
         event?.preventDefault()
         event?.stopPropagation()
+        if(!this.active_run_id && this.phase == 'upload'){
+            this.upload_cancel_requested = true
+            this.current_upload_request?.abort()
+            this.set_message('Stopping upload. Files already prepared will be reused on retry...')
+            $('#pipeline-cancel-button')
+                .prop('disabled', true)
+                .attr('aria-disabled', 'true')
+                .addClass('disabled loading')
+                .text('Stopping...')
+            return false
+        }
         if(!this.active_run_id)
             return false
         const $button = $('#pipeline-cancel-button')
@@ -167,6 +247,11 @@ RootPipeline = class {
     }
 
     static show_modal(){
+        this.active_run_id = undefined
+        this.phase = 'idle'
+        this.upload_cancel_requested = false
+        this.current_upload_request = undefined
+        this.upload_rows = new Map()
         $('#pipeline-status-table tbody').empty()
         $('#pipeline-error-message').hide().text('')
         $('#pipeline-cancel-button').show()
@@ -184,6 +269,34 @@ RootPipeline = class {
         $('#pipeline-cancel-button').hide()
         $('#pipeline-close-button').show()
         $('#pipeline-status-modal').modal({closable:true})
+        this.phase = 'idle'
+    }
+
+    static show_upload_cancelled(filename){
+        if(filename)
+            this.render_upload(filename, 'cancelled', 'Upload stopped by the user.')
+        $('#pipeline-error-message').hide().text('')
+        this.set_message('Upload stopped. Prepared files will be reused if you run analysis again.')
+        $('#pipeline-cancel-button').hide()
+        $('#pipeline-close-button').show()
+        $('#pipeline-status-modal').modal({closable:true})
+        this.phase = 'idle'
+        this.set_running(false)
+    }
+
+    static render_upload(filename, state, details=''){
+        let $row = this.upload_rows.get(filename)
+        if(!$row){
+            $row = $('<tr>')
+            $('<td>').text(filename).appendTo($row)
+            $('<td>').text('Upload').appendTo($row)
+            $('<td>').appendTo($row)
+            $('<td>').appendTo($row)
+            $('#pipeline-status-table tbody').append($row)
+            this.upload_rows.set(filename, $row)
+        }
+        $row.children().eq(2).text(this.pretty_state(state))
+        $row.children().eq(3).text(details)
     }
 
     static set_message(message){
@@ -218,7 +331,7 @@ RootPipeline = class {
     }
 
     static error_message(error){
-        return error?.responseJSON?.message ?? error?.message ?? String(error)
+        return RootSecurity.error_message(error, 'RootDetector returned an unreadable error.')
     }
 
     static request(url, method, data=undefined){
