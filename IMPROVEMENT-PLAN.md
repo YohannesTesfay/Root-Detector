@@ -8,6 +8,7 @@
 **Windows acceptance checkpoint:** **PASS.** The 24 August 2026 full retest at `4b64890` cleared packaged tracking cancellation/retry, export, memory cleanup, and Settings keyboard access. The focused retest of `e9b86bb` from Actions run `32685037316` then passed two complete Training Stop -> Interrupted -> Retry -> Completed cycles. PR #3 has no remaining packaged-Windows blocker.
 **Branch synchronization checkpoint:** PR #3 was merged into `fix/core-automation`; fork `main` was merged into that branch as `bea78d0`. Its exact head passed Actions run `32690969751` and produced the single `RootDetector-Windows-portable` artifact. The core branch was then merged into `feature/reliability-security-hardening`; the combined 98-test fast suite and two released-model smoke/equivalence tests pass.
 **Fork integration checkpoint:** `fix/core-automation` was merged into fork `main` as `01de4e8`, then the resulting `origin/main` was merged back into `feature/reliability-security-hardening` without content conflicts.
+**Live GPU batch checkpoint:** the 2 September 2026 investigation of the fork-`main` portable build identified a transient upload failure before pipeline creation, hidden browser error details, transient per-image GPU failures, and missing durable diagnostics. The feature branch has not yet passed this 86-image packaged-Windows scenario.
 **Purpose:** make RootDetector scientifically reliable, secure as a local web application, maintainable, and straightforward to install and use on Windows, macOS, and Linux.
 
 This plan covers the complete application: detection, exclusion masks, tracking, training, CLI, Flask service, browser interface, model distribution, tests, packaging, and contributor workflow. Priorities are **P0** (incorrect or unsafe behavior), **P1** (required for a dependable release), **P2** (major usability or maintainability gain), and **P3** (advanced capability).
@@ -92,6 +93,35 @@ The retest also confirms these planned, non-blocking follow-ups:
 - implement an application-owned Windows execution request during active analysis/training, with guaranteed release and elevated `powercfg /requests` acceptance evidence;
 - complete accessible contextual help for result-row view/overlay icons, overflow actions, and training parameter effects/ranges;
 - sign future Windows executables/installers to reduce SmartScreen uncertainty and qualify both 100% and 125% DPI on supported Windows versions.
+
+### Live Windows GPU Batch Investigation — 2 September 2026
+
+A real 86-image run on Windows 11 with an NVIDIA RTX 3080 exposed two recoverable failure classes in the portable build from commit `01de4e8` (Actions run `33058257410`). The progress modal stopped at 81% with `Analysis could not continue` and `[object Object]`, while earlier red notifications named three detection failures.
+
+This evidence characterizes the tested `main` release, not `feature/reliability-security-hardening`. The feature branch adds validated upload and request security, but it still uploads inputs sequentially before run creation and retains the `[object Object]` fallback for unstructured transport failures. It therefore requires the fixes and packaged acceptance below rather than being assumed to have resolved this incident.
+
+The 81% value was upload progress, not analysis progress. Exactly 70 of 86 TIFF files had been re-uploaded before the request for the 71st file, `mescosms_T086_L001_05.04.24_103845_075_EW.tiff`, failed. No pipeline run had yet been created, which explains the empty status table. A later isolated multipart upload of the same 10.8 MB file returned HTTP 200 in 25 ms with an identical SHA-256. The application remained responsive on `/` and `/settings`, so the evidence does not support a permanent server, disk, or input-file failure.
+
+The preceding manual detection pass had produced 84 segmentations and skeletons. The only missing inputs, T015 and T068, were valid single-frame 2550 x 2273 TIFFs. Both completed on isolated GPU retry in about three seconds, leaving 86 complete result sets. This rules out reproducible corruption in those files, but not a transient CUDA, memory, driver, or request failure. The process retained approximately 11.6 GB private memory, 3.7 GB working set, and 4.3 GB GPU memory after the run. The host had 64 GB RAM but only 15 GB free disk space. No exact exception can be recovered because the release writes tracebacks only to the launcher console and the browser converts some jQuery request objects to `[object Object]`.
+
+Treat the following as one focused reliability tranche before asking researchers to run large unattended datasets:
+
+1. **Make failures diagnosable (P0).** Add rotating, persistent application logs outside the temporary cache. Record build/run IDs, stage, filename, input hash, model, device, elapsed time, HTTP status, exception type, diagnostic ID, and CUDA memory before and after failures. Provide a `Download diagnostics` action that excludes source images by default.
+2. **Separate progress phases (P0).** Label upload, detection, tracking, result application, and export independently. During upload, show `Uploading 70 of 86: <filename>` rather than a percentage that can be mistaken for inference progress. Pre-run failures must populate a row with the affected filename and stage.
+3. **Normalize browser errors (P0).** Convert jQuery/fetch failures using structured JSON first, then HTTP status/status text and a bounded plain-text response. Handle status 0 explicitly as an interrupted/local file transport error. Never render an object through `String(error)` when it produces `[object Object]`.
+4. **Make uploads resumable (P0).** Track confirmed uploads by filename, size, modification time, and server acknowledgement. Retry bounded transient failures with backoff, then offer `Retry upload` from the first unconfirmed item. Do not resend files already accepted in the same project. Add a server preflight that reports missing or conflicting inputs before creating a run.
+5. **Stabilize GPU batches (P1).** Keep inference models on the selected device for a bounded batch instead of moving them CPU-to-GPU for every image; use inference mode and measure allocated/reserved memory. Classify CUDA out-of-memory separately, perform at most one controlled cleanup/retry, and offer an explicit CPU retry rather than silently changing devices. Record the effective device in every result manifest.
+6. **Persist recoverable state (P1).** Save uploaded-input manifests, item attempts, terminal results, and the next queued item atomically. A browser refresh or process restart must offer Resume, Retry incomplete, or Export completed results. The cache must not be the only copy of diagnostics.
+7. **Add capacity safeguards (P1).** Estimate input, probability-map, result, and export storage before starting; warn or block when free space is insufficient. Report process RAM/GPU high-water marks and detect unbounded growth across repeated batches.
+
+Required verification:
+
+- frontend tests for JSON, HTML, timeout, connection-loss, and status-0 error shapes;
+- an upload regression that injects a failure on item 71 of 86 and proves retry resumes without retransmitting items 1 through 70;
+- a pipeline regression that injects transient failures for two images, completes the remaining items, and successfully retries only those failures;
+- packaged-Windows GPU runs of the same 86-image set twice in one process, with complete exports, recorded device provenance, and bounded memory growth;
+- low-disk, browser-refresh, application-restart, and diagnostic-download acceptance checks;
+- failure reports must distinguish application defects, browser/file transport failures, CUDA/driver failures, and test-controller limitations.
 
 ## Current Architecture and Constraints
 
