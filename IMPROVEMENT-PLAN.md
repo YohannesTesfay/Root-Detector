@@ -156,6 +156,13 @@ The wider workstation collection provides 430 TIFFs (about 4.42 GiB) across `BH`
 
 RC2 also includes the contained presentation fixes supported by live evidence: wrapped failure notifications, an in-modal Settings close button, normalized browser errors with diagnostic IDs, and explicit zero-pair guidance. A browser/server asset-schema handshake and visible missing-asset recovery screen now prevent a restored browser page from silently combining one extracted release's HTML with another release's server. Stable approval still requires a standards-compliant conversion retest for the affected TIFFs, a valid temporal pair, the tracking-specific export, two in-process batch runs, and recorded CPU/GPU/RAM/disk high-water marks.
 
+The first RC2 build exposed another Windows 11 compatibility defect during live
+startup: GPU discovery depended only on deprecated `wmic`, so an RTX 3080 machine
+downloaded the CPU PyTorch wheel. Detection now probes `nvidia-smi`, then
+PowerShell CIM, and retains WMIC only as a legacy fallback. The Windows build must
+prove that a clean extraction selects the CUDA wheel and reports CUDA as the
+effective inference device before GPU performance evidence is accepted.
+
 ## Current Architecture and Constraints
 
 - `main.py` selects the browser application or CLI. Root-specific processing lives in `backend/`; shared Flask, settings, file handling, and UI code comes from the `base/` Git submodule.

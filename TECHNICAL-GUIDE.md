@@ -98,7 +98,7 @@ docker compose -f compose.core.yml run --rm test-smoke
 
 `node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. `node tests/testcases_js/test_tracking_utils.js` verifies strict filename dates, consecutive temporal pairing, and rejection of same-day duplicates. The Windows build workflow runs both dependency-free Node checks before packaging.
 
-On the September 2026 Intel macOS Docker reference host, the expanded 105-test fast run took about 3.7 seconds and the two-test released-model smoke/equivalence run about 12.7 seconds with warm caches.
+On the September 2026 Intel macOS Docker reference host, the expanded 108-test fast run took about 3.9 seconds and the two-test released-model smoke/equivalence run about 13.7 seconds with warm caches.
 
 ## Native Source Development
 

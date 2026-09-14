@@ -8,6 +8,10 @@ Use this checklist for the latest portable ZIP built from the Windows batch-reli
 2. Extract the new ZIP into a new folder such as `RootDetector-Windows-batch-rc2`.
 3. Record the ZIP SHA-256 (`Get-FileHash <zip> -Algorithm SHA256`) and the commit and Actions run in `BUILD-INFO.txt`.
 4. Start only with `Start RootDetector.bat`; keep its console open.
+5. On an NVIDIA workstation, confirm the first-launch console selects the CUDA
+   PyTorch wheel and diagnostics report `effective_inference_device` as `cuda`.
+   Current Windows 11 installations may not include deprecated `wmic`; RC2 probes
+   `nvidia-smi` first and PowerShell CIM before retaining WMIC as a final fallback.
 
 ## Primary 86-Image Run
 
