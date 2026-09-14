@@ -58,6 +58,7 @@ class App(BaseApp):
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
         self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
+        self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
         self.route('/process_root_tracking', methods=['POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>', methods=['POST'])(self.postprocess_detection)
         self.route('/compile_tracking_results', methods=['POST'])(self.compile_tracking_results)
@@ -180,6 +181,7 @@ class App(BaseApp):
     def get_session(self):
         return flask.jsonify({
             'token': self.session_token,
+            'asset_schema': backend.security.ASSET_SCHEMA_VERSION,
             'limits': {
                 'max_upload_bytes': backend.security.MAX_UPLOAD_BYTES,
                 'max_upload_files': backend.security.MAX_UPLOAD_FILES,
@@ -195,6 +197,48 @@ class App(BaseApp):
             as_attachment=True,
             download_name='RootDetector-diagnostics.zip',
         )
+
+    def record_client_diagnostic(self):
+        data = flask.request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise backend.security.ValidationError(
+                'Client diagnostics must be a JSON object.',
+                'invalid_client_diagnostic',
+            )
+
+        def clean_field(name, limit, required=False):
+            value = data.get(name, '')
+            if not isinstance(value, str) or (required and not value.strip()):
+                raise backend.security.ValidationError(
+                    '{} must be text.'.format(name),
+                    'invalid_client_diagnostic',
+                )
+            return ' '.join(value.split())[:limit]
+
+        stage = clean_field('stage', 64, required=True)
+        item_id = clean_field('item_id', 300)
+        message = clean_field('message', 2000, required=True)
+        error_type = clean_field('error_type', 100)
+        status = data.get('status')
+        if status is not None and (
+            isinstance(status, bool) or not isinstance(status, (int, float))
+        ):
+            raise backend.security.ValidationError(
+                'status must be numeric.',
+                'invalid_client_diagnostic',
+            )
+
+        diagnostic_id = backend.jobs.new_diagnostic_id()
+        backend.diagnostics.logger().warning(
+            '[%s] Browser %s failed for %s: %s type=%s status=%s.',
+            diagnostic_id,
+            stage,
+            item_id or '-',
+            message,
+            error_type or '-',
+            status if status is not None else '-',
+        )
+        return flask.jsonify({'diagnostic_id': diagnostic_id}), 202
 
     def file_upload(self):
         files = flask.request.files.getlist('files')

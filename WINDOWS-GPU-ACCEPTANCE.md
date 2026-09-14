@@ -1,11 +1,11 @@
 # Windows GPU Release-Candidate Acceptance
 
-Use this checklist for the portable ZIP built from `fix/windows-batch-reliability` on `ExPlEco_ML_Desk`. This is a release-candidate test, not approval of scientific model quality.
+Use this checklist for the latest portable ZIP built from the Windows batch-reliability branch on `ExPlEco_ML_Desk`. This is a release-candidate test, not approval of scientific model quality.
 
 ## Protect the Existing Installation
 
 1. Keep the previous tested folder unchanged.
-2. Extract the new ZIP into a new folder such as `RootDetector-Windows-batch-rc1`.
+2. Extract the new ZIP into a new folder such as `RootDetector-Windows-batch-rc2`.
 3. Record the ZIP SHA-256 (`Get-FileHash <zip> -Algorithm SHA256`) and the commit and Actions run in `BUILD-INFO.txt`.
 4. Start only with `Start RootDetector.bat`; keep its console open.
 
@@ -33,3 +33,38 @@ If an upload fails, take a screenshot, select **Run Analysis** again without rel
 Provide the ZIP hash, `BUILD-INFO.txt`, screenshots of each phase and final summary, result counts, timings, CPU/GPU/RAM/disk observations, browser console errors if any, and `RootDetector-diagnostics.zip`. Do not include research images unless separately authorized.
 
 Acceptance is **PASS** only if both full runs terminate truthfully, all expected exports open, failures are actionable and correlated to logs, retry does not repeat confirmed uploads, and no unbounded resource growth is observed. Otherwise report **FAIL** or **BLOCKED** with the exact failed step.
+
+## RC1 Observation
+
+RC1 completed 86/86 automated detections. T034 and T047 had failed only in the preceding manual **Process All** path and then completed on the automated pipeline's first attempt. Because this dataset produced zero tracking pairs, the observation is a detection-only partial PASS. RC2 must confirm that long error notifications wrap, transient result retrieval is retried, and any browser-side failure appears in diagnostics with an ID.
+
+The zero-pair result is expected for this dataset: all 86 files have different prefixes before their dates, so none represents a later observation of the same site. A non-scientific smoke pair (`T093` to `T104`) was submitted directly to exercise the engine. Tracking finished in 12.88 seconds with zero matches and `review_required`; this is a mechanical PASS but must not be interpreted as a growth result. Full tracking acceptance still requires two or more dates for the same tube/site prefix.
+
+Do not load a detection-results ZIP as new input images. Keep the original images loaded and use **Load Annotations** only when intentionally restoring compatible annotations. A valid training acceptance set must contain independently reviewed ground-truth segmentation images; automated predictions alone are not training labels. Until the revised RC2 gate is implemented, limit training to a small disposable set, monitor free disk space, and stop if the system drive approaches 10 GB free.
+
+## 10 September Diagnostics Follow-up
+
+The 43-image `HH` detection run completed 32 items and rejected 11 at processing time with libtiff `LZWDecode` errors. A live four-file reproduction confirmed that one known-good TIFF processes while three affected TIFFs fail at scanline 0. Current Pillow/libtiff on macOS fails on the same files, although Windows' permissive image decoder opens them. Treat these as malformed/non-standard LZW inputs, not GPU or tracking failures. RC2 must reject them during upload/input preparation, before inference, with conversion guidance; acceptance must include one valid image, one truncated/corrupt image, and one affected HH image converted to a standards-compliant TIFF or PNG.
+
+The archived tracking exercise is not scientific tracking evidence. It loaded six detection-result folders as 12 new segmentation/skeleton images and paired each segmentation with its skeleton. The resulting six pairs are generated artifacts from the same observation, not consecutive dates. Repeat tracking with original images from the same tube/site prefix at two or more dates, verify the proposed pair names and order before starting, and inspect the tracking-specific export.
+
+Before RC2 approval, also switch between two extracted builds that use the same loopback port. A restored/stale browser tab must show an explicit version-mismatch or missing-assets recovery message rather than `RootSecurity is not defined`. Verify the Settings close button remains inside the modal and long failure notifications wrap without clipping at 100% and 125% display scaling.
+
+## Available Cross-Site Test Collection
+
+The `root scans` directory contains 430 TIFFs (about 4.42 GiB) across 11 folders. All names contain parseable dates and no exact filenames are duplicated. Native metadata inspection found 428 images at 2550 x 2273 and two portrait images in `NZ` at 2273 x 2550. A strict Python 3.7/Pillow 7 decode passed 16 representative files covering every folder, both orientations, spaces/semicolons, and two dates; only the deliberately included known-bad `HH` TIFF failed.
+
+| Folder | Files | Observation date(s) | Primary acceptance use |
+|---|---:|---|---|
+| BH | 42 | 2026-04-02 | Detection batch and `BH-R` naming |
+| DE | 33 | 2026-04-13 | Same-day duplicate warning; must not auto-track |
+| FS | 40 | 2026-04-14 | Detection batch |
+| GR | 44 | 2026-04-12 | Largest folder/batch |
+| HH | 43 | 2026-03-30 | Malformed-LZW rejection and converted-file retry |
+| KA1 / KA2 | 39 / 43 | 2026-04-10 | Spaces and semicolons in filenames |
+| KA3 | 40 | 2026-04-10 and 2026-04-11 | Multi-date but zero-valid-pair check |
+| KO | 43 | 2026-04-09 | Detection batch |
+| NZ | 25 | 2026-03-31 | Portrait-orientation coverage |
+| WE | 38 | 2026-04-08 and 2026-04-09 | Multi-date but zero-valid-pair check |
+
+None of these folders contains the same exact observation prefix at two distinct dates, even when all folders are combined. They can qualify detection, input handling, orientation, batching, failure isolation, disk use, and zero-pair guidance, but not scientific tracking. `DE` contains duplicate same-day scans for `Ref_T019_L001_` and `Ref_T021_L001_`. RC2 now rejects both ambiguous groups, creates zero pairs, and identifies the affected date and filenames. Dependency-free Node regression tests and a real-browser test with the four DE filenames confirm this behavior. Run folders separately first, then a controlled combined stress test after disk preflight and cleanup behavior pass.

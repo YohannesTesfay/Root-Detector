@@ -76,10 +76,15 @@ RootPipeline = class {
 
             current_filename = undefined
             this.phase = 'starting'
-            this.set_message('All images are ready. Starting detection and tracking...')
+            const file_pairs = RootTracking.get_file_pairs()
+            this.set_message(
+                file_pairs.length
+                    ? `All images are ready. Starting detection and ${file_pairs.length} tracking pair(s)...`
+                    : 'All images are ready. Starting detection only; no valid tracking pairs were found.'
+            )
             const response = await this.request('/api/pipeline/runs', 'POST', {
                 filenames: filenames,
-                file_pairs: RootTracking.get_file_pairs(),
+                file_pairs: file_pairs,
             })
             this.active_run_id = response.id
             this.phase = 'analysis'

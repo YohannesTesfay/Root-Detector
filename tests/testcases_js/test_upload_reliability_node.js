@@ -14,6 +14,10 @@ global.sleep = async () => {}
 global.upload_file_to_flask = undefined
 
 vm.runInThisContext(
+    fs.readFileSync(path.join(repository, 'frontend/roots/util.js'), 'utf8'),
+    {filename: 'util.js'},
+)
+vm.runInThisContext(
     fs.readFileSync(path.join(repository, 'frontend/roots/security.js'), 'utf8'),
     {filename: 'security.js'},
 )
@@ -36,6 +40,27 @@ async function test_error_normalization(){
         RootSecurity.error_message({message: '[object Object]'}),
         '[object Object]',
     )
+}
+
+
+async function test_result_fetch_retry(){
+    let calls = 0
+    global.fetch = async () => {
+        calls += 1
+        if(calls == 1)
+            throw new TypeError('temporary connection failure')
+        return {ok: true, status: 200, blob: async () => 'result-blob'}
+    }
+    assert.strictEqual(await fetch_as_blob('/images/result.png'), 'result-blob')
+    assert.strictEqual(calls, 2)
+
+    calls = 0
+    global.fetch = async () => {
+        calls += 1
+        return {ok: false, status: 404}
+    }
+    await assert.rejects(fetch_as_blob('/images/missing.png'), /\(404\)/)
+    assert.strictEqual(calls, 1)
 }
 
 
@@ -77,6 +102,7 @@ async function test_item_71_resume(){
 
 Promise.resolve()
     .then(test_error_normalization)
+    .then(test_result_fetch_retry)
     .then(test_item_71_resume)
     .then(() => console.log('Browser-side upload reliability tests passed.'))
     .catch(error => {

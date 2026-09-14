@@ -49,7 +49,7 @@ rootdetector-exclusionmask-<cache-key>.*
 
 The JSON manifest records the schema and operation versions, input name/hash/size, selected model or custom-mask hash, storage type, array shape, and hashes of the cached array and preview. A changed dependency or damaged artifact selects a new key or triggers recomputation. Detection and tracking therefore segment each compatible image once without silently reusing stale work.
 
-Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. `backend/tracking_matcher.py` uses the released model for descriptor extraction and owns a versioned, cancellable copy of the released 2022 brute-force algorithm. It matches points in 512-point batches, interpolates a deformation field, warps the first probability and exclusion masks into observation-2 coordinates, and creates RGB/RGBA turnover maps. The warped first exclusion mask and native second mask use the selected `union`, `intersection`, `first`, or `second` rule; conservative `union` is the default. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
+Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. If no prefix occurs at two or more dates, the interface explicitly identifies the run as detection-only and shows the required naming pattern. `backend/tracking_matcher.py` uses the released model for descriptor extraction and owns a versioned, cancellable copy of the released 2022 brute-force algorithm. It matches points in 512-point batches, interpolates a deformation field, warps the first probability and exclusion masks into observation-2 coordinates, and creates RGB/RGBA turnover maps. The warped first exclusion mask and native second mask use the selected `union`, `intersection`, `first`, or `second` rule; conservative `union` is the default. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
 
 Tracking exports include cached segmentations, a growth map, matched-point/model/matcher metadata in JSON, pair CSV statistics, and combined `tracking_results.zip`. Pair metadata and the top-level manifest record matcher name/version/batch size, the exclusion policy, mask presence, source/combined pixel counts, and coordinate system. CSV output uses the declared same/decay/growth/background/mask column order and Python's CSV quoting.
 
@@ -96,9 +96,9 @@ docker compose -f compose.core.yml run --rm test-smoke
 
 `test-fast` uses fake models and covers state transitions, continuation after failure, retry, active cancellation, training jobs, matching-batch cancellation/progress, exclusion-mask policies/provenance, settings snapshots, request validation, model download integrity, cache invalidation, and CSV mapping. `test-smoke` loads the released models, processes two dated TIFF fixtures, completes tracking, verifies the export ZIP, and compares the application-owned matcher arrays exactly with the function embedded in the released package.
 
-`node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. The Windows build workflow runs this dependency-free Node check before packaging.
+`node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. `node tests/testcases_js/test_tracking_utils.js` verifies strict filename dates, consecutive temporal pairing, and rejection of same-day duplicates. The Windows build workflow runs both dependency-free Node checks before packaging.
 
-On the August 2026 Intel macOS Docker reference host, the expanded 75-test fast run took about 2.4 seconds and the two-test released-model smoke/equivalence run about 10.4 seconds with warm caches.
+On the September 2026 Intel macOS Docker reference host, the expanded 105-test fast run took about 3.7 seconds and the two-test released-model smoke/equivalence run about 12.7 seconds with warm caches.
 
 ## Native Source Development
 
@@ -191,6 +191,8 @@ The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct arc
 The release builder in this repository produces the same directory-bundle/full-ZIP format. Packages preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the source commit and Actions run.
 
 Runtime diagnostics are written to `logs/rootdetector.log` beside the portable application and rotated at 5 MiB with three backups. `GET /api/diagnostics` produces a support ZIP containing those logs, `BUILD-INFO.txt`, and a privacy-limited system snapshot. It excludes input images, results, and environment variables; logs can contain research filenames and technical paths and should be reviewed before sharing. Pipeline error IDs correlate the browser message with log entries.
+
+Browser-only failures can be reported to `POST /api/diagnostics/client`; fields are length-bounded, normalized to one line, and written with a correlation ID. Result-image downloads retry only interrupted, timeout, rate-limit, and server-error responses. Permanent client errors such as HTTP 404 fail immediately. In portable builds, `torch.__version__` can retain a `+cpu` label even after first-launch replacement libraries make CUDA available, so diagnostics report the effective inference device and CUDA availability separately from package metadata.
 
 The launcher:
 

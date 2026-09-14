@@ -26,6 +26,9 @@ jobs:
       - name: Test browser-side upload reliability
         run: node tests/testcases_js/test_upload_reliability_node.js
 
+      - name: Test tracking filename pairing
+        run: node tests/testcases_js/test_tracking_utils.js
+
       - name: Build
         run: python build.py --zip --prune-torchlibs
 

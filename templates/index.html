@@ -11,6 +11,43 @@
 <html>
 <head>
     <title>DigIT RootDetector</title>
+    <script>
+      window.RootDetectorBoot = {
+        failed_assets: [],
+        asset_failed: function(event) {
+          const element = event.target
+          if(element && ['SCRIPT', 'LINK'].includes(element.tagName))
+            this.failed_assets.push(element.src || element.href || 'unknown asset')
+        },
+        show_recovery: function(error) {
+          const details = error && error.message ? error.message : String(error || '')
+          const box = document.createElement('div')
+          box.setAttribute('role', 'alert')
+          box.style.cssText = 'margin:2rem;padding:1.25rem;border:2px solid #b03060;background:#fff6f6;color:#7a1f35;font:16px/1.5 sans-serif'
+          box.innerHTML = '<strong>RootDetector could not load matching browser files.</strong><br>'
+            + 'Close all old RootDetector tabs, stop other RootDetector copies, then start '
+            + '<code>Start RootDetector.bat</code> from one complete extracted folder and reload.'
+            + (details ? '<br><small></small>' : '')
+          if(details)
+            box.querySelector('small').textContent = details
+          document.body.innerHTML = ''
+          document.body.appendChild(box)
+        },
+        start: async function() {
+          if(this.failed_assets.length || typeof RootDetectorApp == 'undefined') {
+            this.show_recovery(new Error('Missing: ' + this.failed_assets.join(', ')))
+            return
+          }
+          try {
+            await RootDetectorApp.init()
+          } catch(error) {
+            console.error('RootDetector startup failed.', error)
+            this.show_recovery(error)
+          }
+        },
+      }
+      window.addEventListener('error', event => RootDetectorBoot.asset_failed(event), true)
+    </script>
     {# TODO: indent #}
     {% include 'base/scripts.html'   %}
     {% include 'roots/scripts.html'  %}
@@ -19,7 +56,7 @@
 </head>
 
 
-<body onload="{{app}}.init()">
+<body onload="RootDetectorBoot.start()">
 
     {{ top_menu(app)             | indent }}
 

@@ -22,7 +22,11 @@ RootDetection = class extends BaseDetection{
             } catch(error) {
                 failed.push({filename: filename, error: error})
                 $('body').toast({
-                    message: `Processing failed for ${filename}. Continuing with the next image.`,
+                    message: (
+                        `Processing failed for ${filename}. `
+                        + `${RootSecurity.error_message(error)} `
+                        + 'Continuing with the next image.'
+                    ),
                     class: 'error', displayTime: 0, closeIcon: true,
                 })
             }
@@ -55,7 +59,13 @@ RootDetection = class extends BaseDetection{
         } catch(error) {
             console.error(`Processing failed for ${filename}.`, error)
             this.set_failed(filename)
-            throw error
+            const report = await RootSecurity.report_client_error(
+                'manual_detection',
+                filename,
+                error,
+            )
+            const diagnostic = report?.diagnostic_id ? ` [${report.diagnostic_id}]` : ''
+            throw new Error(`${RootSecurity.error_message(error)}${diagnostic}`)
         } finally {
             $(GLOBAL.event_source).off('message', on_message)
         }

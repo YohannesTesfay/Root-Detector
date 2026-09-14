@@ -61,6 +61,8 @@ def test_large_batch_upload_is_resumable_and_errors_are_readable():
     pipeline = read('frontend/roots/pipeline.js')
     file_input = read('frontend/roots/file_input.js')
     security = read('frontend/roots/security.js')
+    styles = read('frontend/roots/styles.css')
+    scripts = read('templates/roots/scripts.html')
 
     assert 'id="pipeline-diagnostics-button"' in template
     assert 'RootsFileInput.ensure_uploaded' in pipeline
@@ -70,6 +72,34 @@ def test_large_batch_upload_is_resumable_and_errors_are_readable():
     assert '[object Object]' not in pipeline
     assert 'responseJSON?.message' in security
     assert 'The connection to the local RootDetector process was interrupted.' in security
+    assert 'report_client_error' in security
+    assert 'overflow-wrap: anywhere' in styles
+    assert 'max-width: calc(100vw - 1.75rem)' in styles
+    assert 'href="roots/styles.css"' in scripts
+
+
+def test_root_page_has_mixed_release_recovery_bootstrap():
+    template = read('templates/index.html')
+    security = read('frontend/roots/security.js')
+
+    assert 'RootDetectorBoot.start()' in template
+    assert 'RootDetector could not load matching browser files.' in template
+    assert 'Close all old RootDetector tabs' in template
+    assert 'rootdetector-web-rc2-1' in security
+
+
+def test_tracking_tab_explains_detection_only_runs():
+    template = read('templates/roots/tracking_tab.html')
+    pipeline = read('frontend/roots/pipeline.js')
+    tracking = read('frontend/roots/tracking.js')
+
+    assert 'No tracking pairs were found' in template
+    assert 'same prefix before the date' in template
+    assert 'Some observations were not paired' in template
+    assert 'Same-day duplicates' in template
+    assert 'plan_tracking_pairs(files)' in tracking
+    assert "issue.code == 'duplicate_date'" in tracking
+    assert 'Starting detection only; no valid tracking pairs were found.' in pipeline
 
 
 def test_packaged_startup_failures_remain_actionable():
@@ -86,6 +116,7 @@ def test_windows_workflow_uploads_only_the_full_portable_zip():
     assert 'actions/checkout@v5' in workflow
     assert 'actions/setup-python@v6' in workflow
     assert 'actions/upload-artifact@v6' in workflow
+    assert 'node tests/testcases_js/test_tracking_utils.js' in workflow
     assert 'path: builds/*_DigIT_RootDetector.zip' in workflow
     assert 'path: builds/*.zip' not in workflow
 

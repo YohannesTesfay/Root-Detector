@@ -80,7 +80,15 @@ def _torch_details():
             'version': getattr(torch, '__version__', 'unknown'),
             'cuda_available': bool(torch.cuda.is_available()),
             'cuda_version': getattr(getattr(torch, 'version', None), 'cuda', None),
+            'effective_inference_device': (
+                'cuda' if torch.cuda.is_available() else 'cpu'
+            ),
         }
+        if details['cuda_available'] and details['cuda_version'] is None:
+            details['runtime_note'] = (
+                'The portable build loads CUDA runtime libraries at first launch; '
+                'the packaged Python metadata can retain the original CPU build label.'
+            )
         if details['cuda_available']:
             details['devices'] = [
                 torch.cuda.get_device_name(index)

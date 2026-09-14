@@ -134,6 +134,23 @@
     callback_on_process_all     = "RootTracking.on_process_all",
     callback_on_download_all    = "RootTrackingDownload.on_download_all"
   ) }}
+  <div class="ui warning message" id="tracking-pairing-message" style="display:none; margin:1em">
+    <div class="header">No tracking pairs were found</div>
+    <p>
+      Detection can still run. To track change over time, load at least two images of the same
+      observation site whose filenames have the same prefix before the date, for example
+      <code>site_T001_L001_01.04.24.tif</code> and <code>site_T001_L001_15.04.24.tif</code>.
+    </p>
+  </div>
+  <div class="ui warning message" id="tracking-pairing-issues-message"
+       role="status" style="display:none; margin:1em">
+    <div class="header">Some observations were not paired</div>
+    <p>
+      Tracking requires one unambiguous image for each observation site and date.
+      Same-day duplicates and filenames without a valid date are excluded.
+    </p>
+    <ul class="list"></ul>
+  </div>
   <table class="ui unstackable celled table accordion" id="tracking-filetable" style="border:0px; margin:0px;">
       <thead>
           <tr>

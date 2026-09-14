@@ -1,8 +1,14 @@
 RootSecurity = class {
     static token = undefined
+    static asset_schema = 'rootdetector-web-rc2-1'
 
     static async initialize(){
         const session = await $.get('/api/session')
+        if(session.asset_schema != this.asset_schema)
+            throw new Error(
+                'RootDetector browser files do not match the running application. '
+                + 'Close old RootDetector tabs, start the intended extracted folder, and reload.'
+            )
         this.token = session.token
         $.ajaxPrefilter((options, _originalOptions, request) => {
             const method = String(options.method ?? options.type ?? 'GET').toUpperCase()
@@ -53,5 +59,21 @@ RootSecurity = class {
             }
         }
         return fallback
+    }
+
+    static async report_client_error(stage, item_id, error){
+        const message = this.error_message(error)
+        try {
+            return await this.request('/api/diagnostics/client', 'POST', {
+                stage: stage,
+                item_id: item_id ?? '',
+                message: message,
+                error_type: error?.name ?? error?.constructor?.name ?? '',
+                status: Number.isFinite(Number(error?.status)) ? Number(error.status) : undefined,
+            })
+        } catch(report_error) {
+            console.error('Could not record browser diagnostic.', report_error)
+            return undefined
+        }
     }
 }
