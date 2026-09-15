@@ -231,14 +231,26 @@ continued truthfully after two failures, and retry selected only those failures.
 Both failed pairs include the 24 August `L003` scan, whose 5152 x 4752 grid is
 16 pixels shorter than the other 5152 x 4768 scans. The released matcher fails
 when combining these unequal arrays. A source-level preflight now reports the
-dimension mismatch before matching; its unit regression passes, but a rebuilt
-Windows candidate must verify the user-facing result. The valid tracking export
+dimension mismatch before matching; its unit regression and rebuilt-Windows
+verification pass. The valid tracking export
 contains 10 `OK` rows and a schema-2 manifest. Outputs look mechanically
 plausible but still require ecological review before scientific acceptance.
 The qualification detection archive was not captured, so export acceptance is
 still incomplete. The controller needed about 23.6 minutes to transfer 15 files
 through the SSH-tunnelled browser; this is test-harness evidence only and must
 not be treated as native Windows upload performance.
+
+The rebuilt package from commit `96e9956` and Actions run `34972004393` now
+qualifies the dimension preflight on the RTX 3080. Three CUDA detections
+completed; both unequal pairs failed in about 0.09 seconds with their exact
+dimensions and diagnostic IDs. Retry reran only those pairs. A separate
+same-grid pair reached tracking, cancelled truthfully, and completed on retry in
+24.8 seconds with 2,883 matches; its schema-2 tracking export passed integrity.
+The 74.9 MB GitHub artifact, its nested portable ZIP, diagnostics ZIP, and
+tracking export all matched their recorded SHA-256 digests. This closes T-011's
+packaged mechanics. It does not close ecological review, the full mixed-batch UI
+replay, detection export capture, native DPI checks, or repeated full-batch
+resource settling.
 
 The old December 2024 guide does not prescribe cropping before tracking. Its
 1000 x 1000 random crops are an evaluation/annotation convenience, and its
@@ -283,7 +295,7 @@ These changes block a trustworthy release.
 | T-008 | P1 | Evaluation metrics can divide by zero for empty target/prediction masks. Red exclusions are not represented as a first-class ignore region. | Define empty-mask and ignore-mask policies, return `null`/not-applicable where scientifically appropriate, and test every boundary case. |
 | T-009 | P1 | “Width” bins appear derived from a skeleton distance transform, which is radius-like unless doubled; units are pixels. | Confirm the measurement definition with researchers, rename or correct it, attach pixel/physical units, and include calibration in exports. |
 | T-010 | P1 — partially implemented | Dates are inferred from filenames; ambiguous observations can group unrelated images. | Calendar validation, chronological pairing, invalid-date warnings, and whole-group rejection of same-day duplicates are implemented. Next preserve source paths as metadata, show parsed sample/date before execution, let users edit assignments, and define a documented two-digit-year policy. |
-| T-011 | P0 — implemented; packaged retest pending | Genuine Eldena tracking exposed unequal source grids: one 5152 x 4752 image among 5152 x 4768 observations caused two late broadcast failures. | Validate both segmentation grids before matching and report the two dimensions with corrective guidance. Never silently crop. A future opt-in alignment/crop workflow must preview and record its transform and pass ecological validation. Rebuild Windows and confirm both affected pairs fail early and actionably. |
+| T-011 | P0 — implemented; packaged mechanics accepted | Genuine Eldena tracking exposed unequal source grids: one 5152 x 4752 image among 5152 x 4768 observations caused two late broadcast failures. | Both grids are now validated before matching and the packaged RTX 3080 retest reports their exact dimensions in about 0.09 seconds. Retry isolation and cancellation/recovery also passed. Never silently crop; any future opt-in alignment workflow must preview and record its transform and pass ecological validation. |
 
 Every result should include a machine-readable manifest with application version, model names and SHA-256 hashes, input hashes, preprocessing and threshold settings, device/provider, calibration, timestamps, units, schema version, and warnings. Tracking should optionally normalize growth/decay by elapsed time. Never silently change a scientific definition: version algorithms and publish migration notes.
 

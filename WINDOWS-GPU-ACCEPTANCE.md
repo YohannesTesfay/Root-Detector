@@ -72,6 +72,15 @@ a GPU, filename-pairing, or pipeline-continuation failure. The source fix now
 rejects unequal grids before matching with an actionable message; rebuild and
 repeat these two pairs to qualify it in the portable application.
 
+Candidate commit `96e9956` and Actions run `34972004393` passed that packaged
+retest on 15 September. All three affected observations completed CUDA
+detection, then both unequal pairs failed in about 0.09 seconds with the exact
+4768 x 5152 / 4752 x 5152 dimensions and a diagnostic ID. Retry incremented
+only the two pair attempts; detections remained at one attempt. A separate
+same-grid 23-25 August pair cancelled truthfully and then completed on retry in
+24.8 seconds with 2,883 matches. Its tracking export passed ZIP integrity and
+contained an `OK` schema-2 statistics row and manifest.
+
 Do not silently crop production data. The December 2024 guide uses random
 1000 x 1000 crops only for manual evaluation/ground truth and says training
 images should preferably be uncropped; it gives no tracking crop/alignment
@@ -93,6 +102,19 @@ Both archives passed integrity checks. The qualification detection archive was
 not captured and remains a retest item. Browser-controller transfer through an
 SSH tunnel took about 23.6 minutes; measure native Windows selection/upload
 separately before treating that as application performance.
+
+The GitHub artifact digest is
+`9b9e7d38063dd8842b04a6f27c45cb962d0eda25aaaa0299144307ce43bd6536`;
+its single nested portable ZIP is
+`5d4f7bfb80ff7cce86f790778f9e0a8b2aaf3430b6949e461b61cb4d9f2a468c`.
+Both ZIP layers passed integrity checks and `BUILD-INFO.txt` identifies the
+expected commit and run. The focused candidate diagnostics digest is
+`e8ee8501b235caf5f56e63fc34de59f31f178ffc3ac038e1eef979db03c62418`;
+it reports CUDA on the RTX 3080. The recovered tracking export digest is
+`cbafa7f07e4fd0cd52b78c198a1649de39c1a8660c69fdd4b5515a4efa914ffe`.
+Post-run private memory was about 11.65 GiB and working set about 5.04 GiB,
+consistent with the earlier run but not a substitute for the planned repeated
+full-batch settling check.
 
 Images from manual or third-party scanners may also be tested. Detection does
 not require a Rhizotron origin, but every input must use a supported, decodable
