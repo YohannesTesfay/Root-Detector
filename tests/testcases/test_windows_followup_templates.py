@@ -24,10 +24,15 @@ def test_file_import_controls_are_native_buttons():
 
 def test_settings_actions_are_keyboard_focusable():
     template = read('templates/roots/modals.html')
+    styles = read('frontend/roots/styles.css')
 
     assert 'aria-label="Close settings"' in template
     assert '<button type="button" class="ui negative button"' in template
     assert '<button type="button" class="ui positive right labeled icon button"' in template
+    assert '</div>\n    <div class="actions">' in template
+    assert '#settings-dialog > .content' in styles
+    assert 'max-height: calc(100vh - 11rem)' in styles
+    assert 'overflow-y: auto' in styles
 
 
 def test_training_can_be_closed_or_retried_after_interruption():

@@ -34,3 +34,9 @@
 #settings-dialog > .header {
     padding-right: 3.5rem;
 }
+
+#settings-dialog > .content {
+    box-sizing: border-box;
+    max-height: calc(100vh - 11rem);
+    overflow-y: auto;
+}
