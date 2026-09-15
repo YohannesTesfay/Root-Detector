@@ -90,6 +90,98 @@ async function test_invalid_dates_are_reported(tracking_utils){
 }
 
 
+async function test_windows_acceptance_fixture_names(tracking_utils){
+    const stressFiles = []
+    for(let site = 1; site <= 5; site += 1){
+        const siteName = String(site).padStart(3, '0')
+        stressFiles.push(
+            `RDTEST_STRESS_S${siteName}_15.04.2026_OBS3.tiff`,
+            `RDTEST_STRESS_S${siteName}_01.04.2026_OBS1.tiff`,
+            `RDTEST_STRESS_S${siteName}_08.04.2026_OBS2.tiff`,
+        )
+    }
+    const stressPlan = tracking_utils.plan_tracking_pairs(stressFiles)
+    assert.strictEqual(stressPlan.pairs.length, 10)
+    assert.deepStrictEqual(stressPlan.issues, [])
+
+    const stablePlan = tracking_utils.plan_tracking_pairs([
+        'RDTEST_STABLE_S001_15.04.2026_OBS3.tiff',
+        'RDTEST_STABLE_S001_01.04.2026_OBS1.tiff',
+        'RDTEST_STABLE_S001_08.04.2026_OBS2.tiff',
+    ])
+    assert.deepStrictEqual(stablePlan.pairs, [
+        [
+            'RDTEST_STABLE_S001_01.04.2026_OBS1.tiff',
+            'RDTEST_STABLE_S001_08.04.2026_OBS2.tiff',
+        ],
+        [
+            'RDTEST_STABLE_S001_08.04.2026_OBS2.tiff',
+            'RDTEST_STABLE_S001_15.04.2026_OBS3.tiff',
+        ],
+    ])
+
+    const edgePlan = tracking_utils.plan_tracking_pairs([
+        'RDTEST_DUPLICATE_S001_08.04.2026_OBS1.tiff',
+        'RDTEST_DUPLICATE_S001_08.04.2026_OBS2.tiff',
+        'RDTEST_DUPLICATE_S001_15.04.2026_OBS3.tiff',
+        'RDTEST_INVALID_S001_31.02.2026_OBS1.tiff',
+    ])
+    assert.deepStrictEqual(edgePlan.pairs, [])
+    assert.deepStrictEqual(
+        edgePlan.issues.map(issue => issue.code).sort(),
+        ['duplicate_date', 'invalid_date'],
+    )
+}
+
+
+async function test_rhizotron_producer_names_keep_levels_separate(tracking_utils){
+    const pilotFiles = [
+        '04_L003_22.08.2026_110357_IMG_0003.JPG',
+        '04_L001_21.08.2026_110358_IMG_0001.JPG',
+        '04_L002_22.08.2026_110356_IMG_0002.JPG',
+        '04_L003_21.08.2026_110359_IMG_0003.JPG',
+        '04_L001_22.08.2026_110355_IMG_0001.JPG',
+        '04_L002_21.08.2026_110358_IMG_0002.JPG',
+    ]
+    const pilotPlan = tracking_utils.plan_tracking_pairs(pilotFiles)
+    assert.deepStrictEqual(pilotPlan.pairs, [
+        [pilotFiles[1], pilotFiles[4]],
+        [pilotFiles[5], pilotFiles[2]],
+        [pilotFiles[3], pilotFiles[0]],
+    ])
+    assert.deepStrictEqual(pilotPlan.issues, [])
+
+    const qualificationFiles = [
+        '04_L003_25.08.2026_110357_IMG_0003.JPG',
+        '04_L001_21.08.2026_110358_IMG_0001.JPG',
+        '04_L002_24.08.2026_110356_IMG_0002.JPG',
+        '04_L003_22.08.2026_110357_IMG_0003.JPG',
+        '04_L001_25.08.2026_110356_IMG_0001.JPG',
+        '04_L002_21.08.2026_110358_IMG_0002.JPG',
+        '04_L003_23.08.2026_110357_IMG_0003.JPG',
+        '04_L001_22.08.2026_110355_IMG_0001.JPG',
+        '04_L002_25.08.2026_110357_IMG_0002.JPG',
+        '04_L003_21.08.2026_110359_IMG_0003.JPG',
+        '04_L001_24.08.2026_110356_IMG_0001.JPG',
+        '04_L002_22.08.2026_110356_IMG_0002.JPG',
+        '04_L003_24.08.2026_110357_IMG_0003.JPG',
+        '04_L001_23.08.2026_110356_IMG_0001.JPG',
+        '04_L002_23.08.2026_110357_IMG_0002.JPG',
+    ]
+    const qualificationPlan = tracking_utils.plan_tracking_pairs(qualificationFiles)
+    assert.strictEqual(qualificationPlan.pairs.length, 12)
+    assert.deepStrictEqual(qualificationPlan.issues, [])
+    assert(qualificationPlan.pairs.every(([first, second]) => (
+        tracking_utils.parse_filename(first).base
+        == tracking_utils.parse_filename(second).base
+    )))
+    assert(qualificationPlan.pairs.every(([first, second]) => (
+        tracking_utils.parse_filename(first).date
+        < tracking_utils.parse_filename(second).date
+    )))
+}
+
+
 load_tracking_utils()
     .then(async tracking_utils => {
         await test_parse_filename(tracking_utils)
@@ -97,6 +189,8 @@ load_tracking_utils()
         await test_valid_consecutive_pairs(tracking_utils)
         await test_same_day_duplicates_are_not_paired(tracking_utils)
         await test_invalid_dates_are_reported(tracking_utils)
+        await test_windows_acceptance_fixture_names(tracking_utils)
+        await test_rhizotron_producer_names_keep_levels_separate(tracking_utils)
     })
     .then(() => console.log('Tracking filename and pairing tests passed.'))
     .catch(error => {

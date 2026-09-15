@@ -56,6 +56,7 @@ def process(
     jobs.raise_if_cancelled(settings)
     seg1f, seg1 = ensure_segmentation(filename1, settings)
     jobs.raise_if_cancelled(settings)
+    validate_tracking_pair_shapes(seg0, seg1)
     TOO_MANY_ROOTS_THRESHOLD = settings.too_many_roots
     if should_skip_because_too_many_roots(seg0, seg1, TOO_MANY_ROOTS_THRESHOLD):
         cache_output_for_download(filename0, filename1, TOO_MANY_ROOTS_ERROR, {})
@@ -208,6 +209,30 @@ def validate_exclusion_mask_policy(policy:tp.Any) -> str:
             )
         )
     return tp.cast(str, policy)
+
+
+def validate_tracking_pair_shapes(
+    segmentation0:np.ndarray,
+    segmentation1:np.ndarray,
+) -> tp.Tuple[int, ...]:
+    """Require comparable pixel grids before matching or turnover analysis."""
+    shape0 = tuple(np.asarray(segmentation0).squeeze().shape)
+    shape1 = tuple(np.asarray(segmentation1).squeeze().shape)
+    if len(shape0) != 2 or len(shape1) != 2:
+        raise ValueError(
+            'Tracking requires two-dimensional segmentations; received {} and {}.'.format(
+                shape0,
+                shape1,
+            )
+        )
+    if shape0 != shape1:
+        raise ValueError(
+            'Tracking requires images with identical pixel dimensions; received '
+            '{} and {}. Use comparable scans of the same location, or explicitly '
+            'align and crop copies before tracking while preserving the originals '
+            'and transformation record.'.format(shape0, shape1)
+        )
+    return shape0
 
 
 def _binary_mask(mask:tp.Optional[np.ndarray], shape:tp.Tuple[int, ...]) -> np.ndarray:

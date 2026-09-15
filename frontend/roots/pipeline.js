@@ -5,6 +5,8 @@ RootPipeline = class {
     static upload_cancel_requested = false
     static current_upload_request = undefined
     static upload_rows = new Map()
+    static upload_failures = new Map()
+    static excluded_pairs = []
 
     static on_files_ready(){
         this.active_run_id = undefined
@@ -34,39 +36,57 @@ RootPipeline = class {
         this.set_progress(0, filenames.length)
 
         let current_filename = undefined
-        let uploaded = 0
+        let attempted = 0
+        const ready_filenames = []
         try {
             for(const filename of filenames){
                 if(this.upload_cancel_requested)
                     break
                 current_filename = filename
                 this.render_upload(filename, 'uploading', 'Sending to the local RootDetector process...')
-                const upload = await RootsFileInput.ensure_uploaded(GLOBAL.files[filename], {
-                    max_attempts: 3,
-                    on_request: request => this.current_upload_request = request,
-                    is_cancelled: () => this.upload_cancel_requested,
-                    on_retry: (attempt, total, delay, error) => {
-                        const detail = RootSecurity.error_message(error)
-                        this.render_upload(
-                            filename,
-                            'retrying',
-                            `Attempt ${attempt} of ${total} after ${delay} ms — ${detail}`,
-                        )
-                        this.set_message(
-                            `Upload interrupted for ${filename}; retrying attempt ${attempt} of ${total}...`
-                        )
-                    },
-                })
+                let upload
+                try {
+                    upload = await RootsFileInput.ensure_uploaded(GLOBAL.files[filename], {
+                        max_attempts: 3,
+                        on_request: request => this.current_upload_request = request,
+                        is_cancelled: () => this.upload_cancel_requested,
+                        on_retry: (attempt, total, delay, error) => {
+                            const detail = RootSecurity.error_message(error)
+                            this.render_upload(
+                                filename,
+                                'retrying',
+                                `Attempt ${attempt} of ${total} after ${delay} ms — ${detail}`,
+                            )
+                            this.set_message(
+                                `Upload interrupted for ${filename}; retrying attempt ${attempt} of ${total}...`
+                            )
+                        },
+                    })
+                } catch(error) {
+                    if(this.upload_cancel_requested)
+                        break
+                    const message = this.error_message(error)
+                    attempted += 1
+                    this.upload_failures.set(filename, message)
+                    this.set_progress(attempted, filenames.length)
+                    this.render_upload(filename, 'failed', message)
+                    App.Detection.set_failed(filename)
+                    this.set_message(
+                        `Could not prepare ${filename}; continuing with the remaining images...`
+                    )
+                    continue
+                }
                 if(this.upload_cancel_requested)
                     break
-                uploaded += 1
-                this.set_progress(uploaded, filenames.length)
+                attempted += 1
+                ready_filenames.push(filename)
+                this.set_progress(attempted, filenames.length)
                 this.render_upload(
                     filename,
                     'ready',
                     upload.skipped ? 'Already uploaded in this session.' : `Uploaded in ${upload.attempts} attempt(s).`,
                 )
-                this.set_message(`Prepared ${uploaded} of ${filenames.length} images.`)
+                this.set_message(`Prepared ${ready_filenames.length} of ${filenames.length} images.`)
             }
 
             if(this.upload_cancel_requested){
@@ -74,16 +94,39 @@ RootPipeline = class {
                 return
             }
 
+            if(!ready_filenames.length){
+                this.show_error(
+                    `None of the ${filenames.length} selected images could be prepared. `
+                    + 'Review the upload errors, correct or convert the files, and run analysis again.'
+                )
+                this.set_running(false)
+                return
+            }
+
             current_filename = undefined
             this.phase = 'starting'
-            const file_pairs = RootTracking.get_file_pairs()
-            this.set_message(
-                file_pairs.length
-                    ? `All images are ready. Starting detection and ${file_pairs.length} tracking pair(s)...`
-                    : 'All images are ready. Starting detection only; no valid tracking pairs were found.'
+            const selected_work = this.select_ready_work(
+                ready_filenames,
+                RootTracking.get_file_pairs(),
             )
+            const file_pairs = selected_work.file_pairs
+            this.excluded_pairs = selected_work.excluded_pairs
+            const upload_summary = this.upload_failures.size
+                ? `${this.upload_failures.size} image(s) could not be prepared and were excluded. `
+                : ''
+            let start_message
+            if(file_pairs.length){
+                start_message = this.upload_failures.size
+                    ? `Starting detection and ${file_pairs.length} tracking pair(s) for the prepared images...`
+                    : `All images are ready. Starting detection and ${file_pairs.length} tracking pair(s)...`
+            } else {
+                start_message = this.upload_failures.size
+                    ? 'Starting detection for the prepared images; no valid tracking pairs remain.'
+                    : 'Starting detection only; no valid tracking pairs were found.'
+            }
+            this.set_message(upload_summary + start_message)
             const response = await this.request('/api/pipeline/runs', 'POST', {
-                filenames: filenames,
+                filenames: ready_filenames,
                 file_pairs: file_pairs,
             })
             this.active_run_id = response.id
@@ -195,6 +238,8 @@ RootPipeline = class {
         }
         for(const item of run.pairs)
             RootTracking.apply_pipeline_result(item)
+        for(const item of this.excluded_pairs)
+            RootTracking.apply_pipeline_result(item)
     }
 
     static render(run){
@@ -211,7 +256,18 @@ RootPipeline = class {
             this.set_message(this.run_message(run))
 
         const $body = $('#pipeline-status-table tbody').empty()
-        const items = Object.values(run.images).concat(run.pairs)
+        const local_items = []
+        for(const [filename, message] of this.upload_failures){
+            local_items.push({
+                filename: filename,
+                stage: 'upload',
+                state: 'failed',
+                error: {message: message},
+            })
+        }
+        local_items.push(...this.excluded_pairs)
+        const server_items = Object.values(run.images).concat(run.pairs)
+        const items = local_items.concat(server_items)
         for(const item of items){
             const label = item.filename ?? `${item.filename0} → ${item.filename1}`
             const diagnostic = item.error?.diagnostic_id
@@ -234,7 +290,7 @@ RootPipeline = class {
             .toggleClass('disabled loading', run.state == 'cancelling')
             .text(run.state == 'cancelling' ? 'Cancelling...' : 'Cancel')
         $('#pipeline-close-button').toggle(terminal)
-        const retryable = terminal && items.some(
+        const retryable = terminal && server_items.some(
             item => ['failed', 'skipped', 'cancelled'].includes(item.state)
         )
         $('#pipeline-retry-button').toggle(retryable).toggleClass('disabled', !retryable)
@@ -248,6 +304,15 @@ RootPipeline = class {
             cancelled: 'Analysis was cancelled. Completed results remain available.',
             failed: 'The pipeline could not complete.',
         }
+        if(
+            this.upload_failures.size
+            && ['completed', 'completed_with_errors'].includes(run.state)
+        ){
+            return (
+                `Analysis finished after excluding ${this.upload_failures.size} image(s) that could not be uploaded. `
+                + 'Completed results are ready. Correct or convert the excluded files, then run analysis again to retry them.'
+            )
+        }
         return messages[run.state] ?? this.pretty_state(run.state)
     }
 
@@ -257,6 +322,8 @@ RootPipeline = class {
         this.upload_cancel_requested = false
         this.current_upload_request = undefined
         this.upload_rows = new Map()
+        this.upload_failures = new Map()
+        this.excluded_pairs = []
         $('#pipeline-status-table tbody').empty()
         $('#pipeline-error-message').hide().text('')
         $('#pipeline-cancel-button').show()
@@ -341,5 +408,25 @@ RootPipeline = class {
 
     static request(url, method, data=undefined){
         return RootSecurity.request(url, method, data)
+    }
+
+    static select_ready_work(ready_filenames, file_pairs){
+        const ready = new Set(ready_filenames)
+        const selected_pairs = []
+        const excluded_pairs = []
+        for(const [filename0, filename1] of file_pairs){
+            if(ready.has(filename0) && ready.has(filename1))
+                selected_pairs.push([filename0, filename1])
+            else {
+                excluded_pairs.push({
+                    filename0: filename0,
+                    filename1: filename1,
+                    stage: 'tracking',
+                    state: 'skipped',
+                    error: {message: 'One or both images could not be uploaded.'},
+                })
+            }
+        }
+        return {file_pairs: selected_pairs, excluded_pairs: excluded_pairs}
     }
 }

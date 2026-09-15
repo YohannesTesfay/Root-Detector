@@ -146,6 +146,17 @@ The extended RC1 exercise uncovered release-blocking workflow ambiguity and a re
 
 **Revised RC2 gate:** do not package the next candidate until the cache race, generated-artifact filtering, training-label provenance, bounded training upload, diagnostic logging, and low-disk preflight are implemented and covered by regression tests. The interface should present a three-path start screen or guided stepper: **Analyze images** (load once, detect, track valid pairs, review, export), **Review/import prior results**, and **Train a custom model (advanced)**. Training must never appear as the next required analysis step.
 
+**Immediate training qualification:** keep pipeline reliability, training
+mechanics, and model quality as separate claims. Once ground-truth provenance is
+enforced, train only on independently reviewed source/mask pairs; hold out whole
+tubes/sites and dates rather than patches from the same observation. Save and
+select a uniquely named model, verify selection after restart, and reprocess one
+training image only as an inference smoke test. Compare the new and starting
+models on the untouched holdout set for any quality conclusion. A cancelled run
+must restore the prior model and expose no savable partial weights. Record the
+dataset split, hashes, options, device, metrics, model checksum, and limitations
+in a model card before distribution.
+
 ### 2026-09-10 packaged diagnostics and live reproduction
 
 The two diagnostics archives are authentic RC1 evidence from commit `297811a`. The 43-image detection run completed 32 images and failed 11 reproducibly in Pillow/libtiff with `LZWDecode: Wrong length of decoded string` at scanline 0. Upload validation had accepted all 43 because it inspected the container without decoding pixels. A live tunneled-browser retest reproduced one success and three failures, and current Pillow/libtiff on macOS rejects the same three files; Windows System.Drawing is simply more permissive. RC2 now fully decodes the first frame during server-side input preparation, before inference, and returns actionable conversion guidance. A future optional recovery importer may use a separately qualified lenient decoder, but it must re-encode losslessly, preserve provenance, and never silently alter scientific inputs.
@@ -162,6 +173,89 @@ downloaded the CPU PyTorch wheel. Detection now probes `nvidia-smi`, then
 PowerShell CIM, and retains WMIC only as a legacy fallback. The Windows build must
 prove that a clean extraction selects the CUDA wheel and reports CUDA as the
 effective inference device before GPU performance evidence is accepted.
+
+### 2026-09-15 derived-data and batch-isolation qualification
+
+The 430 originals remain unchanged. Reproducible Windows scripts now create 77
+derived fixtures and record source/output SHA-256 values, transformations,
+expected pairs, and `scientific_valid=false`. They cover byte-identical
+zero-change tracking, five synthetic three-date sequences, duplicate/invalid
+dates, 16 representative cross-site images, and all 11 malformed HH inputs plus
+lossless PNG controls. The verifier passed all 430 baseline and 77 derived hashes.
+
+Packaged RC2 correctly formed two consecutive pairs from shuffled copies of one
+image and completed detection and tracking; both pairs reported zero growth and
+zero decay, and both exports passed ZIP integrity checks. The unmodified RC2 then
+revealed a remaining P0 defect: one HTTP 415 upload rejected the entire 17-file
+mixed batch at 6%. The focused working-tree fix records that file as failed,
+excludes dependent pairs, and continues with prepared inputs. A separately
+labelled RC2 test copy serving the new browser file completed all 16 valid images,
+kept the malformed TIFF visible as the sole failure, reached a truthful 100%, and
+exported a valid 16-result archive. A same-session rerun retried only the malformed
+TIFF and reused all 16 accepted uploads before completing again. This hot-patch
+test is implementation evidence, not acceptance of a rebuilt portable artifact.
+
+Before the next candidate is stable, rebuild the full Windows ZIP and repeat the
+mixed-batch test from a clean extraction. The synthetic 15-file/10-pair stress
+set remains useful for predictable mechanics, but the genuine Eldena pilot and
+qualification below now provide better source-realistic coverage. Upload and
+inference cancellation, two same-process cross-site runs with settled
+CPU/GPU/RAM/disk measurements, and 100%/125%/150% native display scaling remain
+open. Detection export naming also remains unclear (`results.zip` and repeated
+`statistics.csv`) and should be made operation-specific in the wider UX tranche.
+
+The genuine tracking dataset is now defined from the private Eldena Rhizotron
+collection. The acquisition system scans from the top down; the short Eldena
+tubes normally produce three physical levels, while long tubes can produce up to
+ten before their bottom sensor is reached. Future Rhizotron output is being
+aligned to the RootDetector contract as
+`{tube}_L{level}_{DD.MM.YYYY}_{HHMMSS}_{original}` (for example
+`04_L001_28.08.2026_145304_IMG_0001.JPG`). Keeping the level before the date
+prevents cross-depth pairing and permits the same depth to be followed over
+time. The uploader and CKAN ordering/metadata readers retain compatibility with
+the existing compact-date archive.
+
+Existing CKAN resources must not be renamed in place. Create hashed, mapped
+derived copies for acceptance: first 3 levels on 21-22 August 2026 (6 images,
+3 expected pairs), then 3 levels on 21-25 August 2026 (15 images, 12 expected
+consecutive-date pairs). Verify the pair preview, prohibit cross-level pairs,
+exercise detection/tracking/export, record resource high-water marks, and obtain
+ecological review of alignment and biological plausibility. Because the dataset
+is private and its CKAN license is unspecified, keep it out of Git and release
+artifacts until redistribution terms are confirmed.
+
+The 15 September 2026 execution completed the six-image pilot (6 detections and
+3 pairs) and the 15-image qualification (15 detections and 10 of 12 pairs) on
+the RTX 3080. Pair generation was exact and cross-level safe. The pipeline
+continued truthfully after two failures, and retry selected only those failures.
+Both failed pairs include the 24 August `L003` scan, whose 5152 x 4752 grid is
+16 pixels shorter than the other 5152 x 4768 scans. The released matcher fails
+when combining these unequal arrays. A source-level preflight now reports the
+dimension mismatch before matching; its unit regression passes, but a rebuilt
+Windows candidate must verify the user-facing result. The valid tracking export
+contains 10 `OK` rows and a schema-2 manifest. Outputs look mechanically
+plausible but still require ecological review before scientific acceptance.
+The qualification detection archive was not captured, so export acceptance is
+still incomplete. The controller needed about 23.6 minutes to transfer 15 files
+through the SSH-tunnelled browser; this is test-harness evidence only and must
+not be treated as native Windows upload performance.
+
+The old December 2024 guide does not prescribe cropping before tracking. Its
+1000 x 1000 random crops are an evaluation/annotation convenience, and its
+training guidance prefers uncropped images. Therefore automatic crop/alignment
+must remain a separately designed feature with a declared coordinate anchor,
+preserved originals, transformation provenance, visual preview, and scientific
+validation. Silent top/centre/bottom cropping could manufacture apparent root
+movement and is not an acceptable compatibility repair.
+
+RootDetector must remain acquisition-source agnostic. Manually acquired and
+third-party scanner images may enter detection when their format is supported
+and fully decodable, but model accuracy depends on similarity in resolution,
+scale, illumination, orientation, and root/background appearance. Automatic
+tracking additionally needs repeated views of the same physical location and
+parseable, consistent observation identifiers and dates. A future metadata
+editor/import manifest should allow users to provide those fields explicitly
+instead of forcing every source to adopt one filename convention.
 
 ## Current Architecture and Constraints
 
@@ -189,6 +283,7 @@ These changes block a trustworthy release.
 | T-008 | P1 | Evaluation metrics can divide by zero for empty target/prediction masks. Red exclusions are not represented as a first-class ignore region. | Define empty-mask and ignore-mask policies, return `null`/not-applicable where scientifically appropriate, and test every boundary case. |
 | T-009 | P1 | “Width” bins appear derived from a skeleton distance transform, which is radius-like unless doubled; units are pixels. | Confirm the measurement definition with researchers, rename or correct it, attach pixel/physical units, and include calibration in exports. |
 | T-010 | P1 — partially implemented | Dates are inferred from filenames; ambiguous observations can group unrelated images. | Calendar validation, chronological pairing, invalid-date warnings, and whole-group rejection of same-day duplicates are implemented. Next preserve source paths as metadata, show parsed sample/date before execution, let users edit assignments, and define a documented two-digit-year policy. |
+| T-011 | P0 — implemented; packaged retest pending | Genuine Eldena tracking exposed unequal source grids: one 5152 x 4752 image among 5152 x 4768 observations caused two late broadcast failures. | Validate both segmentation grids before matching and report the two dimensions with corrective guidance. Never silently crop. A future opt-in alignment/crop workflow must preview and record its transform and pass ecological validation. Rebuild Windows and confirm both affected pairs fail early and actionably. |
 
 Every result should include a machine-readable manifest with application version, model names and SHA-256 hashes, input hashes, preprocessing and threshold settings, device/provider, calibration, timestamps, units, schema version, and warnings. Tracking should optionally normalize growth/decay by elapsed time. Never silently change a scientific definition: version algorithms and publish migration notes.
 
