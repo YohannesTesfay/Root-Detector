@@ -116,6 +116,37 @@ Post-run private memory was about 11.65 GiB and working set about 5.04 GiB,
 consistent with the earlier run but not a substitute for the planned repeated
 full-batch settling check.
 
+The rebuilt mixed-batch replay on the same candidate also passed. Pipeline
+`284f02a18e8d428399faa637ffed245f` attempted all 17 cross-site fixtures,
+reported the known malformed TIFF as one actionable HTTP 415 upload failure,
+and completed all 16 accepted detections. The detection archive contains 16
+top-level image folders, their segmentation/skeleton/statistics files, and the
+aggregate statistics file (65 ZIP entries); its SHA-256 is
+`044c269af70a41f59b7794e0ddf7b91749e937f51795f8a30c417618e3f0d667`.
+Two additional same-process runs (`c453dbd2ca8449ab9f1192c85149afef`
+and `98bd7f6c7d4d4c0ea3a581afa858d248`) each retried only the malformed upload,
+reused all 16 accepted inputs, reached 100%, and finished in 19.9 and 19.8
+seconds. Between those repeats private memory remained exactly 11,056,029,696
+bytes, working set changed by only 12,288 bytes, and thread count remained 69.
+This representative repeat found no per-run memory growth. The system-wide
+free-disk delta was about 16.3 MB and is not precise enough to attribute solely
+to RootDetector. A repeated 86-image run remains the final large-batch resource
+gate for stable release.
+
+Commit `e0617c9` then corrected the Settings layout found during scaled-browser
+inspection by keeping Save/Cancel outside the scrollable form. Actions run
+`34977475649` completed in 4m16s and produced the portable ZIP with SHA-256
+`c0962fe88bd6aaa31572d790f88d6f200d93aa087544c191ca77f2007be921d1`.
+The unmodified package kept the Settings dialog, close button, long failure
+toast, and toast close control inside the viewport with no measured text
+overflow at 1920x1080, 1536x864, and 1280x720 CSS viewport equivalents. These
+represent 100%, 125%, and 150% layout geometry; they do not replace manual
+native Windows DPI switching. A clean packaged CUDA smoke run
+`40a4ddc944b242319c071ea10e682d6f` completed one detection in 5.1 seconds and
+reached 100%. Diagnostics report the RTX 3080 as the effective CUDA device and
+have SHA-256
+`a38f05ef2c6ba9d6b6cf5fe2b2738e75121c9e7fe17cad9f526cb25755671530`.
+
 Images from manual or third-party scanners may also be tested. Detection does
 not require a Rhizotron origin, but every input must use a supported, decodable
 image format and resemble the imagery on which the selected model was trained.
@@ -167,11 +198,12 @@ If an upload fails, take a screenshot, select **Run Analysis** again without rel
 5. Run analysis again without reloading. The 16 accepted files must be reused;
    only the malformed file should be retried.
 
-The 15 September hot-patch exercise passed all five steps against a separately
-labelled RC2 test copy. The repeat run issued only one `/file_upload` request—
-for the known malformed TIFF—and reused the 16 accepted images before completing
-again. A newly built portable ZIP must repeat all five steps; the hot-patched
-extraction is implementation evidence, not a release artifact.
+The rebuilt candidate at `96e9956` passed all five steps on 15 September. The
+repeat run issued only one `/file_upload` request—for the known malformed TIFF—
+and reused the 16 accepted images before completing again. The archive hash,
+contents, pipeline IDs, timings, and settled resource measurements are recorded
+above. The later `e0617c9` package changes only the Settings template/style and
+passed the workflow's upload-isolation regressions plus a packaged CUDA smoke.
 
 ## Controlled Training Check
 
@@ -221,7 +253,7 @@ The 43-image `HH` detection run completed 32 items and rejected 11 at processing
 
 The archived tracking exercise is not scientific tracking evidence. It loaded six detection-result folders as 12 new segmentation/skeleton images and paired each segmentation with its skeleton. The resulting six pairs are generated artifacts from the same observation, not consecutive dates. Repeat tracking with original images from the same tube/site prefix at two or more dates, verify the proposed pair names and order before starting, and inspect the tracking-specific export.
 
-Before RC2 approval, also switch between two extracted builds that use the same loopback port. A restored/stale browser tab must show an explicit version-mismatch or missing-assets recovery message rather than `RootSecurity is not defined`. Verify the Settings close button remains inside the modal and long failure notifications wrap without clipping at 100% and 125% display scaling.
+Before stable approval, also switch between two extracted builds that use the same loopback port. A restored/stale browser tab must show an explicit version-mismatch or missing-assets recovery message rather than `RootSecurity is not defined`. Browser layout checks now pass for Settings and long failure notifications at the 100%, 125%, and 150% viewport equivalents; repeat the three checks with native Windows display scaling for final DPI acceptance.
 
 ## Available Cross-Site Test Collection
 

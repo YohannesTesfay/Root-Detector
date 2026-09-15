@@ -192,16 +192,19 @@ excludes dependent pairs, and continues with prepared inputs. A separately
 labelled RC2 test copy serving the new browser file completed all 16 valid images,
 kept the malformed TIFF visible as the sole failure, reached a truthful 100%, and
 exported a valid 16-result archive. A same-session rerun retried only the malformed
-TIFF and reused all 16 accepted uploads before completing again. This hot-patch
-test is implementation evidence, not acceptance of a rebuilt portable artifact.
+TIFF and reused all 16 accepted uploads before completing again. Commit `96e9956`
+and Actions run `34972004393` then repeated that behavior in a rebuilt portable
+artifact. Its detection archive passed integrity with 16 result folders and one
+aggregate CSV.
 
-Before the next candidate is stable, rebuild the full Windows ZIP and repeat the
-mixed-batch test from a clean extraction. The synthetic 15-file/10-pair stress
-set remains useful for predictable mechanics, but the genuine Eldena pilot and
-qualification below now provide better source-realistic coverage. Upload and
-inference cancellation, two same-process cross-site runs with settled
-CPU/GPU/RAM/disk measurements, and 100%/125%/150% native display scaling remain
-open. Detection export naming also remains unclear (`results.zip` and repeated
+The two additional same-process cross-site runs each retried only the malformed
+TIFF, reused the other 16 uploads, and finished in about 20 seconds. Private
+memory was identical between their settled measurements, working set differed
+by 12 KiB, and thread count was unchanged; no per-run memory growth appeared.
+The established 86-image repeat remains the final large-batch resource gate.
+Upload and inference cancellation are mechanically accepted through earlier
+packaged tests. Native Windows DPI switching and ecological review remain open.
+Detection export naming also remains unclear (`results.zip` and repeated
 `statistics.csv`) and should be made operation-specific in the wider UX tranche.
 
 The genuine tracking dataset is now defined from the private Eldena Rhizotron
@@ -248,9 +251,20 @@ same-grid pair reached tracking, cancelled truthfully, and completed on retry in
 24.8 seconds with 2,883 matches; its schema-2 tracking export passed integrity.
 The 74.9 MB GitHub artifact, its nested portable ZIP, diagnostics ZIP, and
 tracking export all matched their recorded SHA-256 digests. This closes T-011's
-packaged mechanics. It does not close ecological review, the full mixed-batch UI
-replay, detection export capture, native DPI checks, or repeated full-batch
-resource settling.
+packaged mechanics. The rebuilt mixed-batch UI replay, general detection export,
+and representative same-process resource repeat now also pass. It does not close
+ecological review, the Eldena-specific detection export, native DPI switching,
+or the repeated 86-image resource gate.
+
+Scaled-browser inspection exposed one additional RC2 presentation defect: at
+the 150% viewport equivalent the Settings dialog extended slightly below the
+screen and hid part of its actions. Commit `e0617c9` moves Save/Cancel outside
+the scrollable form and constrains the form body. Actions run `34977475649`
+produced a verified portable ZIP; the unmodified package passed measured
+100%/125%/150% viewport-equivalent checks for the dialog, close controls, and
+long toasts, followed by a CUDA detection smoke on the RTX 3080. Manual native
+Windows scaling remains a separate confirmation because browser emulation does
+not change the operating system DPI setting.
 
 The old December 2024 guide does not prescribe cropping before tracking. Its
 1000 x 1000 random crops are an evaluation/annotation convenience, and its
