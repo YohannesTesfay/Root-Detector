@@ -42,8 +42,7 @@ else:
         'main\\main.exe %*\n'
         'pause\n'
     )
-    open(build_dir+'/main.bat', 'w').write(launcher)
-    open(build_dir+'/Start RootDetector.bat', 'w').write(launcher)
+    open(build_dir+'/StartRootDetector.bat', 'w').write(launcher)
 
 repository = os.environ.get('GITHUB_REPOSITORY', 'local/source build')
 commit = os.environ.get('GITHUB_SHA', '')
@@ -97,6 +96,14 @@ if args.zip:
 
     print('Zipping full package...')
     shutil.make_archive(build_dir, "zip", build_dir)
+    if sys.platform == 'win32':
+        with zipfile.ZipFile(build_dir + '.zip') as archive:
+            launchers = {
+                name for name in archive.namelist()
+                if '/' not in name and name.lower().endswith('.bat')
+            }
+        if launchers != {'StartRootDetector.bat'}:
+            raise RuntimeError('Portable ZIP must contain only StartRootDetector.bat.')
 
 
 print('Done')

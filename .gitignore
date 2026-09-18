@@ -11,3 +11,4 @@ sync_models.py
 venv*
 .deno
 .playwright-cli/
+.local-notes/
