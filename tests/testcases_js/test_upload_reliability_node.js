@@ -43,6 +43,73 @@ async function test_error_normalization(){
 }
 
 
+async function test_boot_recovery(){
+    const template = fs.readFileSync(path.join(repository, 'templates/index.html'), 'utf8')
+    const inlineScript = template.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+    assert(inlineScript, 'RootDetector boot script not found')
+
+    const body = {
+        innerHTML: '',
+        box: undefined,
+        appendChild(box){ this.box = box },
+    }
+    const context = {
+        console: {error(){}},
+        document: {
+            body,
+            createElement: () => ({
+                innerHTML: '',
+                style: {},
+                detail: {textContent: ''},
+                setAttribute(){},
+                querySelector(){ return this.detail },
+            }),
+        },
+        addEventListener(){},
+    }
+    context.window = context
+    vm.runInNewContext(
+        fs.readFileSync(path.join(repository, 'frontend/roots/security.js'), 'utf8'),
+        context,
+    )
+    vm.runInNewContext(inlineScript, context)
+
+    context.RootDetectorApp = {init: async () => { throw {status: 0, message: '[object Object]'} }}
+    await context.RootDetectorBoot.start()
+    assert.match(body.box.innerHTML, /RootDetector is not reachable/)
+    assert.match(body.box.innerHTML, /StartRootDetector\.bat/)
+    assert.doesNotMatch(body.box.detail.textContent, /\[object Object\]/)
+
+    context.RootDetectorApp = {init: async () => {
+        const error = new Error('Browser version does not match')
+        error.code = 'asset_schema_mismatch'
+        throw error
+    }}
+    await context.RootDetectorBoot.start()
+    assert.match(body.box.innerHTML, /different RootDetector version/)
+    assert.strictEqual(body.box.detail.textContent, 'Browser version does not match')
+
+    context.RootDetectorApp = {init: async () => { throw {message: 'Model setup failed'} }}
+    await context.RootDetectorBoot.start()
+    assert.match(body.box.innerHTML, /could not initialize this page/)
+    assert.strictEqual(body.box.detail.textContent, 'Model setup failed')
+
+    context.$ = {get: async () => ({asset_schema: 'old-version'})}
+    await assert.rejects(
+        context.RootSecurity.initialize(),
+        error => error.code === 'asset_schema_mismatch',
+    )
+
+    context.RootDetectorBoot.failed_assets.push('/roots/pipeline.js')
+    delete context.RootDetectorApp
+    delete context.RootSecurity
+    await context.RootDetectorBoot.start()
+    assert.match(body.box.innerHTML, /could not load its browser files/)
+    assert.match(body.box.detail.textContent, /Missing: \/roots\/pipeline\.js/)
+    assert.doesNotMatch(body.box.innerHTML, /Start RootDetector\.bat/)
+}
+
+
 async function test_result_fetch_retry(){
     let calls = 0
     global.fetch = async () => {
@@ -102,6 +169,7 @@ async function test_item_71_resume(){
 
 Promise.resolve()
     .then(test_error_normalization)
+    .then(test_boot_recovery)
     .then(test_result_fetch_retry)
     .then(test_item_71_resume)
     .then(() => console.log('Browser-side upload reliability tests passed.'))

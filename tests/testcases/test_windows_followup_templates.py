@@ -88,8 +88,12 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     security = read('frontend/roots/security.js')
 
     assert 'RootDetectorBoot.start()' in template
-    assert 'RootDetector could not load matching browser files.' in template
-    assert 'Close all old RootDetector tabs' in template
+    assert 'RootDetector could not load its browser files.' in template
+    assert 'RootDetector is not reachable.' in template
+    assert 'This tab belongs to a different RootDetector version.' in template
+    assert 'StartRootDetector.bat' in template
+    assert "error?.code == 'asset_schema_mismatch'" in template
+    assert "error?.status == 0" in template
     assert 'rootdetector-web-rc2-1' in security
 
 
