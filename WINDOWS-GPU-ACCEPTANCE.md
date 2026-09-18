@@ -348,11 +348,36 @@ again has no `settings.json`.
 In the source branch, partial settings updates now merge model selections
 against defaults/current state, and startup restores omitted model types from
 older partial files. A restart/recovery regression is in the fast Docker suite:
-**110 passed**; released-model smoke: **2 passed**; both dependency-free Node
-checks passed. This source fix has **not** been retested in a rebuilt Windows
-binary. That build/restart check remains an operational release gate. Ecological
-interpretation can follow during supervised use, but no turnover or custom-model
-quality claim is established by these software tests.
+**110 passed**; released-model smoke: **2 passed**; all four workflow Node
+checks passed.
+
+### 2026-09-18 exact-build Windows acceptance
+
+Actions run `35352391140` passed at commit `fffb3f7` and published one full
+portable ZIP. The GitHub artifact SHA-256 is
+`5050341fd3c6851197333e9193fb9ef2f74a34372ad61c4e603dd527b2c6a3f3`;
+its nested portable ZIP SHA-256 is
+`e5fa375771d872593ac7881298c80a3fb158a2b6590a653aa12b930f69c67b1d`.
+Both archives passed integrity checks and `BUILD-INFO.txt` identifies the exact
+commit and run. On `ExPlEco_ML_Desk`, a fresh extraction started, saved a
+partial Settings update that changed only the detection model and GPU flag,
+preserved exclusion-mask and tracking selections in `settings.json`, and
+restored all selections after process restart. This closes the packaged
+settings-persistence gate.
+
+The same package then processed nine hash-verified August 21–23 Eldena scans
+and all six same-level consecutive-date pairs: pipeline
+`3ec0abbb18784e32abd6a047f1173465` completed 15/15 work items with no
+failures. Diagnostics report CUDA on the RTX 3080. The tracking ZIP passed
+integrity, contains 32 entries and six `OK` schema-2 CSV rows, and has SHA-256
+`c647ed94eb9aec057cf0a214d555c925454d2f0c59661f8c298a92813064a28c`.
+The diagnostics ZIP passed integrity and has SHA-256
+`b2c233693ecca8a6dfb3a91a4ebba5b3f00b68aac942ca516d06031752b789ae`.
+Evidence remains in the isolated `RC2-fffb3f7-settings-gate` and
+`Eldena-Pilot-2026-08-21-23` workstation folders. This was a packaged API
+mechanics test, not a new browser-import test or scientific validation of
+root turnover. Ecological interpretation can follow during supervised use;
+no custom-model quality claim is established by these software tests.
 
 For a subsequent scientific qualification run:
 

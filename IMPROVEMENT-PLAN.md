@@ -17,13 +17,13 @@ This plan covers the complete application: detection, exclusion masks, tracking,
 
 Keep upstream untouched until the fork's combined release is qualified:
 
-1. Commit the RC2 evidence and reviewed-label training safeguard. Recheck the complete diff and run the Docker fast/model smoke suites plus all workflow Node tests. Local regressions pass; the new training path still needs packaged-Windows acceptance.
+1. **RC2 branch qualification complete for software mechanics.** The reviewed-label browser import, training guard, cancellation, and held-out inference checks passed in the `f8cebee` portable build. The newer `fffb3f7` package passed partial Settings save/restart and a nine-image/six-pair Eldena CUDA replay. Docker fast/model smoke and all workflow Node checks pass. This does not validate label quality or ecological turnover.
 2. Review and merge fork PR #4 (`feature/reliability-security-hardening` into `main`); then retarget fork PR #5 (`fix/windows-batch-reliability-rc2`) to `main`, review its resulting delta, and merge it. Do not merge an untested new head merely because an earlier artifact passed.
 3. Dispatch **Build Windows Binaries** from the resulting fork `main`. Record its commit and artifact checksum. On ExPlEco_ML_Desk, test startup, reviewed-label import and training guard, a small disposable training/cancel/retry run, detection, genuine-date tracking, export, diagnostics, and the previously qualified large-batch/resource cases as appropriate to the changed paths.
 4. For supervised operational use, do not block the fork release on ecological interpretation. Label tracking outputs as requiring review, retain input/model/settings provenance, and collect ecological feedback during use. A software pass is not a biological accuracy claim; do not present self-generated labels as ground truth or release a newly trained model as scientifically validated.
 5. After acceptance, compare fresh fork `main` with upstream `main`, freeze the exact tested head on a fork integration branch, and open one draft cross-fork PR. Summarize automation, reliability/security, Windows packaging, tests, and known scientific limitations in short bullets for the original maintainer. Upstream merge is a separate decision after review.
 
-The local `gh` credential currently fails authentication, although the public GitHub API confirms that #4 and #5 remain open drafts with the stacked bases above. Restore authenticated API access before any PR edits or merges. Direct SSH push capability is separate and has not been revalidated in this pass.
+The local `gh` credential currently fails authentication, but the signed-in GitHub session can operate the fork workflow and the GitHub API can verify PR state. Confirm each PR's head/base and exact changed files before editing or merging; SSH push is available independently.
 
 ## Executive Summary
 
@@ -345,6 +345,16 @@ actions, close controls, and a long failure toast stayed in view with no
 horizontal overflow. Native 100% and 125% switching remains a short manual UX
 confirmation because changing operating-system scaling would disrupt the active
 desktop; their equivalent browser geometries already pass.
+
+On 18 September the exact `fffb3f7` Windows package (Actions run
+`35352391140`) passed the final Settings save/restart check and processed nine
+genuine-date Eldena images into six chronological same-level pairs, all 15
+items completed on CUDA. Its tracking export has six `OK` schema-2 rows and
+passes ZIP integrity; hashes and isolated evidence paths are in
+`WINDOWS-GPU-ACCEPTANCE.md`. This closes the remaining RC2 *mechanical* gate.
+The run used the packaged API, while the preceding `f8cebee` package qualified
+the browser reviewed-label flow. Keep scientific turnover interpretation and
+model-quality claims separate from this software acceptance.
 
 The old December 2024 guide does not prescribe cropping before tracking. Its
 1000 x 1000 random crops are an evaluation/annotation convenience, and its
