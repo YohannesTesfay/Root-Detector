@@ -18,11 +18,11 @@ RootDetector helps researchers and students analyze minirhizotron root images. I
 RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Download the full ZIP from the project's Releases page; do not choose GitHub's automatically generated “Source code” archives.
 
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
-2. Open the extracted folder and double-click **`main.bat`**.
+2. Open the extracted folder and double-click **`StartRootDetector.bat`**.
 3. Keep the console window open. RootDetector starts its local service and opens the interface in your default browser.
 4. On the first start, allow time for required model and PyTorch files to download. Internet access to `download.pytorch.org`, `github.com`, and the configured model hosts is required. If a proxy or firewall blocks a download, correct the connection and run the launcher again.
 
-The published 2023 Windows package uses `main.bat` to launch `main\main.exe`. It contains no `main.py`. New packages built from this repository preserve `main.bat` and also provide the more descriptive `Start RootDetector.bat` alias.
+New full Windows packages contain **only `StartRootDetector.bat`** as the launcher. Older 2023 downloads used `main.bat`; those existing downloads are unchanged. GitHub's “Source code” ZIP is not a ready-to-run Windows package.
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
@@ -42,7 +42,7 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 1. Select **Files → Load Input Images** or **Load Input Folder**.
 2. Confirm that all images appear in the Detection tab.
 3. Open the Tracking tab and check the proposed image pairs.
-4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, or change the root threshold.
+4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, change the root threshold, or select tracking point sampling.
 5. Select **Run Analysis** once.
 6. Wait for the progress window to reach 100%. Detection runs for every image, followed by tracking for every valid pair.
 
@@ -61,6 +61,8 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 
 Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
+For repeat tests of a tracking pair, choose **Settings → Tracking point sampling → Seeded sampling** before analysis. The default **Released algorithm** can produce different turnover counts on repeated runs. Seeded sampling is experimental: review its matches before scientific use, and do not combine results from different modes without identifying them.
+
 ## Train a Model (Optional)
 
 Training is separate from ordinary analysis. You do not need to review or label every image you analyze. For training, prepare a smaller, representative set of original images with matching masks that a person has independently checked and corrected where needed. Load the originals, then choose **Files → Load Annotations** for those masks. The Training tab asks you to confirm their review before **Start Training** becomes available. Automatically produced detection masks—including masks in a results ZIP—are predictions, not verified training labels. Keep different tubes/sites and dates out of the evaluation set so you can test the new model on genuinely unseen images.
@@ -68,7 +70,7 @@ Training is separate from ordinary analysis. You do not need to review or label 
 ## Common Problems
 
 - **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.
-- **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **Start RootDetector.bat** again. Existing verified downloads are reused.
+- **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **StartRootDetector.bat** again. Existing verified downloads are reused.
 - **An image is rejected:** use PNG, JPEG, TIFF, or TIF and ensure the file is not damaged.
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.
 - **Tracking says “too many roots”:** this safety limit prevents excessive memory use. Use a suitable lower-root pair for tracking; raise the threshold only for a deliberate expert run on adequately resourced hardware.
@@ -82,7 +84,6 @@ Image processing happens on the local computer. RootDetector does not upload res
 ## Further Documentation
 
 - [Technical Guide](TECHNICAL-GUIDE.md) — architecture, development, testing, API, and Windows release process.
-- [Improvement Plan](IMPROVEMENT-PLAN.md) — longer-term correctness, security, portability, and interface roadmap.
 - [Scientific and user guide](AI%20Analysis%20of%20Minirhizotron%20Imagery%20Using%20RootDetector.pdf).
 
 ## License and Citation

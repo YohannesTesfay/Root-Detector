@@ -17,7 +17,7 @@ def packaged_startup_error(exc):
     print(
         'The first launch requires internet access to download the PyTorch runtime '
         'and pretrained models. Check the connection, proxy, firewall, and available '
-        'disk space, then run Start RootDetector.bat again.'
+        'disk space, then run StartRootDetector.bat again.'
     )
 
 
