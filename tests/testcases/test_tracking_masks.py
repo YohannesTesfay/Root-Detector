@@ -85,10 +85,11 @@ def test_tracking_uses_both_observation_masks_and_exports_provenance(tmp_path, m
     monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
 
     points = np.arange(32, dtype='float32').reshape(16, 2)
+    captured = []
     monkeypatch.setattr(
         root_tracking.tracking_matcher,
         'match_images',
-        lambda *_args, **_kwargs: {
+        lambda *_args, **kwargs: captured.append(kwargs['sampling_seed']) or {
             'points0': points,
             'points1': points,
             'matched_percentage': 1.0,
@@ -112,11 +113,14 @@ def test_tracking_uses_both_observation_masks_and_exports_provenance(tmp_path, m
         use_gpu = False
         too_many_roots = 100000
         tracking_exclusion_policy = 'union'
+        tracking_sampling_mode = 'deterministic'
 
     result = root_tracking.process(image0, image1, Settings())
     assert result['statistics']['sum_exmask'] == 2
     assert result['exclusion_mask_policy'] == 'union'
     assert result['tracking_matcher']['name'] == 'rootdetector-cancellable-bruteforce'
+    assert isinstance(captured[0], int)
+    assert result['tracking_matcher']['seed'] == captured[0]
     assert result['exclusion_masks'] == {
         'observation0_present': True,
         'observation1_present': True,
@@ -132,4 +136,46 @@ def test_tracking_uses_both_observation_masks_and_exports_provenance(tmp_path, m
     metadata = json.loads(metadata_path.read_text())
     assert metadata['exclusion_mask_policy'] == 'union'
     assert metadata['exclusion_masks']['combined_pixels'] == 2
-    assert metadata['tracking_matcher']['version'] == 1
+    assert metadata['tracking_matcher']['version'] == 2
+    assert metadata['tracking_matcher']['seed_identity']['image0_sha256']
+
+
+def test_deterministic_seed_follows_contents_and_model_identity(tmp_path, monkeypatch):
+    first = tmp_path / 'first.png'
+    second = tmp_path / 'second.png'
+    first.write_bytes(b'first observation')
+    second.write_bytes(b'second observation')
+    models = {'tracking': {'name': 'tracking-a'}, 'detection': {'name': 'detection-a'}}
+    monkeypatch.setattr(
+        root_tracking.root_detection,
+        '_model_identity',
+        lambda _settings, kind: models[kind].copy(),
+    )
+    first_seg = np.zeros((4, 4), dtype='float32')
+    second_seg = np.ones((4, 4), dtype='float32')
+    seed, identity = root_tracking.deterministic_sampling_seed(
+        str(first), str(second), first_seg, second_seg, object()
+    )
+    repeated, repeated_identity = root_tracking.deterministic_sampling_seed(
+        str(first), str(second), first_seg, second_seg, object()
+    )
+    assert (seed, identity) == (repeated, repeated_identity)
+    assert seed != root_tracking.deterministic_sampling_seed(
+        str(second), str(first), second_seg, first_seg, object()
+    )[0]
+    modified_seg = first_seg.copy()
+    modified_seg[0, 0] = 1
+    assert seed != root_tracking.deterministic_sampling_seed(
+        str(first), str(second), modified_seg, second_seg, object()
+    )[0]
+    first.write_bytes(b'changed first observation')
+    assert seed != root_tracking.deterministic_sampling_seed(
+        str(first), str(second), first_seg, second_seg, object()
+    )[0]
+    first.write_bytes(b'first observation')
+    models['tracking']['name'] = 'tracking-b'
+    assert seed != root_tracking.deterministic_sampling_seed(
+        str(first), str(second), first_seg, second_seg, object()
+    )[0]
+    with pytest.raises(ValueError, match='sampling mode'):
+        root_tracking.validate_tracking_sampling_mode([])

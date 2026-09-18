@@ -131,6 +131,7 @@ def system_snapshot(settings=None):
                 'tracking_exclusion_policy',
                 None,
             ),
+            'tracking_sampling_mode': getattr(settings, 'tracking_sampling_mode', None),
         }
 
     return {

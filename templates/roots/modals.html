@@ -66,6 +66,23 @@
         </div>
       </div>
   
+      <div class="field" id="settings-tracking-sampling-mode-field">
+        <label>Tracking point sampling</label>
+        <div class="ui dropdown selection" id="settings-tracking-sampling-mode">
+          <input type="hidden" name="tracking-sampling-mode" value="legacy">
+          <i class="dropdown icon"></i>
+          <div class="text">Released algorithm (variable results)</div>
+          <div class="menu">
+            <div class="item" data-value="legacy">Released algorithm — variable results</div>
+            <div class="item" data-value="deterministic">Seeded sampling — repeatable point selection</div>
+          </div>
+        </div>
+        <div class="ui pointing label">
+          Seeded sampling is experimental. Check tracking overlays before scientific use;
+          changing modes can change turnover counts.
+        </div>
+      </div>
+
       <div class="ui divider"></div>
       <div class="field" id="settings-tracking-model-field">
         <label id="settings-tracking-model-label">Root tracking model</label>
