@@ -94,19 +94,18 @@ docker compose -f compose.core.yml run --rm test-fast
 docker compose -f compose.core.yml run --rm test-smoke
 ```
 
-`test-fast` uses fake models and covers state transitions, continuation after failure, retry, active cancellation, training jobs, matching-batch cancellation/progress, exclusion-mask policies/provenance, settings snapshots, request validation, model download integrity, cache invalidation, and CSV mapping. `test-smoke` loads the released models, processes two dated TIFF fixtures, completes tracking, verifies the export ZIP, and compares the application-owned matcher arrays exactly with the function embedded in the released package.
+`test-fast` covers state transitions, retry, cancellation, training jobs, tracking matcher/provenance, request validation, download integrity, cache invalidation, and exports. `test-smoke` uses released models to check detection/tracking/export and matcher equivalence with the released package.
 
 `node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. `node tests/testcases_js/test_tracking_utils.js` verifies strict filename dates, consecutive temporal pairing, and rejection of same-day duplicates. The Windows build workflow runs both dependency-free Node checks before packaging.
 
-On the September 2026 Intel macOS Docker reference host, the expanded 108-test fast run took about 3.9 seconds and the two-test released-model smoke/equivalence run about 13.7 seconds with warm caches.
+The fast suite is suitable for every change; run the model-dependent smoke suite before proposing a release. Record test counts and timing with the relevant commit rather than relying on historical figures.
 
 ## Native Source Development
 
 Where a compatible Python 3.7 environment is available:
 
 ```bash
-git clone --recurse-submodules --branch fix/core-automation \
-  https://github.com/YohannesTesfay/Root-Detector.git
+git clone --recurse-submodules https://github.com/YohannesTesfay/Root-Detector.git
 cd Root-Detector
 python3.7 -m venv venv
 source venv/bin/activate              # Linux/macOS
@@ -186,9 +185,9 @@ Responses include content-type, referrer, frame, permissions, and Content Securi
 
 ## Windows Package Behavior
 
-The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct archive inspection shows `main.bat`, `main/main.exe`, and `models/pretrained_models.txt`; it does not contain `main.py`. Its launcher sets `ROOT_PATH`, runs `main\main.exe`, and pauses so the console remains visible.
+The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. It used `main.bat`, `main/main.exe`, and `models/pretrained_models.txt`; it did not contain `main.py`.
 
-The release builder in this repository produces the same directory-bundle/full-ZIP format. Packages preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the source commit and Actions run.
+The release builder produces the same directory-bundle/full-ZIP format but writes **only `StartRootDetector.bat`** as the launcher. `BUILD-INFO.txt` identifies the source commit and Actions run. Existing older packages are unaffected; scripts that invoke `main.bat` must use the new launcher with a new package.
 
 Runtime diagnostics are written to `logs/rootdetector.log` beside the portable application and rotated at 5 MiB with three backups. `GET /api/diagnostics` produces a support ZIP containing those logs, `BUILD-INFO.txt`, and a privacy-limited system snapshot. It excludes input images, results, and environment variables; logs can contain research filenames and technical paths and should be reviewed before sharing. Pipeline error IDs correlate the browser message with log entries.
 
@@ -205,26 +204,16 @@ When `--prune-torchlibs` is used, the first launch downloads the required Window
 
 The legacy PyTorch-library downloader does not yet have the model downloader's checksum/atomic-install hardening. Signed installers, offline bundles, and modern dependency packaging remain part of the larger improvement plan.
 
-## What Happens After Pushing This Branch
+## Windows Release Workflow
 
-Pushing `fix/core-automation` publishes source changes only. A developer can clone that branch recursively, install the Python 3.7 environment, and run `python main.py`; the server then remains open in the terminal and the developer navigates to `http://localhost:5000`. The new automated analysis operates inside the same Flask/browser application and does not change this source launch sequence.
+Pushing source does not replace a Windows download. The **Build Windows Binaries** workflow is manually dispatched for a selected branch or tag and publishes one full `RootDetector-Windows-portable` artifact. It fetches and verifies model weights before packaging. The older PDF's `main.bat` instruction applies only to historical downloads; new full ZIPs contain `StartRootDetector.bat` and `main\main.exe`.
 
-The upstream README's **Windows binaries** link and the PDF's `main.bat` instructions refer to a generated PyInstaller download, not the complete repository source. The tracked source tree contains `main.py`; `build.py` creates `main.bat`, `Start RootDetector.bat`, and `main\main.exe` only inside a Windows build directory.
+1. Open a PR against the fork's `main`, run both Docker suites, and dispatch the Windows build on that PR branch.
+2. Verify the ZIP hash and `BUILD-INFO.txt`, extract into a fresh folder, then test launch, first-run downloads, detection, tracking, export, restart, and paths with spaces.
+3. Qualify release-sensitive GPU behavior on the packaged Windows build. Record its evidence and remaining gates in the fork PR; historical acceptance notes are kept locally and in Git history.
+4. After review and merge, build the exact fork `main` head intended for release. Publish its tested full ZIP and SHA-256 on a GitHub Release; workflow artifacts are temporary, not public releases.
 
-Pushing does not replace an existing Windows binary download and does not automatically create a new one because the Windows workflow uses `workflow_dispatch`.
-
-Recommended release sequence:
-
-1. Push the branch and open a pull request against the fork's `main` branch.
-2. Review and merge after the Docker and browser results are recorded.
-3. In GitHub, open **Actions → Build Windows Binaries → Run workflow** and choose the desired branch or tag.
-4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
-5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
-6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
-
-For the large-batch GPU qualification, follow [WINDOWS-GPU-ACCEPTANCE.md](WINDOWS-GPU-ACCEPTANCE.md). Keep candidate releases marked as prereleases until that checklist passes on `ExPlEco_ML_Desk`.
-
-The workflow fetches and verifies models before building and uses the Node-24-native checkout, Python setup, and artifact actions. It publishes only the full portable ZIP. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every release candidate still requires a real Windows acceptance test.
+PyInstaller cannot cross-build the Windows package from macOS or Linux. A new package also changes the launcher name, so existing scripts calling `main.bat` require an explicit update.
 
 ## Build Commands
 
@@ -259,6 +248,6 @@ Keep commits focused and explicitly mention changes to the model manifest, gener
 - Filename-based pairing requires supported dates and cannot yet be edited through a dedicated pairing interface.
 - Browser training uses `learning_rate`; the backend also accepts the legacy `lr` compatibility alias.
 - The application is a trusted local desktop service, not a hardened multi-user server.
-- Windows packaging, signing, macOS/Linux distributables, accessibility, and dependency modernization remain open roadmap work.
+- Signed Windows installation, macOS/Linux distributables, accessibility, and dependency modernization remain open roadmap work.
 
-See [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md) for the prioritized technical and interface roadmap and [CORE-AUTOMATION-PLAN.md](CORE-AUTOMATION-PLAN.md) for the completed focused recovery plan.
+See [IMPROVEMENT-PLAN.md](IMPROVEMENT-PLAN.md) for the active technical and interface roadmap. The completed core-automation plan remains available in Git history rather than the current documentation set.
