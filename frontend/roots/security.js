@@ -4,11 +4,14 @@ RootSecurity = class {
 
     static async initialize(){
         const session = await $.get('/api/session')
-        if(session.asset_schema != this.asset_schema)
-            throw new Error(
+        if(session.asset_schema != this.asset_schema){
+            const error = new Error(
                 'RootDetector browser files do not match the running application. '
                 + 'Close old RootDetector tabs, start the intended extracted folder, and reload.'
             )
+            error.code = 'asset_schema_mismatch'
+            throw error
+        }
         this.token = session.token
         $.ajaxPrefilter((options, _originalOptions, request) => {
             const method = String(options.method ?? options.type ?? 'GET').toUpperCase()
