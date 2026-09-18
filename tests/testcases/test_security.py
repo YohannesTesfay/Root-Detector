@@ -53,3 +53,17 @@ def test_validate_image_counts_all_tiff_frames(tmp_path, monkeypatch):
     monkeypatch.setattr(security, 'MAX_IMAGE_PIXELS', 100)
     with pytest.raises(security.ValidationError, match='megapixel'):
         security.validate_image_file(str(image_path))
+
+
+def test_validate_image_rejects_tiff_that_opens_but_cannot_fully_decode(tmp_path):
+    image_path = tmp_path / 'truncated.tiff'
+    PIL.Image.new('RGB', (100, 100), 'red').save(str(image_path))
+    image_path.write_bytes(image_path.read_bytes()[:-100])
+
+    # Pillow can still inspect this TIFF's header, but processing its pixels fails.
+    with PIL.Image.open(str(image_path)) as image:
+        image.verify()
+
+    with pytest.raises(security.ValidationError, match='decoded completely') as error:
+        security.validate_image_file(str(image_path))
+    assert error.value.code == 'invalid_image'

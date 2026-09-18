@@ -12,6 +12,7 @@ import PIL.Image
 
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
 SUPPORTED_IMAGE_FORMATS = {'JPEG', 'PNG', 'TIFF'}
+ASSET_SCHEMA_VERSION = 'rootdetector-web-rc2-1'
 MAX_FILENAME_BYTES = 240
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_UPLOAD_FILES = 16
@@ -90,7 +91,7 @@ def files_are_identical(path0:str, path1:str) -> bool:
 
 
 def validate_image_file(path:str) -> tp.Dict[str, tp.Any]:
-    """Decode enough of an image to reject corrupt, unsupported, or excessive inputs."""
+    """Fully decode the first frame to reject inputs processing cannot read."""
     size = os.path.getsize(path)
     if size == 0:
         raise ValidationError('Uploaded images must not be empty.', 'empty_upload')
@@ -121,12 +122,17 @@ def validate_image_file(path:str) -> tp.Dict[str, tp.Any]:
                         'image_too_large',
                         413,
                     )
-                image.verify()
+                # ``verify()`` only checks container structure for some formats. In
+                # particular, malformed LZW TIFF data can pass ``verify()`` and then
+                # fail at scanline 0 when detection calls ``convert('RGB')``. Loading
+                # the pixels here keeps that failure in the import/preflight phase.
+                image.load()
     except ValidationError:
         raise
     except (OSError, ValueError, PIL.Image.DecompressionBombError) as exc:
         raise ValidationError(
-            'The uploaded file is not a valid PNG, JPEG, TIFF, or TIF image.',
+            'The uploaded image could not be decoded completely. Re-export or '
+            'convert it to a standard TIFF, PNG, or JPEG and try again.',
             'invalid_image',
             415,
         ) from exc

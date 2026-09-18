@@ -110,18 +110,16 @@
       </div>
 
       <div class="ui divider"></div>
-
-  
-     <div class="actions">
-        <button type="button" class="ui negative button" title="Close without saving changes">
-          Cancel
-        </button>
-        <button type="button" class="ui positive right labeled icon button" id="settings-ok-button"
-                title="Save settings">
-          Save
-          <i class="checkmark icon"></i>
-        </button>
-      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="ui negative button" title="Close without saving changes">
+        Cancel
+      </button>
+      <button type="button" class="ui positive right labeled icon button" id="settings-ok-button"
+              title="Save settings">
+        Save
+        <i class="checkmark icon"></i>
+      </button>
     </div>
 </div>
 {% endmacro %}
@@ -175,6 +173,11 @@
     </div>
   </div>
   <div class="actions">
+    <a class="ui button" id="pipeline-diagnostics-button" href="/api/diagnostics"
+       download="RootDetector-diagnostics.zip"
+       title="Download logs and system details without input images">
+      Download diagnostics
+    </a>
     <button type="button" class="ui red button" id="pipeline-cancel-button"
             onclick="return RootPipeline.on_cancel(event)" title="Stop the active analysis safely">
       Cancel

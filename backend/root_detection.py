@@ -30,13 +30,45 @@ def run_model(image_path:str, settings:tp.Any, modeltype:str, **kwargs) -> np.nd
             jobs.raise_if_cancelled(settings)
             PubSub.publish({'progress':value, 'image':basename, 'stage':modeltype})
 
-        model  = settings.models[modeltype].to(device)
+        model = settings.models[modeltype]
         try:
+            model.to(device)
             result = model.process_image(image_path, progress_callback=progress_callback, **kwargs)
             jobs.raise_if_cancelled(settings)
         finally:
-            model.cpu()
+            try:
+                model.cpu()
+            except Exception:
+                pass
+            if device == 'cuda':
+                recover_accelerator_memory()
     return result
+
+
+def is_retryable_accelerator_error(exc:Exception) -> bool:
+    """Identify allocation failures for which one clean retry can be useful."""
+    message = str(exc).lower()
+    markers = (
+        'cuda out of memory',
+        'cudnn_status_alloc_failed',
+        'cublas_status_alloc_failed',
+        'cuda error: out of memory',
+        'cuda error: memory allocation',
+    )
+    return any(marker in message for marker in markers)
+
+
+def recover_accelerator_memory() -> None:
+    """Release unreferenced CUDA allocations without masking cleanup errors."""
+    if not torch.cuda.is_available():
+        return
+    try:
+        torch.cuda.empty_cache()
+        if hasattr(torch.cuda, 'ipc_collect'):
+            torch.cuda.ipc_collect()
+    except Exception:
+        # The original inference failure remains the actionable error.
+        pass
 
 
 def _sha256(path:str) -> str:

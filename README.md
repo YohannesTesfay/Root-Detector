@@ -48,6 +48,8 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 
 One failed image no longer stops unrelated images. The summary identifies completed, failed, skipped, or review-required items. Use **Retry failed** after correcting a recoverable problem.
 
+Input preparation is resumable while the application remains open. If a local upload is interrupted, RootDetector retries it up to two times and keeps already accepted files ready for the next **Run Analysis** attempt. The progress window labels upload separately from detection and tracking.
+
 ## Review and Export Results
 
 The Detection tab provides root segmentation and skeleton overlays. The Tracking tab shows turnover results:
@@ -59,6 +61,10 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 
 Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
+## Train a Model (Optional)
+
+Training is separate from ordinary analysis. You do not need to review or label every image you analyze. For training, prepare a smaller, representative set of original images with matching masks that a person has independently checked and corrected where needed. Load the originals, then choose **Files → Load Annotations** for those masks. The Training tab asks you to confirm their review before **Start Training** becomes available. Automatically produced detection masks—including masks in a results ZIP—are predictions, not verified training labels. Keep different tubes/sites and dates out of the evaluation set so you can test the new model on genuinely unseen images.
+
 ## Common Problems
 
 - **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.
@@ -67,6 +73,7 @@ Use **Download All** in the relevant tab to save results before closing the appl
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.
 - **Tracking says “too many roots”:** this safety limit prevents excessive memory use. Use a suitable lower-root pair for tracking; raise the threshold only for a deliberate expert run on adequately resourced hardware.
 - **Tracking requires review:** too few reliable automatic matches were found. Inspect or correct the pair manually.
+- **An error needs technical help:** choose **Download diagnostics** in the analysis window. The ZIP excludes input images, results, and environment variables. Its logs can contain research filenames and technical paths, so review it before sharing.
 
 ## Data and Privacy
 

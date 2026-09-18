@@ -41,7 +41,9 @@ services:
         tests/testcases/test_pipeline.py
         tests/testcases/test_pipeline_api.py
         tests/testcases/test_security.py
+        tests/testcases/test_settings_persistence.py
         tests/testcases/test_segmentation_cache.py
+        tests/testcases/test_startup.py
         tests/testcases/test_training.py
         tests/testcases/test_training_jobs.py
         tests/testcases/test_training_options.py

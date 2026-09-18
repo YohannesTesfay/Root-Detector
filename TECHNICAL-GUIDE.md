@@ -49,7 +49,7 @@ rootdetector-exclusionmask-<cache-key>.*
 
 The JSON manifest records the schema and operation versions, input name/hash/size, selected model or custom-mask hash, storage type, array shape, and hashes of the cached array and preview. A changed dependency or damaged artifact selects a new key or triggers recomputation. Detection and tracking therefore segment each compatible image once without silently reusing stale work.
 
-Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. `backend/tracking_matcher.py` uses the released model for descriptor extraction and owns a versioned, cancellable copy of the released 2022 brute-force algorithm. It matches points in 512-point batches, interpolates a deformation field, warps the first probability and exclusion masks into observation-2 coordinates, and creates RGB/RGBA turnover maps. The warped first exclusion mask and native second mask use the selected `union`, `intersection`, `first`, or `second` rule; conservative `union` is the default. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
+Tracking groups filenames by sample and date, sorts each group chronologically, and constructs consecutive pairs. If no prefix occurs at two or more dates, the interface explicitly identifies the run as detection-only and shows the required naming pattern. `backend/tracking_matcher.py` uses the released model for descriptor extraction and owns a versioned, cancellable copy of the released 2022 brute-force algorithm. It matches points in 512-point batches, interpolates a deformation field, warps the first probability and exclusion masks into observation-2 coordinates, and creates RGB/RGBA turnover maps. The warped first exclusion mask and native second mask use the selected `union`, `intersection`, `first`, or `second` rule; conservative `union` is the default. A pair with fewer than 16 automatic matches is marked for review; a pair exceeding the configured skeleton threshold is skipped rather than returned as a server error.
 
 Tracking exports include cached segmentations, a growth map, matched-point/model/matcher metadata in JSON, pair CSV statistics, and combined `tracking_results.zip`. Pair metadata and the top-level manifest record matcher name/version/batch size, the exclusion policy, mask presence, source/combined pixel counts, and coordinate system. CSV output uses the declared same/decay/growth/background/mask column order and Python's CSV quoting.
 
@@ -96,7 +96,9 @@ docker compose -f compose.core.yml run --rm test-smoke
 
 `test-fast` uses fake models and covers state transitions, continuation after failure, retry, active cancellation, training jobs, matching-batch cancellation/progress, exclusion-mask policies/provenance, settings snapshots, request validation, model download integrity, cache invalidation, and CSV mapping. `test-smoke` loads the released models, processes two dated TIFF fixtures, completes tracking, verifies the export ZIP, and compares the application-owned matcher arrays exactly with the function embedded in the released package.
 
-On the August 2026 Intel macOS Docker reference host, the expanded 75-test fast run took about 2.4 seconds and the two-test released-model smoke/equivalence run about 10.4 seconds with warm caches.
+`node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. `node tests/testcases_js/test_tracking_utils.js` verifies strict filename dates, consecutive temporal pairing, and rejection of same-day duplicates. The Windows build workflow runs both dependency-free Node checks before packaging.
+
+On the September 2026 Intel macOS Docker reference host, the expanded 108-test fast run took about 3.9 seconds and the two-test released-model smoke/equivalence run about 13.7 seconds with warm caches.
 
 ## Native Source Development
 
@@ -144,7 +146,7 @@ python main.py --training \
   --output retrained-model.pt.zip
 ```
 
-Tracking remains browser-only. Browser/API training uses `training_type`, `epochs`, and `learning_rate`; the command-line option `--lr` and API field `lr` remain compatibility aliases. If both API names are supplied, their values must match. Browser training starts an asynchronous run, polls progress, and can enter `queued`, `running`, `cancelling`, `completed`, `cancelled`, or `failed`. Only a completed run can be saved. Legacy released models are wrapped so swallowed runtime errors become failures, while newly built model sources return the state directly. A full released-model training run is still required on each supported CPU/GPU target before release.
+Tracking remains browser-only. Browser/API training uses `training_type`, `epochs`, and `learning_rate`; the command-line option `--lr` and API field `lr` remain compatibility aliases. If both API names are supplied, their values must match. Browser training now selects only separately imported annotations, not detection outputs, and requires an explicit per-run confirmation that all selected labels were independently reviewed. Both `/api/training/runs` and legacy `/training` reject requests without `label_review: {"source":"user_reviewed","confirmed":true}`. The browser also sends `label_filenames`, one separately named PNG per source image, avoiding collisions with cached detection outputs; older clients may omit this field and use conventional annotation names. This is an auditable user assertion, not proof of label quality; imported results ZIPs are not automatically ground truth. CLI users remain responsible for supplying reviewed masks. Browser training starts an asynchronous run, polls progress, and can enter `queued`, `running`, `cancelling`, `completed`, `cancelled`, or `failed`. Only a completed run can be saved. Legacy released models are wrapped so swallowed runtime errors become failures, while newly built model sources return the state directly. A full released-model training run is still required on each supported CPU/GPU target before release.
 
 CLI commands now return meaningful process exit codes: `0` for success, `1` for failure or invalid input, `2` when image processing produced partial results, and `130` for cancelled processing or training. Running `python main.py` without a CLI operation still starts the browser application.
 
@@ -188,6 +190,10 @@ The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. Direct arc
 
 The release builder in this repository produces the same directory-bundle/full-ZIP format. Packages preserve `main.bat`, add `Start RootDetector.bat` as a descriptive alias, and include `BUILD-INFO.txt` with the source commit and Actions run.
 
+Runtime diagnostics are written to `logs/rootdetector.log` beside the portable application and rotated at 5 MiB with three backups. `GET /api/diagnostics` produces a support ZIP containing those logs, `BUILD-INFO.txt`, and a privacy-limited system snapshot. It excludes input images, results, and environment variables; logs can contain research filenames and technical paths and should be reviewed before sharing. Pipeline error IDs correlate the browser message with log entries.
+
+Browser-only failures can be reported to `POST /api/diagnostics/client`; fields are length-bounded, normalized to one line, and written with a correlation ID. Result-image downloads retry only interrupted, timeout, rate-limit, and server-error responses. Permanent client errors such as HTTP 404 fail immediately. In portable builds, `torch.__version__` can retain a `+cpu` label even after first-launch replacement libraries make CUDA available, so diagnostics report the effective inference device and CUDA availability separately from package metadata.
+
 The launcher:
 
 1. Changes the working directory to the extracted package, including paths containing spaces.
@@ -215,6 +221,8 @@ Recommended release sequence:
 4. Wait for the Windows job and download its `RootDetector-Windows-portable` workflow artifact.
 5. Extract and test the full ZIP on a clean Windows 10/11 x64 machine: launch, first-run downloads, two-image analysis, tracking, export, restart, and paths containing spaces.
 6. Create a GitHub Release and upload the tested full ZIP plus its SHA-256 checksum. A workflow artifact is temporary and is not itself a public release.
+
+For the large-batch GPU qualification, follow [WINDOWS-GPU-ACCEPTANCE.md](WINDOWS-GPU-ACCEPTANCE.md). Keep candidate releases marked as prereleases until that checklist passes on `ExPlEco_ML_Desk`.
 
 The workflow fetches and verifies models before building and uses the Node-24-native checkout, Python setup, and artifact actions. It publishes only the full portable ZIP. PyInstaller cannot cross-build a Windows application from macOS or Linux, so every release candidate still requires a real Windows acceptance test.
 

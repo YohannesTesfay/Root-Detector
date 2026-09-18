@@ -17,6 +17,16 @@ class Settings(BaseSettings):
         defaults['too_many_roots'] = 100000
         return defaults
 
+    def load_settings_from_file(self):
+        settings = super().load_settings_from_file()
+        # Older partial saves may contain only one model type. Restore the
+        # omitted selections from available defaults on the next launch.
+        active_models = settings.get('active_models', {})
+        if isinstance(active_models, dict):
+            defaults = self.get_defaults()['active_models']
+            settings['active_models'] = dict(defaults, **active_models)
+        return settings
+
     def get_settings_as_dict(self):
         s = super().get_settings_as_dict()
         s['available_gpu'] = torch.cuda.get_device_name() if torch.cuda.is_available() else None

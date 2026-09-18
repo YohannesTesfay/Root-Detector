@@ -1,6 +1,8 @@
 import os
 import threading
 import io
+import json
+import zipfile
 
 import PIL.Image
 
@@ -115,6 +117,7 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     session = client.get('/api/session', headers={'Host': 'localhost'})
     assert session.status_code == 200
     assert session.get_json()['token'] == app.session_token
+    assert session.get_json()['asset_schema'] == 'rootdetector-web-rc2-1'
     assert session.headers['X-Content-Type-Options'] == 'nosniff'
     assert session.headers['X-Frame-Options'] == 'DENY'
     assert "frame-ancestors 'none'" in session.headers['Content-Security-Policy']
@@ -145,6 +148,49 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     cleared = client.post('/clear_cache', headers=request_headers(app))
     assert cleared.status_code == 200
     assert cleared.get_json() == {'cleared': True}
+
+
+def test_diagnostics_download_excludes_research_data(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+
+    app = App()
+    app.testing = True
+    with open(os.path.join(app.cache_path, 'private-input.png'), 'wb') as output:
+        output.write(png_bytes())
+
+    client = app.test_client()
+    reported = client.post(
+        '/api/diagnostics/client',
+        json={
+            'stage': 'manual_detection',
+            'item_id': 'example.tiff',
+            'message': 'Result fetch was interrupted.',
+            'error_type': 'TypeError',
+            'status': 0,
+        },
+        headers=request_headers(app),
+    )
+    assert reported.status_code == 202
+    assert len(reported.get_json()['diagnostic_id']) == 12
+
+    response = client.get('/api/diagnostics', headers={'Host': 'localhost'})
+    assert response.status_code == 200
+    assert response.mimetype == 'application/zip'
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        names = archive.namelist()
+        assert 'diagnostics.json' in names
+        assert 'logs/rootdetector.log' in names
+        assert all('private-input.png' not in name for name in names)
+        snapshot = json.loads(archive.read('diagnostics.json'))
+        log_text = archive.read('logs/rootdetector.log').decode('utf-8')
+    assert 'environment' not in snapshot
+    assert str(tmp_path) not in json.dumps(snapshot)
+    assert 'Browser manual_detection failed for example.tiff' in log_text
+    assert 'Result fetch was interrupted.' in log_text
 
 
 def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path, monkeypatch):

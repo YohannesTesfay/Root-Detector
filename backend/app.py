@@ -10,6 +10,7 @@ import signal
 import tempfile
 import urllib.parse
 import flask
+from werkzeug.exceptions import HTTPException
 
 import backend
 import backend.jobs
@@ -18,6 +19,7 @@ import backend.training_jobs
 import backend.pipeline
 import backend.security
 import backend.settings
+import backend.diagnostics
 from . import root_detection
 from . import root_tracking
 
@@ -26,6 +28,7 @@ from . import root_tracking
 class App(BaseApp):
     def __init__(self, *args, **kw):
         self.session_token = secrets.token_urlsafe(32)
+        backend.diagnostics.configure_logging()
         # Packaged Windows releases contain the manifest but fetch the large
         # verified model files on first launch. Source/Docker users can prefetch
         # them explicitly to make startup deterministic.
@@ -54,6 +57,8 @@ class App(BaseApp):
         self.view_functions['images'] = self.images
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
+        self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
+        self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
         self.route('/process_root_tracking', methods=['POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>', methods=['POST'])(self.postprocess_detection)
         self.route('/compile_tracking_results', methods=['POST'])(self.compile_tracking_results)
@@ -74,6 +79,7 @@ class App(BaseApp):
         self.after_request(self.add_security_headers)
         self.register_error_handler(backend.security.ValidationError, self.handle_validation_error)
         self.register_error_handler(413, self.handle_request_too_large)
+        self.register_error_handler(Exception, self.handle_unexpected_error)
 
     @staticmethod
     def json_error(code, message, status, retryable=False, stage='api'):
@@ -152,15 +158,87 @@ class App(BaseApp):
             413,
         )
 
+    def handle_unexpected_error(self, error):
+        if isinstance(error, HTTPException):
+            return error
+        payload = backend.jobs.error_payload(
+            'internal_error',
+            'RootDetector encountered an unexpected error. Download diagnostics and retry.',
+            'api',
+            item_id=flask.request.path,
+            retryable=True,
+            error_type=error.__class__.__name__,
+        )
+        backend.diagnostics.log_exception(
+            payload['diagnostic_id'],
+            'api',
+            flask.request.path,
+            error,
+            self.settings,
+        )
+        return flask.jsonify(payload), 500
+
     def get_session(self):
         return flask.jsonify({
             'token': self.session_token,
+            'asset_schema': backend.security.ASSET_SCHEMA_VERSION,
             'limits': {
                 'max_upload_bytes': backend.security.MAX_UPLOAD_BYTES,
                 'max_upload_files': backend.security.MAX_UPLOAD_FILES,
                 'max_image_pixels': backend.security.MAX_IMAGE_PIXELS,
             },
         })
+
+    def download_diagnostics(self):
+        archive = backend.diagnostics.build_diagnostics_archive(self.settings)
+        return flask.send_file(
+            archive,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='RootDetector-diagnostics.zip',
+        )
+
+    def record_client_diagnostic(self):
+        data = flask.request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise backend.security.ValidationError(
+                'Client diagnostics must be a JSON object.',
+                'invalid_client_diagnostic',
+            )
+
+        def clean_field(name, limit, required=False):
+            value = data.get(name, '')
+            if not isinstance(value, str) or (required and not value.strip()):
+                raise backend.security.ValidationError(
+                    '{} must be text.'.format(name),
+                    'invalid_client_diagnostic',
+                )
+            return ' '.join(value.split())[:limit]
+
+        stage = clean_field('stage', 64, required=True)
+        item_id = clean_field('item_id', 300)
+        message = clean_field('message', 2000, required=True)
+        error_type = clean_field('error_type', 100)
+        status = data.get('status')
+        if status is not None and (
+            isinstance(status, bool) or not isinstance(status, (int, float))
+        ):
+            raise backend.security.ValidationError(
+                'status must be numeric.',
+                'invalid_client_diagnostic',
+            )
+
+        diagnostic_id = backend.jobs.new_diagnostic_id()
+        backend.diagnostics.logger().warning(
+            '[%s] Browser %s failed for %s: %s type=%s status=%s.',
+            diagnostic_id,
+            stage,
+            item_id or '-',
+            message,
+            error_type or '-',
+            status if status is not None else '-',
+        )
+        return flask.jsonify({'diagnostic_id': diagnostic_id}), 202
 
     def file_upload(self):
         files = flask.request.files.getlist('files')
@@ -215,6 +293,12 @@ class App(BaseApp):
                 else:
                     os.replace(temporary, destination)
                 uploaded.append(dict(metadata, name=name, reused=reused))
+                backend.diagnostics.logger().info(
+                    'Upload accepted: name=%s size=%s reused=%s.',
+                    name,
+                    metadata.get('bytes'),
+                    reused,
+                )
             return flask.jsonify({'files': uploaded})
         finally:
             for _name, temporary, _destination, _metadata in pending:
@@ -258,8 +342,15 @@ class App(BaseApp):
                 'The active_models setting must be an object.',
                 'invalid_settings',
             )
-        known_model_types = set(getattr(self.settings, 'active_models', {}))
-        known_model_types.update(getattr(self.settings, 'models', {}))
+        settings_data = self.settings.get_settings_as_dict()
+        current_settings = settings_data.get('settings', {})
+        defaults = self.settings.get_defaults() if hasattr(self.settings, 'get_defaults') else {}
+        default_models = defaults.get('active_models', {})
+        available_models = settings_data.get('available_models', {})
+        known_model_types = set(default_models) | set(available_models)
+        if not known_model_types:
+            # Keep lightweight/test settings implementations usable too.
+            known_model_types = set(getattr(self.settings, 'active_models', {}))
         for modeltype, modelname in active_models.items():
             if modeltype not in known_model_types:
                 raise backend.security.ValidationError('Invalid model type.', 'invalid_model_type')
@@ -291,7 +382,17 @@ class App(BaseApp):
                     'invalid_settings',
                 )
 
-        self.settings.set_settings(request_data)
+        # BaseSettings persists the supplied dictionary as the entire settings
+        # file. A partial request must therefore be expanded before saving;
+        # otherwise one model selection silently discards the other types.
+        updated_settings = dict(defaults)
+        updated_settings.update(current_settings)
+        merged_models = dict(default_models)
+        merged_models.update(current_settings.get('active_models', {}))
+        merged_models.update(active_models)
+        updated_settings.update(request_data)
+        updated_settings['active_models'] = merged_models
+        self.settings.set_settings(updated_settings)
         return flask.jsonify({'saved': True})
 
     def delete_image(self, path):
@@ -469,6 +570,16 @@ class App(BaseApp):
                 'invalid_training_files',
             )
 
+        label_review = requestform.get('label_review')
+        if not isinstance(label_review, dict) or (
+            label_review.get('source') != 'user_reviewed'
+            or label_review.get('confirmed') is not True
+        ):
+            raise backend.security.ValidationError(
+                'Training requires explicit confirmation that every label was independently reviewed; generated detection results are not ground truth.',
+                'unreviewed_training_labels',
+            )
+
         imagefiles = [
             backend.security.safe_resolve(
                 self.cache_path,
@@ -478,7 +589,26 @@ class App(BaseApp):
             )
             for filename in filenames
         ]
-        targetfiles  = backend.training.find_targetfiles(imagefiles)
+        label_filenames = requestform.get('label_filenames')
+        if label_filenames is None:
+            # Older clients use a conventional annotation filename. They must
+            # still explicitly confirm review before training can start.
+            targetfiles = backend.training.find_targetfiles(imagefiles)
+        elif isinstance(label_filenames, list) and len(label_filenames) == len(imagefiles):
+            targetfiles = [
+                backend.security.safe_resolve(
+                    self.cache_path,
+                    label_name,
+                    {'.png'},
+                    must_exist=True,
+                )
+                for label_name in label_filenames
+            ]
+        else:
+            raise backend.security.ValidationError(
+                'Provide one training label filename for each image.',
+                'invalid_training_labels',
+            )
         if not all(targetfiles):
             raise backend.security.ValidationError(
                 'Every training image must have a matching segmentation annotation.',

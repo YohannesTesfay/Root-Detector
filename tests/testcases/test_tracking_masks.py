@@ -41,6 +41,26 @@ def test_exclusion_mask_policy_and_shape_are_validated():
         )
 
 
+def test_tracking_pair_shapes_are_validated_before_matching():
+    assert root_tracking.validate_tracking_pair_shapes(
+        np.zeros((48, 52)),
+        np.zeros((48, 52)),
+    ) == (48, 52)
+
+    with pytest.raises(ValueError, match='identical pixel dimensions') as error:
+        root_tracking.validate_tracking_pair_shapes(
+            np.zeros((48, 52)),
+            np.zeros((47, 52)),
+        )
+    assert 'align and crop copies' in str(error.value)
+
+    with pytest.raises(ValueError, match='two-dimensional'):
+        root_tracking.validate_tracking_pair_shapes(
+            np.zeros((2, 2, 3)),
+            np.zeros((2, 2)),
+        )
+
+
 def test_tracking_uses_both_observation_masks_and_exports_provenance(tmp_path, monkeypatch):
     image0 = str(tmp_path / 'observation0.png')
     image1 = str(tmp_path / 'observation1.png')

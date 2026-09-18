@@ -5,43 +5,39 @@ var RootTracking = new function() {
         var $table = $('#tracking-filetable tbody')
         $table.find('tr').remove()
 
-        const parsed_filenames = files.map( 
-            f => { try{ return parse_filename(f.name)  } catch {  } }
-        )
-
-        //group files together by their experiment name and sort by date
-        //(grouped_files maps experiment name to array of indices)
-        const grouped_files = new Map()
-        for(const i in files){
-            const groupname = parsed_filenames[i]?.base
-            if(groupname == undefined)
-                continue;
-            let   group     = grouped_files.get(groupname) ?? []
-            group.push(i)
-            group.sort( (i0,i1) => parsed_filenames[i0].date - parsed_filenames[i1].date)
-            grouped_files.set( groupname, group )
-        }
-        const groupnames = [...grouped_files.keys()]
-        groupnames.sort()
-        
-        //construct the file table
+        const pairing_plan = plan_tracking_pairs(files)
         const table_rows = []
-        for(const groupname of groupnames){
-            const group = grouped_files.get(groupname)
-            for(const i in group.slice(0,-1)){
-                const [i0,i1] = [group[i], group[Number(i)+1]]
-                const [f0,f1] = [files[i0], files[i1]]
-
-                table_rows.push(
-                    $('template#tracking-item').tmpl({filename0:f0.name, filename1:f1.name})
-                )
-                GLOBAL.files[f0.name].tracking_results = {[f1.name]: {}};  //TODO: refactor
-            }
+        for(const [filename0, filename1] of pairing_plan.pairs){
+            table_rows.push(
+                $('template#tracking-item').tmpl({filename0:filename0, filename1:filename1})
+            )
+            GLOBAL.files[filename0].tracking_results = {[filename1]: {}};  //TODO: refactor
         }
 
         $table.append(table_rows)
         const n = table_rows.length;
         $('#tracking-filetable thead th').text(`${n} Image Pair${(n==1)?'':'s'} Loaded`)
+        $('#tracking-pairing-message').toggle(
+            n == 0 && files.length > 0 && pairing_plan.issues.length == 0
+        )
+        const $issues = $('#tracking-pairing-issues-message')
+        const $issue_list = $issues.find('.list').empty()
+        for(const issue of pairing_plan.issues){
+            let message
+            if(issue.code == 'duplicate_date'){
+                message = (
+                    `${issue.base} has ${issue.filenames.length} files dated ${issue.date}: `
+                    + `${issue.filenames.join(', ')}. Load only one observation for this date.`
+                )
+            } else {
+                message = (
+                    `No valid observation date was found in ${issue.filename}. `
+                    + 'Use a date such as 15.04.2026 in the filename.'
+                )
+            }
+            $issue_list.append($('<li>').text(message))
+        }
+        $issues.toggle(pairing_plan.issues.length > 0)
         return this.get_file_pairs()
     };
 

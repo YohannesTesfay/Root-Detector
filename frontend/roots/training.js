@@ -4,6 +4,26 @@ RootsTraining = class extends BaseTraining {
     static active_run_id = undefined
     static terminal_states = ['completed', 'cancelled', 'failed']
     static training_states = {}
+    static imported_labels = new Map()
+
+    static clear_imported_labels(){
+        this.imported_labels = new Map()
+        $('#training-reviewed-labels-checkbox').prop('checked', false)
+        this.update_number_of_training_files_info()
+    }
+
+    static forget_imported_label(filename){
+        if(this.imported_labels.delete(filename)){
+            $('#training-reviewed-labels-checkbox').prop('checked', false)
+            this.update_number_of_training_files_info()
+        }
+    }
+
+    static register_imported_label(filename, label){
+        this.imported_labels.set(filename, label)
+        $('#training-reviewed-labels-checkbox').prop('checked', false)
+        this.update_number_of_training_files_info()
+    }
 
     //override
     static refresh_tab(){
@@ -11,10 +31,9 @@ RootsTraining = class extends BaseTraining {
         this.update_number_of_training_files_info()
     }
     
-    //dummy override: all files selected  //TODO: move upstream
+    // Detection predictions are never selected as training labels automatically.
     static get_selected_files(){
-        const files_with_results = Object.values(GLOBAL.files).filter( x => !!x.results )
-        return files_with_results.map( x => x.name)
+        return Array.from(this.imported_labels.keys()).filter(name => !!GLOBAL.files[name])
     }
 
     //override
@@ -33,6 +52,13 @@ RootsTraining = class extends BaseTraining {
 
         const filenames = this.get_selected_files()
         const options = this.get_training_options()
+        if(!filenames.length || !$('#training-reviewed-labels-checkbox').is(':checked')){
+            $('body').toast({
+                message: 'Load a small set of reviewed labels and confirm their review before training.',
+                class: 'error', displayTime: 0, closeIcon: true,
+            })
+            return
+        }
         this.training_states[options.training_type] = 'running'
         $('#training-new-modelname-field').hide()
         try {
@@ -40,7 +66,9 @@ RootsTraining = class extends BaseTraining {
             await this.upload_training_data(filenames)
             const run = await RootSecurity.request('/api/training/runs', 'POST', {
                 filenames: filenames,
+                label_filenames: filenames.map(filename => this.imported_labels.get(filename).name),
                 options: options,
+                label_review: {source: 'user_reviewed', confirmed: true},
             })
             this.active_run_id = run.id
             const result = await this.poll_until_finished(options)
@@ -145,14 +173,11 @@ RootsTraining = class extends BaseTraining {
         return this.on_start_training()
     }
 
-    static upload_training_data(filenames){
-        const uploads = filenames.map(filename => upload_file_to_flask(GLOBAL.files[filename]))
-        const segmentations = filenames
-            .map(filename => GLOBAL.files[filename].results.segmentation)
-            .filter(segmentation => segmentation instanceof Blob)
-        return Promise.all(uploads.concat(
-            segmentations.map(segmentation => upload_file_to_flask(segmentation))
-        ))
+    static async upload_training_data(filenames){
+        for(const filename of filenames){
+            await RootsFileInput.ensure_uploaded(GLOBAL.files[filename])
+            await RootsFileInput.ensure_uploaded(this.imported_labels.get(filename))
+        }
     }
 
     //override
@@ -177,10 +202,14 @@ RootsTraining = class extends BaseTraining {
     static update_number_of_training_files_info(){
         const n = this.get_selected_files().length;
         $('#training-number-of-files-info-label').text(n)
+        $('#training-label-file-list').text(
+            n ? this.get_selected_files().join(', ') : 'No annotations imported yet.'
+        )
         $('#training-number-of-files-info-message').removeClass('hidden')
+        const confirmed = $('#training-reviewed-labels-checkbox').is(':checked')
         $('#start-training-button')
-            .prop('disabled', n == 0)
-            .attr('aria-disabled', String(n == 0))
+            .prop('disabled', n == 0 || !confirmed)
+            .attr('aria-disabled', String(n == 0 || !confirmed))
     }
 
     static async on_cancel_training(){
