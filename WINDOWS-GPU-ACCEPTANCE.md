@@ -379,6 +379,38 @@ mechanics test, not a new browser-import test or scientific validation of
 root turnover. Ecological interpretation can follow during supervised use;
 no custom-model quality claim is established by these software tests.
 
+### 2026-09-18 merged-fork-main replay and tracking repeatability
+
+Fork PRs #4 and #5 were merged in order. The resulting `main` tree at
+`9b8de6c` is identical to the qualified RC2 branch tree. Actions run
+`35354845509` passed at that exact merge commit. The outer artifact SHA-256 is
+`66951c3ac08335b2c74c1609133ef1cc38397263f06d72457e664d15d135968d`;
+the full portable ZIP SHA-256 is
+`7e08e79e78d94bef2ffa026d09e12f527c705ad3048854097b731e1f6d26d273`.
+Both ZIP layers passed integrity checks and `BUILD-INFO.txt` names `9b8de6c`.
+On a fresh Windows extraction, pipeline `0a72750b01f442d7a06ac86e89f1b321`
+completed the same nine CUDA detections and six chronological pairs (15/15
+items). Its tracking ZIP passed integrity, contains 32 entries and six `OK`
+schema-2 rows (SHA-256
+`59fde32473f171e7727f5728e1585f68cc982876e3ce813ef83d145c2d6c861d`).
+Diagnostics report the RTX 3080 as the effective CUDA device; their ZIP
+SHA-256 is
+`0d22041a3f92bb3da716909708a1e8949d910d7d9d8de59d03907ef12275bbcb`.
+The isolated Windows folder is `ForkMain-9b8de6c-gate`.
+
+**Scientific reproducibility caveat:** all nine detection statistics matched
+between the RC2 and merged-main runs, but tracking CSV counts did not. A repeat
+of the identical L001 21–22 August pair in the *same running package* changed
+matched points from 3,863 to 3,890 and same/decay/growth pixels from
+39,802/17,059/13,458 to 39,858/17,161/13,402. The matcher deliberately uses
+an unseeded `numpy.random.permutation` to sample root points, inherited from
+the released algorithm. This confirms stochastic tracking rather than a
+packaging, input, or model-hash difference. The workflow mechanics pass, but
+tracking measurements are not repeatable enough to claim deterministic
+scientific output. Preserve every run's export and settings; do not compare
+single-run turnover counts as exact until a deterministic sampling rule is
+implemented, versioned, and validated on representative data.
+
 For a subsequent scientific qualification run:
 
 1. Prepare a small dedicated set of original images and same-sized,
