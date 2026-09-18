@@ -210,7 +210,7 @@ Pushing source does not replace a Windows download. The **Build Windows Binaries
 
 1. Open a PR against the fork's `main`, run both Docker suites, and dispatch the Windows build on that PR branch.
 2. Verify the ZIP hash and `BUILD-INFO.txt`, extract into a fresh folder, then test launch, first-run downloads, detection, tracking, export, restart, and paths with spaces.
-3. Qualify release-sensitive GPU behavior on the packaged Windows build. See [Validation Summary](docs/VALIDATION.md) for prior evidence and remaining gates.
+3. Qualify release-sensitive GPU behavior on the packaged Windows build. Record the build, test evidence, and remaining gates in the fork PR.
 4. After review and merge, build the exact fork `main` head intended for release. Publish its tested full ZIP and SHA-256 on a GitHub Release; workflow artifacts are temporary, not public releases.
 
 PyInstaller cannot cross-build the Windows package from macOS or Linux. A new package also changes the launcher name, so existing scripts calling `main.bat` require an explicit update.

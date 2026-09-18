@@ -1,6 +1,6 @@
 # RootDetector Improvement Plan
 
-This is the **active** roadmap, not a log of completed branches. The automated detection-to-tracking pipeline, core security/caching fixes, reviewed-label guard, and Windows portable mechanics have implementation and regression coverage. See [Validation Summary](docs/VALIDATION.md) for the tested scope. The detailed former plan remains in Git history at `51e338a`; completion in code must not be mistaken for scientific or cross-platform approval.
+This is the **active** roadmap, not a log of completed branches. The automated detection-to-tracking pipeline, core security/caching fixes, reviewed-label guard, and Windows portable mechanics have implementation and regression coverage. Detailed prior evidence remains in Git history at `51e338a`; completion in code must not be mistaken for scientific or cross-platform approval.
 
 Priorities: **P0** blocks trustworthy results or a safe release; **P1** is required for a dependable product; **P2** improves usability or maintainability. Work against the fork first. Keep upstream unchanged until the fork's exact release candidate is qualified and reviewed.
 
