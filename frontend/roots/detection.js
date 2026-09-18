@@ -73,6 +73,7 @@ RootDetection = class extends BaseDetection{
 
     //override
     static async set_results(filename, results){
+        RootsTraining.forget_imported_label(filename)
         if(results!=undefined && is_string(results.skeleton))
             results.skeleton = await fetch_as_file(url_for_image(results.skeleton))
         

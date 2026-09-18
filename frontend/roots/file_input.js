@@ -97,6 +97,7 @@ RootsFileInput = class extends BaseFileInput{
             await RootSecurity.request('/clear_cache', 'POST')
 
         this.reset_uploaded_files()
+        RootsTraining.clear_imported_labels()
         GLOBAL.files = []
         for(const file of files)
             GLOBAL.files[file.name] = new InputFile(file)
@@ -184,9 +185,23 @@ RootsFileInput = class extends BaseFileInput{
 
     //override
     static async load_result(filename, resultfiles){
-        console.log(filename, resultfiles)
         const inputfile = GLOBAL.files[filename]
         if(inputfile != undefined){
+            const training_label = new File(
+                [resultfiles[0]],
+                `training-label-${Date.now()}-${Math.random().toString(36).slice(2)}.png`,
+                {type:'image/png'},
+            )
+            // A prior prediction may already own the conventional result name
+            // in the cache. Keep a separately named training label either way.
+            if(inputfile.results){
+                RootsTraining.register_imported_label(filename, training_label)
+                $('body').toast({
+                    message: `Imported a training label for ${filename}. The existing detection overlay was not replaced. Review the label before confirming training.`,
+                    class: 'info', displayTime: 8000,
+                })
+                return
+            }
             const resultfile = new File(
                 //consistent file name
                 [resultfiles[0]], `${filename}.segmentation.png`, {type:'image/png'}
@@ -199,6 +214,7 @@ RootsFileInput = class extends BaseFileInput{
                 'POST',
             )
             await App.Detection.set_results(filename, result)
+            RootsTraining.register_imported_label(filename, training_label)
         }
     }
 

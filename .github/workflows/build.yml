@@ -32,6 +32,9 @@ jobs:
       - name: Test tracking filename pairing
         run: node tests/testcases_js/test_tracking_utils.js
 
+      - name: Test reviewed training label selection
+        run: node tests/testcases_js/test_training_labels.js
+
       - name: Build
         run: python build.py --zip --prune-torchlibs
 

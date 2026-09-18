@@ -8,10 +8,22 @@
 **Windows acceptance checkpoint:** **PASS.** The 24 August 2026 full retest at `4b64890` cleared packaged tracking cancellation/retry, export, memory cleanup, and Settings keyboard access. The focused retest of `e9b86bb` from Actions run `32685037316` then passed two complete Training Stop -> Interrupted -> Retry -> Completed cycles. PR #3 has no remaining packaged-Windows blocker.
 **Branch synchronization checkpoint:** PR #3 was merged into `fix/core-automation`; fork `main` was merged into that branch as `bea78d0`. Its exact head passed Actions run `32690969751` and produced the single `RootDetector-Windows-portable` artifact. The core branch was then merged into `feature/reliability-security-hardening`; the combined 98-test fast suite and two released-model smoke/equivalence tests pass.
 **Fork integration checkpoint:** `fix/core-automation` was merged into fork `main` as `01de4e8`, then the resulting `origin/main` was merged back into `feature/reliability-security-hardening` without content conflicts.
-**Live GPU batch checkpoint:** the 2 September 2026 investigation of the fork-`main` portable build identified a transient upload failure before pipeline creation, hidden browser error details, transient per-image GPU failures, and missing durable diagnostics. The feature branch has not yet passed this 86-image packaged-Windows scenario.
+**Live GPU batch checkpoint:** **PASS for RC2 mechanics.** The 2 September 2026 fork-`main` failure at 81% led to upload isolation, actionable errors, durable diagnostics, bounded retries, and GPU-selection fixes. On 15 September the rebuilt `e0617c9` portable package completed the 86-image BH+GR batch twice in one process, produced content-identical exports, settled to effectively flat memory, and recovered correctly when the browser switched between extracted builds. Scientific interpretation remains a separate review.
 **Purpose:** make RootDetector scientifically reliable, secure as a local web application, maintainable, and straightforward to install and use on Windows, macOS, and Linux.
 
 This plan covers the complete application: detection, exclusion masks, tracking, training, CLI, Flask service, browser interface, model distribution, tests, packaging, and contributor workflow. Priorities are **P0** (incorrect or unsafe behavior), **P1** (required for a dependable release), **P2** (major usability or maintainability gain), and **P3** (advanced capability).
+
+## Fork-First Release Gates
+
+Keep upstream untouched until the fork's combined release is qualified:
+
+1. Commit the RC2 evidence and reviewed-label training safeguard. Recheck the complete diff and run the Docker fast/model smoke suites plus all workflow Node tests. Local regressions pass; the new training path still needs packaged-Windows acceptance.
+2. Review and merge fork PR #4 (`feature/reliability-security-hardening` into `main`); then retarget fork PR #5 (`fix/windows-batch-reliability-rc2`) to `main`, review its resulting delta, and merge it. Do not merge an untested new head merely because an earlier artifact passed.
+3. Dispatch **Build Windows Binaries** from the resulting fork `main`. Record its commit and artifact checksum. On ExPlEco_ML_Desk, test startup, reviewed-label import and training guard, a small disposable training/cancel/retry run, detection, genuine-date tracking, export, diagnostics, and the previously qualified large-batch/resource cases as appropriate to the changed paths.
+4. Have an ecological reviewer assess repeated-date overlays and turnover interpretations on real data. A mechanical pass is not a biological accuracy claim; do not present self-generated labels as ground truth.
+5. After acceptance, compare fresh fork `main` with upstream `main`, freeze the exact tested head on a fork integration branch, and open one draft cross-fork PR. Summarize automation, reliability/security, Windows packaging, tests, and known scientific limitations in short bullets for the original maintainer. Upstream merge is a separate decision after review.
+
+The local `gh` credential currently fails authentication, although the public GitHub API confirms that #4 and #5 remain open drafts with the stacked bases above. Restore authenticated API access before any PR edits or merges. Direct SSH push capability is separate and has not been revalidated in this pass.
 
 ## Executive Summary
 
@@ -139,8 +151,8 @@ The extended RC1 exercise uncovered release-blocking workflow ambiguity and a re
 
 - Exported segmentation and skeleton PNGs were reintroduced as apparent source images. Because each generated pair shared the same prefix and date, the browser proposed segmentation-to-skeleton “tracking pairs.” These are invalid comparisons. Input loading must reject generated artifacts, annotation import must remain a separate action, and the pair preview must identify both observations and dates before execution.
 - Multiple manual tracking requests attempted to create identical content-addressed cache artifacts. The log records repeated `WinError 32` sharing violations and `WinError 5` rename failures in `/process_root_tracking`. This is application concurrency, not Windows or Codex policy. Serialize inference at the service boundary, add per-cache-key locking, and use unique atomic temporary files; regress with simultaneous requests on Windows semantics.
-- Any detected image currently becomes a training candidate, so unreviewed model predictions can be used as their own labels. Training must require explicitly imported or user-confirmed ground-truth segmentations, display source/annotation pairs, and refuse prediction-only datasets. Tracking completion is not a training prerequisite.
-- Training uploads every source and generated segmentation concurrently with an unbounded `Promise.all`. The field run created thousands of request threads, a 9.61 GB cache, roughly 17 GB private process memory, 7.56/10.24 GB GPU memory use, and reduced free `C:` space to 5.72 GB. Replace this with bounded sequential/resumable preparation, input-count and disk estimates, visible file/epoch progress, and cancellation during preparation.
+- Detected images previously became training candidates automatically. The browser now selects only separately imported annotations, resets review confirmation whenever the set changes, and the training API requires explicit per-run confirmation. This is an assertion, not proof: a results ZIP can still be imported, so future work must show each source/annotation pair, record reviewer and label hashes, support correction, and test against an independently reviewed holdout. Tracking completion is not a training prerequisite.
+- Training previously uploaded every source and generated segmentation concurrently with an unbounded `Promise.all`. The field run created thousands of request threads, a 9.61 GB cache, roughly 17 GB private process memory, 7.56/10.24 GB GPU memory use, and reduced free `C:` space to 5.72 GB. Sequential, reusable upload preparation is now in place; add input-count and disk estimates, visible file/epoch progress, and cancellation during preparation.
 - Training exceptions are not consistently written to the rotating diagnostics log, so the first generic “Training failed” notification cannot be reconstructed. Log run creation, normalized options, counts, phase changes, cancellation, terminal result, exception, and diagnostic ID without image contents.
 - Detection exports use generic `results.zip` and repeated `statistics.csv` names. Adopt timestamped operation-specific names such as `RootDetector-detection-results-YYYYMMDD-HHMMSS.zip`, `detection-statistics.csv`, and `RootDetector-tracking-results-YYYYMMDD-HHMMSS.zip`. Add an export manifest and keep import compatibility for legacy archive/member names.
 
@@ -201,7 +213,8 @@ The two additional same-process cross-site runs each retried only the malformed
 TIFF, reused the other 16 uploads, and finished in about 20 seconds. Private
 memory was identical between their settled measurements, working set differed
 by 12 KiB, and thread count was unchanged; no per-run memory growth appeared.
-The established 86-image repeat remains the final large-batch resource gate.
+At this checkpoint, the established 86-image repeat remained the final
+large-batch resource gate.
 Upload and inference cancellation are mechanically accepted through earlier
 packaged tests. Native Windows DPI switching and ecological review remain open.
 Detection export naming also remains unclear (`results.zip` and repeated
@@ -252,9 +265,9 @@ same-grid pair reached tracking, cancelled truthfully, and completed on retry in
 The 74.9 MB GitHub artifact, its nested portable ZIP, diagnostics ZIP, and
 tracking export all matched their recorded SHA-256 digests. This closes T-011's
 packaged mechanics. The rebuilt mixed-batch UI replay, general detection export,
-and representative same-process resource repeat now also pass. It does not close
-ecological review, the Eldena-specific detection export, native DPI switching,
-or the repeated 86-image resource gate.
+and representative same-process resource repeat now also pass. At that point it
+did not close ecological review, the Eldena-specific detection export, native
+DPI switching, or the repeated 86-image resource gate.
 
 Scaled-browser inspection exposed one additional RC2 presentation defect: at
 the 150% viewport equivalent the Settings dialog extended slightly below the
@@ -266,6 +279,30 @@ long toasts, followed by a CUDA detection smoke on the RTX 3080. Manual native
 Windows scaling remains a separate confirmation because browser emulation does
 not change the operating system DPI setting.
 
+The final large-batch gate then passed with a separate byte-identical,
+hash-mapped copy of all 42 `BH` and 44 `GR` TIFFs (941,159,876 bytes,
+`scientific_valid=false`). The `e0617c9` portable package completed 86/86 CUDA
+detections twice without restarting. Run 1 uploaded all 86 files and finished
+in 208.7 seconds; run 2 issued zero upload requests and finished in 106.8
+seconds. Both exports contain 86 result folders, 259 files, 345 ZIP entries,
+and an 87-line aggregate CSV. Their archive hashes differ because ZIP metadata
+is regenerated, but every extracted file is byte-identical. Settled private
+memory changed by only 229,376 bytes, working set by 319,488 bytes, handles by
+four, and threads from 68 to 67 between runs. This is no evidence of per-run
+resource growth. A few transient browser connection errors recovered through
+the implemented polling retry; adaptive polling or server-sent progress should
+remain a later efficiency improvement.
+
+Switching the same stale browser tab from `e0617c9` to `96e9956` and back
+correctly rejected the old session token with reload guidance; reload then
+validated the asset schema and all critical scripts without a startup error.
+The workstation's real 150% Windows setting was also exercised in its logged-in
+desktop (DPR 1.5, 2560 x 1305 browser viewport): the Settings dialog and all
+actions, close controls, and a long failure toast stayed in view with no
+horizontal overflow. Native 100% and 125% switching remains a short manual UX
+confirmation because changing operating-system scaling would disrupt the active
+desktop; their equivalent browser geometries already pass.
+
 The old December 2024 guide does not prescribe cropping before tracking. Its
 1000 x 1000 random crops are an evaluation/annotation convenience, and its
 training guidance prefers uncropped images. Therefore automatic crop/alignment
@@ -273,6 +310,35 @@ must remain a separately designed feature with a declared coordinate anchor,
 preserved originals, transformation provenance, visual preview, and scientific
 validation. Silent top/centre/bottom cropping could manufacture apparent root
 movement and is not an acceptable compatibility repair.
+
+### Follow-up: traceable preparation for tracking
+
+Implement cropping and alignment after RC2 on a separate
+`feature/tracking-image-preparation` branch as an opt-in **Prepare for
+tracking** workflow. Detection must continue to accept
+uncropped supported images; preparation exists only to make repeated views of
+the same physical location comparable. It must never silently repair a grid
+mismatch or overwrite an original.
+
+1. Define the acquisition contract: tube/site, physical level, observation
+   date, orientation, pixel scale, and a documented physical origin or anchor.
+2. Preview registration as an overlay. Start with rigid translation and small
+   rotation, compute the common valid overlap, and do not stretch an image.
+   Permit rescaling only when calibration proves a scale difference.
+3. Let the user approve one fixed region of interest for a tube and level, then
+   apply that same transform and crop across its dates. Provide undo and keep
+   full-resolution originals unchanged.
+4. Save prepared images as derived copies plus a manifest containing source and
+   output SHA-256, original/output dimensions, crop rectangle, transform
+   matrix, interpolation, software version, user confirmation, and timestamp.
+5. Reject missing anchors, cross-level batches, inconsistent pixel scales, and
+   transformations that leave insufficient common overlap. For the Eldena
+   `L003` 16-pixel mismatch, do not assume top, centre, or bottom alignment;
+   confirm the acquisition anchor and visible overlap first.
+6. Test synthetic translations/rotations, equal-grid enforcement, edge crops,
+   cancellation/retry, deterministic manifests, and a locked scientific golden
+   set. An ecological reviewer must approve alignment and biological
+   plausibility before prepared outputs are used for turnover estimates.
 
 RootDetector must remain acquisition-source agnostic. Manually acquired and
 third-party scanner images may enter detection when their format is supported

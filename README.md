@@ -61,6 +61,10 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 
 Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
+## Train a Model (Optional)
+
+Training is separate from ordinary analysis. You do not need to review or label every image you analyze. For training, prepare a smaller, representative set of original images with matching masks that a person has independently checked and corrected where needed. Load the originals, then choose **Files → Load Annotations** for those masks. The Training tab asks you to confirm their review before **Start Training** becomes available. Automatically produced detection masks—including masks in a results ZIP—are predictions, not verified training labels. Keep different tubes/sites and dates out of the evaluation set so you can test the new model on genuinely unseen images.
+
 ## Common Problems
 
 - **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.

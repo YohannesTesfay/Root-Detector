@@ -227,7 +227,7 @@ def test_training_api_reports_the_effective_learning_rate(key, tmp_path, monkeyp
     app = App()
     app.testing = True
     image = os.path.join(app.cache_path, 'image.png')
-    target = image + '.segmentation.png'
+    target = os.path.join(app.cache_path, 'training-label-reviewed.png')
     os.makedirs(app.cache_path, exist_ok=True)
     open(image, 'wb').close()
     open(target, 'wb').close()
@@ -239,6 +239,8 @@ def test_training_api_reports_the_effective_learning_rate(key, tmp_path, monkeyp
     }
     response = app.test_client().post('/training', json={
         'filenames': ['image.png'],
+        'label_filenames': ['training-label-reviewed.png'],
+        'label_review': {'source': 'user_reviewed', 'confirmed': True},
         'options': {
             'training_type': 'detection',
             'epochs': 2,

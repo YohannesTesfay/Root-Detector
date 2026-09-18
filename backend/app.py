@@ -553,6 +553,16 @@ class App(BaseApp):
                 'invalid_training_files',
             )
 
+        label_review = requestform.get('label_review')
+        if not isinstance(label_review, dict) or (
+            label_review.get('source') != 'user_reviewed'
+            or label_review.get('confirmed') is not True
+        ):
+            raise backend.security.ValidationError(
+                'Training requires explicit confirmation that every label was independently reviewed; generated detection results are not ground truth.',
+                'unreviewed_training_labels',
+            )
+
         imagefiles = [
             backend.security.safe_resolve(
                 self.cache_path,
@@ -562,7 +572,26 @@ class App(BaseApp):
             )
             for filename in filenames
         ]
-        targetfiles  = backend.training.find_targetfiles(imagefiles)
+        label_filenames = requestform.get('label_filenames')
+        if label_filenames is None:
+            # Older clients use a conventional annotation filename. They must
+            # still explicitly confirm review before training can start.
+            targetfiles = backend.training.find_targetfiles(imagefiles)
+        elif isinstance(label_filenames, list) and len(label_filenames) == len(imagefiles):
+            targetfiles = [
+                backend.security.safe_resolve(
+                    self.cache_path,
+                    label_name,
+                    {'.png'},
+                    must_exist=True,
+                )
+                for label_name in label_filenames
+            ]
+        else:
+            raise backend.security.ValidationError(
+                'Provide one training label filename for each image.',
+                'invalid_training_labels',
+            )
         if not all(targetfiles):
             raise backend.security.ValidationError(
                 'Every training image must have a matching segmentation annotation.',

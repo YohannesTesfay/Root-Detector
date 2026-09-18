@@ -179,8 +179,16 @@ def test_training_endpoint_accepts_public_field_and_reports_result(tmp_path, mon
         'X-RootDetector-Token': app.session_token,
     }
 
+    unreviewed = client.post('/training', json={
+        'filenames': ['sample.tiff'],
+        'options': options(),
+    }, headers=headers)
+    assert unreviewed.status_code == 400
+    assert unreviewed.get_json()['code'] == 'unreviewed_training_labels'
+
     public_field = client.post('/training', json={
         'filenames': ['sample.tiff'],
+        'label_review': {'source': 'user_reviewed', 'confirmed': True},
         'options': {
             'training_type': 'detection',
             'epochs': 3,
@@ -197,6 +205,7 @@ def test_training_endpoint_accepts_public_field_and_reports_result(tmp_path, mon
     )
     completed = client.post('/training', json={
         'filenames': ['sample.tiff'],
+        'label_review': {'source': 'user_reviewed', 'confirmed': True},
         'options': options(),
     }, headers=headers)
     assert completed.status_code == 200
@@ -273,8 +282,15 @@ def test_training_job_api_reports_progress_and_cooperative_cancellation(tmp_path
         'Origin': 'http://localhost',
         'X-RootDetector-Token': app.session_token,
     }
+    unreviewed = client.post('/api/training/runs', json={
+        'filenames': ['sample.tiff'],
+        'options': options(),
+    }, headers=headers)
+    assert unreviewed.status_code == 400
+    assert unreviewed.get_json()['code'] == 'unreviewed_training_labels'
     created = client.post('/api/training/runs', json={
         'filenames': ['sample.tiff'],
+        'label_review': {'source': 'user_reviewed', 'confirmed': True},
         'options': options(),
     }, headers=headers)
     assert created.status_code == 202

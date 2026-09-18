@@ -130,8 +130,8 @@ seconds. Between those repeats private memory remained exactly 11,056,029,696
 bytes, working set changed by only 12,288 bytes, and thread count remained 69.
 This representative repeat found no per-run memory growth. The system-wide
 free-disk delta was about 16.3 MB and is not precise enough to attribute solely
-to RootDetector. A repeated 86-image run remains the final large-batch resource
-gate for stable release.
+to RootDetector. This left the repeated 86-image run as the final large-batch
+resource gate; the later evidence below closes it.
 
 Commit `e0617c9` then corrected the Settings layout found during scaled-browser
 inspection by keeping Save/Cancel outside the scrollable form. Actions run
@@ -146,6 +146,53 @@ native Windows DPI switching. A clean packaged CUDA smoke run
 reached 100%. Diagnostics report the RTX 3080 as the effective CUDA device and
 have SHA-256
 `a38f05ef2c6ba9d6b6cf5fe2b2738e75121c9e7fe17cad9f526cb25755671530`.
+
+### 15 September 2026 final large-batch evidence
+
+The final gate used a separate byte-identical, hash-mapped fixture containing
+all 42 `BH` and 44 `GR` TIFFs (86 files, 941,159,876 bytes). The baseline corpus
+was not renamed or changed and the fixture is explicitly
+`scientific_valid=false`; it has no temporal pairs.
+The mapping, both exports, and diagnostics remain under
+`C:\Users\ExPlEco_ML_Desk\Downloads\RootDetector_Tests\acceptance-evidence`
+and `test-derived\large-batch-86` on the qualification workstation.
+
+The unmodified `e0617c9` package completed 86/86 CUDA detections twice in the
+same process, with no failed, skipped, or review-required items. Run
+`187789e736ec43279e1b595407e3494b` uploaded 86/86 files and finished in 208.7
+seconds. Run `3a6f1eeb2ba64d7893e2aa859a48a517` reused every upload (zero
+`/file_upload` requests) and finished in 106.8 seconds. Brief browser connection
+timeouts were recovered automatically and did not alter the terminal result.
+
+Each export is 5,783,710 bytes and contains 86 result folders, 259 files, 345
+ZIP entries, and an aggregate CSV with one header plus 86 rows. Both archives
+pass integrity checks and all extracted files compare byte-for-byte equal. The
+archive SHA-256 values are
+`0b477199532e61ad7f8fe327cd1912f19e3e822508245d4806839bf67cc5a7c7`
+and `c1df0a85446ffe7868b2802270515992369b02dd87bc45e5a8dc43229795075d`;
+ZIP container metadata accounts for the different archive hashes.
+
+After run 1 settled, working/private memory was 3,846,807,552 / 11,058,442,240
+bytes with 929 handles and 68 threads. After run 2 it was 3,847,127,040 /
+11,058,671,616 bytes with 933 handles and 67 threads. The negligible settled
+deltas do not indicate per-run growth. The diagnostics archive passes integrity,
+identifies commit `e0617c9`, CUDA, and the RTX 3080, and has SHA-256
+`86bed8d50bd244b2f6d00b6192fe5f2249039269ff7408060ba1a91ab5f47126`.
+
+The same browser then switched from `e0617c9` to `96e9956` and back on port
+5000. In both directions the stale token received HTTP 403 with explicit reload
+guidance; after reload all critical assets revalidated, client/server schemas
+and tokens matched, and no console or `RootSecurity` startup error remained.
+
+Windows was configured at a native 150% scale (`AppliedDPI=144`) on its
+3840 x 2160 display. An isolated Chrome launched in the logged-in desktop
+reported DPR 1.5 and a 2560 x 1305 viewport. The Settings dialog, close button,
+Save/Cancel controls, and long error toast all remained within the viewport,
+with no horizontal text or document overflow. Native 100% and 125% switches
+remain manual confirmations; their equivalent browser viewport checks already
+pass. The 86-image resource gate and highest-risk native scaling check are now
+closed for RC2 mechanics. Ecological review of Eldena results remains required
+before scientific acceptance.
 
 Images from manual or third-party scanners may also be tested. Detection does
 not require a Rhizotron origin, but every input must use a supported, decodable
@@ -213,7 +260,9 @@ training label. Until RootDetector distinguishes reviewed ground truth from its
 own predictions, the UI training path is not approved for scientific model
 creation; the earlier Stop/Retry test qualifies mechanics only.
 
-After the provenance safeguard is implemented:
+The browser now excludes automatically generated detections from training candidates, requires a separately imported label set and explicit review confirmation, and uploads labels sequentially. The server rejects requests without that confirmation. This gate still needs a packaged-Windows acceptance run; confirmation alone cannot prove mask quality.
+
+For that run:
 
 1. Prepare a small dedicated set of original images and same-sized,
    independently reviewed segmentation masks. Record their source and hashes.
