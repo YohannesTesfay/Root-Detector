@@ -24,7 +24,7 @@
           </div>
         </div>
       </div>
-  
+
       <div class="ui divider"></div>
       <div class="field">
         <label>Exclusion mask</label>
@@ -45,6 +45,24 @@
             <!--<div class="item" data-value="1">model_1</div>
             <div class="item" data-value="0">model_2</div>-->
           </div>
+        </div>
+      </div>
+
+      <div class="field" id="settings-tracking-exclusion-policy-field">
+        <label>Tracking exclusion-mask policy</label>
+        <div class="ui dropdown selection" id="settings-tracking-exclusion-policy">
+          <input type="hidden" name="tracking-exclusion-policy" value="union">
+          <i class="dropdown icon"></i>
+          <div class="text">Both observations (recommended)</div>
+          <div class="menu">
+            <div class="item" data-value="union">Both observations — union (recommended)</div>
+            <div class="item" data-value="intersection">Overlap only — intersection</div>
+            <div class="item" data-value="first">Observation 1 only (warped)</div>
+            <div class="item" data-value="second">Observation 2 only</div>
+          </div>
+        </div>
+        <div class="ui pointing label">
+          The first mask is warped into the second observation. Union is the conservative default.
         </div>
       </div>
   

@@ -219,7 +219,7 @@ def test_training_api_reports_the_effective_learning_rate(key, tmp_path, monkeyp
     monkeypatch.setattr('backend.settings.Settings', Settings)
     captured = {}
 
-    def start_training(_images, _targets, options, _settings):
+    def start_training(_images, _targets, options, _settings, **_kwargs):
         captured.update(options)
         return training.TrainingResult('completed')
 
@@ -232,6 +232,11 @@ def test_training_api_reports_the_effective_learning_rate(key, tmp_path, monkeyp
     open(image, 'wb').close()
     open(target, 'wb').close()
 
+    headers = {
+        'Host': 'localhost',
+        'Origin': 'http://localhost',
+        'X-RootDetector-Token': app.session_token,
+    }
     response = app.test_client().post('/training', json={
         'filenames': ['image.png'],
         'options': {
@@ -239,7 +244,7 @@ def test_training_api_reports_the_effective_learning_rate(key, tmp_path, monkeyp
             'epochs': 2,
             key: 0.0004,
         },
-    })
+    }, headers=headers)
 
     assert response.status_code == 200
     assert response.get_json()['state'] == 'completed'
@@ -277,19 +282,24 @@ def test_interrupted_training_cannot_be_saved(tmp_path, monkeypatch):
     settings = app.settings
     app.training_results['detection'] = training.TrainingResult('cancelled')
 
-    response = app.test_client().get('/save_model', query_string={
+    headers = {
+        'Host': 'localhost',
+        'Origin': 'http://localhost',
+        'X-RootDetector-Token': app.session_token,
+    }
+    response = app.test_client().post('/save_model', json={
         'newname': 'partial-model',
-        'options[training_type]': 'detection',
-    })
+        'options': {'training_type': 'detection'},
+    }, headers=headers)
 
     assert response.status_code == 409
     assert response.get_json()['code'] == 'training_not_completed'
 
     app.training_results['detection'] = training.TrainingResult('completed')
-    response = app.test_client().get('/save_model', query_string={
+    response = app.test_client().post('/save_model', json={
         'newname': 'completed-model',
-        'options[training_type]': 'detection',
-    })
+        'options': {'training_type': 'detection'},
+    }, headers=headers)
 
     assert response.status_code == 200
     assert settings.models['detection'].saved_path.endswith(

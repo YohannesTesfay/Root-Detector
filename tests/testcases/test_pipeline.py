@@ -189,42 +189,54 @@ def test_pipeline_cancel_marks_queued_work(tmp_path):
     assert result['images']['second.png']['state'] == 'cancelled'
 
 
-def test_pipeline_cooperatively_cancels_active_tracking_and_retries(tmp_path):
-    filenames = ['first.png', 'second.png']
-    create_inputs(str(tmp_path), filenames)
+def test_pipeline_cooperatively_cancels_active_item_and_retries_it(tmp_path):
+    filename = 'active.png'
+    create_inputs(str(tmp_path), [filename])
     started = __import__('threading').Event()
     allow_success = {'value': False}
 
-    def track(path0, path1, settings):
+    def detect(path, settings):
         started.set()
         if not allow_success['value']:
             assert settings.cancel_event.wait(2)
             jobs.raise_if_cancelled(settings)
-        return tracking_result(path0, path1, settings)
+        return detection_result(path)
 
     manager = PipelineManager(
         FakeSettings(),
         cache_path=str(tmp_path),
-        detection_func=lambda path, _settings: detection_result(path),
-        tracking_func=track,
+        detection_func=detect,
+        tracking_func=tracking_result,
     )
-    run = manager.create(filenames, [filenames])
+    run = manager.create([filename], [])
     assert started.wait(1)
-
     run.request_cancel()
-    assert run.snapshot()['state'] == 'cancelling'
     assert run.wait(2)
-    cancelled = run.snapshot()
-    assert cancelled['state'] == 'cancelled'
-    assert cancelled['pairs'][0]['state'] == 'cancelled'
+    assert run.snapshot()['images'][filename]['state'] == 'cancelled'
 
     allow_success['value'] = True
     run.retry_failed()
     assert run.wait(2)
-    retried = run.snapshot()
-    assert retried['state'] == 'completed'
-    assert retried['pairs'][0]['state'] == 'completed'
-    assert retried['pairs'][0]['attempts'] == 2
+    snapshot = run.snapshot()
+    assert snapshot['state'] == 'completed'
+    assert snapshot['images'][filename]['state'] == 'completed'
+    assert snapshot['images'][filename]['attempts'] == 2
+
+
+def test_pipeline_failure_includes_diagnostic_id(tmp_path):
+    filename = 'broken.png'
+    create_inputs(str(tmp_path), [filename])
+    manager = PipelineManager(
+        FakeSettings(),
+        cache_path=str(tmp_path),
+        detection_func=lambda *_args: (_ for _ in ()).throw(RuntimeError('broken')),
+        tracking_func=tracking_result,
+    )
+    run = manager.create([filename], [])
+    assert run.wait(2)
+    error = run.snapshot()['images'][filename]['error']
+    assert error['code'] == 'detection_failed'
+    assert len(error['diagnostic_id']) == 12
 
 
 def test_pipeline_exposes_active_tracking_batch_progress(tmp_path):
@@ -247,7 +259,8 @@ def test_pipeline_exposes_active_tracking_batch_progress(tmp_path):
     )
     run = manager.create(filenames, [filenames])
     assert progress_reported.wait(1)
-    assert run.snapshot()['current'] == {
+    current = run.snapshot()['current']
+    assert current == {
         'stage': 'tracking',
         'item_id': 'first.png::second.png',
         'progress': 0.625,

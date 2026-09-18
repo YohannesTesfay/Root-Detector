@@ -46,7 +46,10 @@ RootDetection = class extends BaseDetection{
         try {
             if(upload_image)
                 await upload_file_to_flask(GLOBAL.files[filename])
-            const results = await $.get(`/process_image/${encodeURIComponent(filename)}`)
+            const results = await RootSecurity.request(
+                `/process_image/${encodeURIComponent(filename)}`,
+                'POST',
+            )
             await this.set_results(filename, results)
             return results
         } catch(error) {

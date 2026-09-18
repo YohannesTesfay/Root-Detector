@@ -148,17 +148,7 @@ var RootTracking = new function() {
         Object.assign(request_data, extra_data)
         
         try {
-            let data
-            if(Object.keys(extra_data).length>0){
-                data = await $.ajax({
-                    url: '/process_root_tracking',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(request_data),
-                })
-            } else {
-                data = await $.get('/process_root_tracking', request_data)
-            }
+            const data = await RootSecurity.request('/process_root_tracking', 'POST', request_data)
 
             if(data.code == 'too_many_roots'){
                 set_failed(filename0, filename1, data)

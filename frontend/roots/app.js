@@ -9,6 +9,7 @@ RootDetectorApp = class extends BaseApp {
 
     static async init(){
         if(!window.location.href.startsWith('file://')){
+            await RootSecurity.initialize()
             await this.Settings.load_settings()
             setup_sse()
         }

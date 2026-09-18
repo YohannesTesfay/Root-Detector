@@ -1,10 +1,9 @@
 
 
 RootsTraining = class extends BaseTraining {
-
-    static training_active = false
+    static active_run_id = undefined
+    static terminal_states = ['completed', 'cancelled', 'failed']
     static training_states = {}
-    static stop_requested = false
 
     //override
     static refresh_tab(){
@@ -29,51 +28,75 @@ RootsTraining = class extends BaseTraining {
     }
 
     static async on_start_training(){
-        if(this.training_active)
+        if(this.active_run_id)
             return
 
         const filenames = this.get_selected_files()
         const options = this.get_training_options()
-        const progress_cb = message => this.on_training_progress(message)
-        this.training_active = true
-        this.stop_requested = false
         this.training_states[options.training_type] = 'running'
         $('#training-new-modelname-field').hide()
         try {
             this.show_modal()
             await this.upload_training_data(filenames)
-            $(GLOBAL.event_source).on('training', progress_cb)
-            const response = await $.ajax({
-                url: '/training',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    filenames: filenames,
-                    options: options,
-                }),
+            const run = await RootSecurity.request('/api/training/runs', 'POST', {
+                filenames: filenames,
+                options: options,
             })
-            const state = response.state || (response.result == 'OK' ? 'completed' : 'cancelled')
-            this.training_states[options.training_type] = state
-            if(state == 'completed')
-                this.success_modal()
-            else if(state == 'cancelled')
-                this.interrupted_modal()
-            else
-                this.fail_modal(response.message)
+            this.active_run_id = run.id
+            const result = await this.poll_until_finished(options)
             await GLOBAL.App.Settings.load_settings()
             this.update_model_info()
-            return response
+            return result
         } catch(error) {
             console.error(error)
             this.training_states[options.training_type] = 'failed'
-            const message = error.responseJSON && error.responseJSON.message
+            const diagnostic = error?.responseJSON?.diagnostic_id
+            const message = error?.responseJSON?.message ?? error?.message ?? 'Training failed.'
             this.fail_modal(message)
-            await GLOBAL.App.Settings.load_settings()
-            this.update_model_info()
-            return undefined
-        } finally {
-            this.training_active = false
-            $(GLOBAL.event_source).off('training', progress_cb)
+            $('body').toast({
+                message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
+                class: 'error',
+                displayTime: 0,
+                closeIcon: true,
+            })
+            throw error
+        }
+    }
+
+    static async poll_until_finished(options){
+        while(this.active_run_id){
+            const run = await RootSecurity.request(
+                `/api/training/runs/${this.active_run_id}`,
+                'GET',
+            )
+            $('#training-modal .progress').progress({
+                percent: Math.min(Number(run.progress) * 100, 99),
+                autoSuccess: false,
+            })
+            $('#training-modal .label').text(
+                run.state == 'cancelling' ? 'Stopping training...' : 'Training in progress...'
+            )
+            if(this.terminal_states.includes(run.state)){
+                this.training_states[options.training_type] = run.state
+                if(run.state == 'completed')
+                    this.success_modal()
+                else if(run.state == 'cancelled')
+                    this.interrupted_modal()
+                else {
+                    const message = run.error?.message ?? run.result?.message ?? 'Training failed.'
+                    this.fail_modal(message)
+                    const diagnostic = run.error?.diagnostic_id
+                    $('body').toast({
+                        message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
+                        class: 'error',
+                        displayTime: 0,
+                        closeIcon: true,
+                    })
+                }
+                this.active_run_id = undefined
+                return run
+            }
+            await sleep(300)
         }
     }
 
@@ -85,25 +108,6 @@ RootsTraining = class extends BaseTraining {
             .removeClass('disabled loading')
             .show()
         $('#training-modal #retry-training-button, #training-modal #close-training-button').hide()
-    }
-
-    static async on_cancel_training(){
-        this.stop_requested = true
-        const $button = $('#training-modal #cancel-training-button')
-            .prop('disabled', true)
-            .attr('aria-disabled', 'true')
-            .addClass('disabled loading')
-        $('#training-modal .label').text('Stopping training safely...')
-        try {
-            await $.get('/stop_training')
-        } catch(error) {
-            $button
-                .prop('disabled', false)
-                .attr('aria-disabled', 'false')
-                .removeClass('disabled loading')
-            $('body').toast({message:'Stopping failed.', class:'error'})
-        }
-        return false
     }
 
     static interrupted_modal(){
@@ -134,17 +138,6 @@ RootsTraining = class extends BaseTraining {
         $('#training-modal #cancel-training-button, #training-modal #retry-training-button').hide()
         $('#training-modal #close-training-button').show()
         $('#training-modal').modal({closable:true})
-    }
-
-    // A progress callback can arrive after Stop was requested. Keep 100% as a
-    // confirmed terminal-success state instead of treating progress as success.
-    static on_training_progress(message){
-        if(this.stop_requested)
-            return
-        const data = JSON.parse(message.originalEvent.data)
-        const percent = Math.min(Number(data.progress) * 100, 99)
-        $('#training-modal .progress').progress({percent:percent, autoSuccess:false})
-        $('#training-modal .label').text(data.description)
     }
 
     static on_retry_training(){
@@ -188,5 +181,40 @@ RootsTraining = class extends BaseTraining {
         $('#start-training-button')
             .prop('disabled', n == 0)
             .attr('aria-disabled', String(n == 0))
+    }
+
+    static async on_cancel_training(){
+        const $button = $('#training-modal #cancel-training-button')
+            .prop('disabled', true)
+            .attr('aria-disabled', 'true')
+            .addClass('disabled loading')
+        $('#training-modal .label').text('Stopping training safely...')
+        try {
+            if(this.active_run_id)
+                await RootSecurity.request(
+                    `/api/training/runs/${this.active_run_id}/cancel`,
+                    'POST',
+                )
+            else
+                await RootSecurity.request('/stop_training', 'POST')
+        } catch(error) {
+            $button
+                .prop('disabled', false)
+                .attr('aria-disabled', 'false')
+                .removeClass('disabled loading')
+            $('body').toast({message:'Stopping failed.', class:'error'})
+        }
+        return false
+    }
+
+    static on_save_model(){
+        const new_modelname = $('#training-new-modelname')[0].value
+        RootSecurity.request('/save_model', 'POST', {
+            newname: new_modelname,
+            options: this.get_training_options(),
+        })
+            .done(_ => $('#training-new-modelname-field').hide())
+            .fail(_ => $('body').toast({message:'Saving failed.', class:'error', displayTime:0, closeIcon:true}))
+        $('#training-new-modelname')[0].value = ''
     }
 }

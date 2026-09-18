@@ -13,6 +13,7 @@ from base.backend.app import get_cache_path
 from . import root_detection
 from . import root_tracking
 from . import jobs
+from . import security
 
 
 TERMINAL_ITEM_STATES = {
@@ -42,14 +43,23 @@ def _snapshot_settings(settings):
 
 
 def _error(stage:str, item_id:str, exc:Exception, retryable:bool=True) -> dict:
-    return {
-        'code': '{}_failed'.format(stage),
-        'message': str(exc) or exc.__class__.__name__,
-        'item_id': item_id,
-        'stage': stage,
-        'retryable': retryable,
-        'type': exc.__class__.__name__,
-    }
+    payload = jobs.error_payload(
+        '{}_failed'.format(stage),
+        str(exc) or exc.__class__.__name__,
+        stage,
+        item_id=item_id,
+        retryable=retryable,
+        error_type=exc.__class__.__name__,
+    )
+    print(
+        '[ERROR {}] {} failed for {}: {}'.format(
+            payload['diagnostic_id'],
+            stage,
+            item_id,
+            payload['message'],
+        )
+    )
+    return payload
 
 
 def _serialize_detection(result:dict) -> dict:
@@ -75,6 +85,17 @@ def _serialize_tracking(result:dict) -> dict:
         'tracking_matcher': copy.deepcopy(result.get('tracking_matcher', {
             'name': 'released-model-internal-matcher',
             'version': 0,
+        })),
+        'exclusion_mask_policy': result.get(
+            'exclusion_mask_policy',
+            root_tracking.DEFAULT_EXCLUSION_MASK_POLICY,
+        ),
+        'exclusion_masks': copy.deepcopy(result.get('exclusion_masks', {
+            'observation0_present': False,
+            'observation1_present': False,
+            'observation0_pixels': 0,
+            'observation1_pixels': 0,
+            'combined_pixels': 0,
         })),
         'statistics': copy.deepcopy(result['statistics']),
     }
@@ -144,12 +165,8 @@ class PipelineRun:
             self.thread.start()
 
     def request_cancel(self) -> None:
-        with self.lock:
-            if self.state in TERMINAL_RUN_STATES:
-                return
-            self.cancel_event.set()
-            self.state = 'cancelling'
-            self.updated_at = time.time()
+        self.cancel_event.set()
+        self._touch()
 
     def retry_failed(self) -> None:
         with self.lock:
@@ -287,6 +304,7 @@ class PipelineRun:
                         'item_id': item['id'],
                         'stage': 'tracking',
                         'retryable': True,
+                        'diagnostic_id': jobs.new_diagnostic_id(),
                     })
                     continue
 
@@ -308,6 +326,7 @@ class PipelineRun:
                             'item_id': item['id'],
                             'stage': 'tracking',
                             'retryable': True,
+                            'diagnostic_id': jobs.new_diagnostic_id(),
                         })
                     else:
                         state = 'completed' if result['success'] else 'review_required'
@@ -411,15 +430,21 @@ class PipelineManager:
             raise ValueError('Input filenames must be unique.')
 
         for filename in filenames:
-            if not filename or os.path.basename(filename) != filename:
-                raise ValueError('Invalid input filename: {!r}'.format(filename))
-            extension = os.path.splitext(filename)[1].lower()
-            if extension not in SUPPORTED_IMAGE_EXTENSIONS:
-                raise ValueError(
-                    'Unsupported input format for {}. Use PNG, JPEG, TIFF, or TIF.'.format(filename)
+            try:
+                security.safe_resolve(
+                    self.cache_path,
+                    filename,
+                    SUPPORTED_IMAGE_EXTENSIONS,
+                    must_exist=True,
                 )
-            if not os.path.isfile(os.path.join(self.cache_path, filename)):
-                raise ValueError('Uploaded input is missing: {}'.format(filename))
+            except security.ValidationError as exc:
+                if exc.code == 'file_not_found':
+                    raise ValueError('Uploaded input is missing: {}'.format(filename))
+                if exc.code == 'unsupported_file_type':
+                    raise ValueError(
+                        'Unsupported input format for {}. Use PNG, JPEG, TIFF, or TIF.'.format(filename)
+                    )
+                raise ValueError(str(exc))
 
         pairs = []
         known = set(filenames)

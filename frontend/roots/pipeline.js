@@ -118,12 +118,10 @@ RootPipeline = class {
         const current = run.current
         if(run.state == 'cancelling')
             this.set_message('Cancelling analysis. Waiting for the active operation to stop safely...')
-        else if(current)
-            this.set_message(
-                current.description
-                    ? `${this.pretty_state(current.stage)}: ${current.description}`
-                    : `${this.pretty_state(current.stage)}: ${current.item_id}`
-            )
+        else if(current){
+            const detail = current.description ? ` — ${current.description}` : ''
+            this.set_message(`${this.pretty_state(current.stage)}: ${current.item_id}${detail}`)
+        }
         else
             this.set_message(this.run_message(run))
 
@@ -131,7 +129,10 @@ RootPipeline = class {
         const items = Object.values(run.images).concat(run.pairs)
         for(const item of items){
             const label = item.filename ?? `${item.filename0} → ${item.filename1}`
-            const message = item.error?.message ?? ''
+            const diagnostic = item.error?.diagnostic_id
+            const message = item.error?.message
+                ? `${item.error.message}${diagnostic ? ` [${diagnostic}]` : ''}`
+                : ''
             const $row = $('<tr>')
             $('<td>').text(label).appendTo($row)
             $('<td>').text(item.stage).appendTo($row)
@@ -148,7 +149,9 @@ RootPipeline = class {
             .toggleClass('disabled loading', run.state == 'cancelling')
             .text(run.state == 'cancelling' ? 'Cancelling...' : 'Cancel')
         $('#pipeline-close-button').toggle(terminal)
-        const retryable = terminal && items.some(item => ['failed', 'skipped', 'cancelled'].includes(item.state))
+        const retryable = terminal && items.some(
+            item => ['failed', 'skipped', 'cancelled'].includes(item.state)
+        )
         $('#pipeline-retry-button').toggle(retryable).toggleClass('disabled', !retryable)
         $('#pipeline-status-modal').modal({closable: terminal})
     }
@@ -219,11 +222,6 @@ RootPipeline = class {
     }
 
     static request(url, method, data=undefined){
-        return $.ajax({
-            url: url,
-            method: method,
-            contentType: data == undefined ? undefined : 'application/json',
-            data: data == undefined ? undefined : JSON.stringify(data),
-        })
+        return RootSecurity.request(url, method, data)
     }
 }
