@@ -113,6 +113,7 @@ def test_packaged_startup_failures_remain_actionable():
     assert 'packaged_startup_error' in startup
     assert 'logs\\\\rootdetector.log' in startup
     assert 'raise SystemExit(exit_code)' in startup
+    assert 'StartRootDetector.bat' in startup
 
 
 def test_windows_workflow_uploads_only_the_full_portable_zip():
@@ -132,6 +133,16 @@ def test_portable_build_contains_exact_provenance():
     assert "os.environ.get('GITHUB_SHA'" in build_script
     assert "os.environ.get('GITHUB_RUN_ID'" in build_script
     assert "build_dir+'/BUILD-INFO.txt'" in build_script
+
+
+def test_portable_build_has_one_clearly_named_launcher():
+    build_script = read('build.py')
+    recovery_template = read('templates/index.html')
+
+    assert "open(build_dir+'/StartRootDetector.bat'" in build_script
+    assert "open(build_dir+'/main.bat'" not in build_script
+    assert "launchers != {'StartRootDetector.bat'}" in build_script
+    assert 'StartRootDetector.bat' in recovery_template
 
 
 def test_training_help_is_user_facing_and_cli_alias_stays_technical():
