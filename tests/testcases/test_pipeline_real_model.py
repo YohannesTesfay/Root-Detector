@@ -98,3 +98,35 @@ def test_cancellable_matcher_is_identical_to_released_descriptor_algorithm(
 
     for key in ['points0', 'points1', 'scores', 'ratios']:
         np.testing.assert_array_equal(cancellable[key], released[key])
+
+
+@pytest.mark.real_model
+def test_seeded_tracking_repeats_with_released_models(released_settings):
+    filenames = [
+        'PD_T088_L004_17.10.18_140056_014_SS_crop.tiff',
+        'PD_T088_L004_13.11.18_091057_015_SS_crop.tiff',
+    ]
+    setup_cache(get_cache_path())
+    for filename in filenames:
+        shutil.copy(
+            os.path.join('tests', 'testcases', 'assets', filename),
+            get_cache_path(filename),
+        )
+
+    previous_mode = released_settings.tracking_sampling_mode
+    released_settings.tracking_sampling_mode = 'deterministic'
+    try:
+        first = root_tracking.process(
+            get_cache_path(filenames[0]), get_cache_path(filenames[1]), released_settings
+        )
+        second = root_tracking.process(
+            get_cache_path(filenames[0]), get_cache_path(filenames[1]), released_settings
+        )
+    finally:
+        released_settings.tracking_sampling_mode = previous_mode
+
+    assert first['tracking_matcher']['version'] == 2
+    assert first['tracking_matcher'] == second['tracking_matcher']
+    np.testing.assert_array_equal(first['points0'], second['points0'])
+    np.testing.assert_array_equal(first['points1'], second['points1'])
+    assert first['statistics'] == second['statistics']

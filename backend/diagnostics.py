@@ -127,6 +127,7 @@ def system_snapshot(settings=None):
             'use_gpu': bool(getattr(settings, 'use_gpu', False)),
             'exmask_enabled': bool(getattr(settings, 'exmask_enabled', False)),
             'tracking_exclusion_mask_source': 'first_observation_warped',
+            'tracking_sampling_mode': getattr(settings, 'tracking_sampling_mode', None),
         }
 
     return {

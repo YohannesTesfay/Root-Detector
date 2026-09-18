@@ -326,6 +326,7 @@ class App(BaseApp):
         allowed_settings = {
             'active_models',
             'exmask_enabled',
+            'tracking_sampling_mode',
             'use_gpu',
             'too_many_roots',
         }
@@ -357,6 +358,15 @@ class App(BaseApp):
             if modelname != '':
                 backend.security.validate_filename(modelname)
 
+        if 'tracking_sampling_mode' in request_data:
+            try:
+                root_tracking.validate_tracking_sampling_mode(
+                    request_data['tracking_sampling_mode']
+                )
+            except ValueError as exc:
+                raise backend.security.ValidationError(
+                    str(exc), 'invalid_tracking_sampling_mode'
+                )
         for boolean_name in ['exmask_enabled', 'use_gpu']:
             if boolean_name in request_data and not isinstance(request_data[boolean_name], bool):
                 raise backend.security.ValidationError(

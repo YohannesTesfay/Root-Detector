@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import os
@@ -30,6 +31,8 @@ TrackingResult = tp.Dict[str, tp.Any]
 FilePairs = tp.Sequence[tp.Sequence[str]]
 TRACKING_CSV_SCHEMA = 2
 DEFAULT_EXCLUSION_MASK_POLICY = 'first'
+TRACKING_SAMPLING_MODES = {'legacy', 'deterministic'}
+DEFAULT_TRACKING_SAMPLING_MODE = 'legacy'
 TRACKING_CSV_FIELDS = [
     'Filename 1', 'Filename 2',
     'same pixels', 'decay pixels', 'growth pixels',
@@ -63,10 +66,19 @@ def process(
     
     exmask0 = ensure_exclusionmask(filename0, settings)
     jobs.raise_if_cancelled(settings)
+    sampling_mode = validate_tracking_sampling_mode(
+        getattr(settings, 'tracking_sampling_mode', DEFAULT_TRACKING_SAMPLING_MODE)
+    )
 
     outputname  = f'{filename0}.{os.path.basename(filename1)}'
     
     if previous_data is None:  #FIXME: better condition?
+        seed_identity = None
+        sampling_seed = None
+        if sampling_mode == 'deterministic':
+            sampling_seed, seed_identity = deterministic_sampling_seed(
+                filename0, filename1, seg0, seg1, settings
+            )
         img0    = torchvision.transforms.ToTensor()(PIL.Image.open(filename0))
         img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
         with GLOBALS.processing_lock:
@@ -97,11 +109,12 @@ def process(
                 img1,
                 seg0,
                 seg1,
-                n=5000,
+                n=tracking_matcher.DEFAULT_SAMPLE_COUNT,
                 cyclic_threshold=4,
                 device=device,
                 progress_callback=on_progress,
                 cancellation_check=lambda: jobs.raise_if_cancelled(settings),
+                sampling_seed=sampling_seed,
             )
             jobs.raise_if_cancelled(settings)
             print()
@@ -112,7 +125,10 @@ def process(
             output['n_matched_points'] = len(output['points0'])
             output['tracking_model']     = settings.active_models['tracking']
             output['segmentation_model'] = settings.active_models['detection']
-            output['tracking_matcher'] = tracking_matcher.provenance()
+            output['tracking_matcher'] = tracking_matcher.provenance(
+                sampling_seed=sampling_seed,
+                seed_identity=seed_identity,
+            )
     else:
         output      = {
             'points0'            : np.asarray(previous_data['points0']).reshape(-1,2),
@@ -187,6 +203,43 @@ def ensure_segmentation(input_image_path:str, settings:tp.Any) -> tp.Tuple[str, 
 def ensure_exclusionmask(input_image_path:str, settings:tp.Any) -> tp.Optional[np.ndarray]:
     '''Return the released observation-1 exclusion mask for tracking.'''
     return root_detection.maybe_compute_exclusionmask(input_image_path, settings)
+
+
+def validate_tracking_sampling_mode(mode:tp.Any) -> str:
+    if not isinstance(mode, str) or mode not in TRACKING_SAMPLING_MODES:
+        raise ValueError('Invalid tracking sampling mode. Choose legacy or deterministic.')
+    return tp.cast(str, mode)
+
+
+def deterministic_sampling_seed(
+    filename0:str,
+    filename1:str,
+    segmentation0:np.ndarray,
+    segmentation1:np.ndarray,
+    settings:tp.Any,
+) -> tp.Tuple[int, tp.Dict[str, tp.Any]]:
+    """Derive a portable per-pair seed from ordered inputs and model contents."""
+    def segmentation_identity(segmentation:np.ndarray) -> dict:
+        array = np.ascontiguousarray(segmentation)
+        return {
+            'shape': list(array.shape),
+            'dtype': str(array.dtype),
+            'sha256': hashlib.sha256(array.tobytes()).hexdigest(),
+        }
+
+    identity = {
+        'sampling_version': 2,
+        'image0_sha256': root_detection._sha256(filename0),
+        'image1_sha256': root_detection._sha256(filename1),
+        'segmentation0': segmentation_identity(segmentation0),
+        'segmentation1': segmentation_identity(segmentation1),
+        'tracking_model': root_detection._model_identity(settings, 'tracking'),
+        'detection_model': root_detection._model_identity(settings, 'detection'),
+        'sample_count': tracking_matcher.DEFAULT_SAMPLE_COUNT,
+        'uniform_sample_count': tracking_matcher.UNIFORM_SAMPLE_COUNT,
+    }
+    serialized = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return int.from_bytes(hashlib.sha256(serialized).digest()[:4], 'big'), identity
 
 
 def validate_tracking_pair_shapes(
@@ -475,7 +528,7 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
                 'tracking_csv_schema': TRACKING_CSV_SCHEMA,
                 'exclusion_mask_coordinate_system': 'observation1',
                 'pair_exclusion_masks': pair_exclusion_masks,
-                'tracking_matcher_schema': 1,
+                'tracking_matcher_schema': 2,
                 'migration_warning': (
                     'Tracking CSV files exported by RootDetector before schema 2 may have '
                     'background, mask, same, decay, and growth values under incorrect headers. '
