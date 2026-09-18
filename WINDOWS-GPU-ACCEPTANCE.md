@@ -256,13 +256,105 @@ passed the workflow's upload-isolation regressions plus a packaged CUDA smoke.
 
 Keep this check separate from batch-reliability and scientific-tracking
 acceptance. Do not use an automatically generated detection segmentation as a
-training label. Until RootDetector distinguishes reviewed ground truth from its
-own predictions, the UI training path is not approved for scientific model
-creation; the earlier Stop/Retry test qualifies mechanics only.
+training label. The reviewed-label gate separates imported annotations from
+RootDetector predictions, but user confirmation alone does not establish
+scientific ground truth; the earlier Stop/Retry test qualified mechanics only.
 
-The browser now excludes automatically generated detections from training candidates, requires a separately imported label set and explicit review confirmation, and uploads labels sequentially. The server rejects requests without that confirmation. This gate still needs a packaged-Windows acceptance run; confirmation alone cannot prove mask quality.
+The browser now excludes automatically generated detections from training candidates, requires a separately imported label set and explicit review confirmation, and uploads labels sequentially. The server rejects requests without that confirmation. Both the packaged-Windows API path and one positive browser annotation-import path passed mechanics checks below; scientific label quality remains unverified.
 
-For that run:
+The workstation's `RootDetector_Tests\RootImagesForTraining` folder was inspected on
+2026-09-18. It contains 29 PNG masks (2550 × 2273, opaque, predominantly black
+with white root traces) spanning different site/tube/level observations. Their
+pixel encoding is suitable for a **detection-label candidate**. All 29 contain
+GIMP 2.10 save-history metadata from October 2023, consistent with manual
+preparation but not proof of annotation correctness. Matching originals were
+subsequently located in `J:\ExPlEco\Beech_Training\New_Files\images`: 29 TIFFs
+with the same stems and 2550 × 2273 dimensions. The J: masks in `Roots` are
+SHA-256 identical to the 29 Downloads masks. Copies of all 29 source TIFFs are
+in `RootDetector_Tests\TrainingSourceImages`, and their SHA-256 hashes match the
+J: originals; the J: files were not changed. Before training, visually confirm
+image/mask alignment and review provenance, then select a small pilot and a
+site/tube-level holdout. Do not train by using a mask as both input and target,
+or pair it with unrelated 2026 scans. These 29 distinct observations cannot
+establish longitudinal tracking accuracy on their own.
+
+### 2026-09-18 packaged training pilot
+
+On `ExPlEco_ML_Desk` (RTX 3080), the isolated `f8cebee` RC2 package rejected an
+unconfirmed training request (HTTP 400). With the beech detection model selected
+and GPU enabled, it accepted two matched source/mask pairs (`BH-C_T011_L002` and
+`DE-SR_T022_L003`) and completed one detection-training epoch at learning rate
+`0.0001` in about 9 seconds. The test-only model
+`RC2_training_pilot_20260918_2pairs.pt.zip` was saved (SHA-256
+`ed986a4b16e8978fc6ac567f8616e2308aec3ec0f4d11891255895a03e2e7ef7`),
+selected, reloaded after restart, and used to detect one untouched-by-this-pilot
+`HH-R_T144_L002` image. The holdout detection completed. Against its PNG mask,
+using a pixel threshold of 128, the original beech model had precision 0.471,
+recall 0.244, and IoU 0.191; the pilot had 0.452, 0.306, and 0.223. This one
+image is not a scientific quality result; overlap with the original pretrained
+model's training data is unknown.
+
+A separate ten-epoch disposable run was cancelled after two seconds, before
+first-epoch progress. It ended `cancelled`, restored the selected beech model,
+and rejected saving partial weights (HTTP 409; no file created). This does not
+measure mid-epoch cancellation latency. The diagnostics archive is
+`RC2-f8cebee-training-gate\RC2-training-pilot-diagnostics.zip` (SHA-256
+`cd92487ecd0e669f226967b00ecf61ede9ccfaff80faf4abd0513110f2b8d4f3`).
+The test app's original defaults (WM detection, WM exclusion mask, tracking,
+GPU off) were verified after restart; its server was stopped. During cleanup,
+a partial `POST /settings` persisted only the submitted detection entry and
+silently dropped the exclusion-mask and tracking entries. A subsequent full
+settings request returned HTTP 400 because validation recognized only loaded
+model types. The test-created `settings.json` was moved recoverably to
+`RC2-f8cebee-training-gate\training-test-settings.json`, restoring the original
+no-settings-file state. The source fix and its restart regression are described
+below; the frozen `f8cebee` package still contains this defect and must be
+rebuilt before broad release.
+
+### 2026-09-18 follow-up: browser, cancellation, and multiple holdouts
+
+Through a localhost-only SSH tunnel to the isolated `f8cebee` Windows package,
+the browser loaded a matching original TIFF and prepared PNG mask. The Training
+tab showed one imported label; Start Training stayed disabled until the review
+confirmation was checked. With the beech model, RTX 3080, learning rate
+`0.0001`, and one epoch, browser-initiated training reached **Training finished**
+at 100%. This proves the positive import/UI path, not the mask's scientific
+correctness. A separate 100-epoch disposable run was cancelled while progress
+was between 11% and 18.25%; it ended `cancelled` at 18.25%, showed the
+interrupted/retry UI, and restored the beech model. The earlier save-gate test
+already rejected partial weights. No model from these browser tests was saved.
+
+A wider disposable pilot trained on five source/mask pairs from `BH`, `DE`,
+`FS`, `KA1`, and `GR` (three epochs, GPU). Three images from sites not included
+in that pilot (`HH`, `NS`, `WE`) were detected before and after training. Binary
+pixel metrics against the supplied masks (threshold 128) were:
+
+| Held-out site | Baseline precision / recall / IoU | Pilot precision / recall / IoU |
+| --- | --- | --- |
+| HH | 0.471 / 0.244 / 0.191 | 0.485 / 0.499 / 0.326 |
+| NS | 0.373 / 0.758 / 0.333 | 0.276 / 0.740 / 0.252 |
+| WE | 0.133 / 0.532 / 0.119 | 0.135 / 0.495 / 0.119 |
+
+The mixed result is **not** evidence that this new model generalizes or should
+be released. Labels and original pretrained-model overlap need ecological
+review; the 29 images are not a longitudinal tracking validation set. The
+unsaved pilot weights were discarded when the server stopped. Diagnostics are
+at `RC2-f8cebee-training-gate\RC2-browser-multisite-diagnostics.zip` (SHA-256
+`1d379a6d3fcf0c6f2d5f1e998b8a16f0b47b9ab732974fc534b47fcbb66b9a0e`).
+The generated settings file was moved, without overwriting earlier evidence,
+to `RC2-browser-multisite-settings.json`; port 5000 is free and the app folder
+again has no `settings.json`.
+
+In the source branch, partial settings updates now merge model selections
+against defaults/current state, and startup restores omitted model types from
+older partial files. A restart/recovery regression is in the fast Docker suite:
+**110 passed**; released-model smoke: **2 passed**; both dependency-free Node
+checks passed. This source fix has **not** been retested in a rebuilt Windows
+binary. That build/restart check remains an operational release gate. Ecological
+interpretation can follow during supervised use, but no turnover or custom-model
+quality claim is established by these software tests.
+
+For a subsequent scientific qualification run:
 
 1. Prepare a small dedicated set of original images and same-sized,
    independently reviewed segmentation masks. Record their source and hashes.

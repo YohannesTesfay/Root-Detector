@@ -342,8 +342,15 @@ class App(BaseApp):
                 'The active_models setting must be an object.',
                 'invalid_settings',
             )
-        known_model_types = set(getattr(self.settings, 'active_models', {}))
-        known_model_types.update(getattr(self.settings, 'models', {}))
+        settings_data = self.settings.get_settings_as_dict()
+        current_settings = settings_data.get('settings', {})
+        defaults = self.settings.get_defaults() if hasattr(self.settings, 'get_defaults') else {}
+        default_models = defaults.get('active_models', {})
+        available_models = settings_data.get('available_models', {})
+        known_model_types = set(default_models) | set(available_models)
+        if not known_model_types:
+            # Keep lightweight/test settings implementations usable too.
+            known_model_types = set(getattr(self.settings, 'active_models', {}))
         for modeltype, modelname in active_models.items():
             if modeltype not in known_model_types:
                 raise backend.security.ValidationError('Invalid model type.', 'invalid_model_type')
@@ -375,7 +382,17 @@ class App(BaseApp):
                     'invalid_settings',
                 )
 
-        self.settings.set_settings(request_data)
+        # BaseSettings persists the supplied dictionary as the entire settings
+        # file. A partial request must therefore be expanded before saving;
+        # otherwise one model selection silently discards the other types.
+        updated_settings = dict(defaults)
+        updated_settings.update(current_settings)
+        merged_models = dict(default_models)
+        merged_models.update(current_settings.get('active_models', {}))
+        merged_models.update(active_models)
+        updated_settings.update(request_data)
+        updated_settings['active_models'] = merged_models
+        self.settings.set_settings(updated_settings)
         return flask.jsonify({'saved': True})
 
     def delete_image(self, path):

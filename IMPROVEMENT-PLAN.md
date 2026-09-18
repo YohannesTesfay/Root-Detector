@@ -20,7 +20,7 @@ Keep upstream untouched until the fork's combined release is qualified:
 1. Commit the RC2 evidence and reviewed-label training safeguard. Recheck the complete diff and run the Docker fast/model smoke suites plus all workflow Node tests. Local regressions pass; the new training path still needs packaged-Windows acceptance.
 2. Review and merge fork PR #4 (`feature/reliability-security-hardening` into `main`); then retarget fork PR #5 (`fix/windows-batch-reliability-rc2`) to `main`, review its resulting delta, and merge it. Do not merge an untested new head merely because an earlier artifact passed.
 3. Dispatch **Build Windows Binaries** from the resulting fork `main`. Record its commit and artifact checksum. On ExPlEco_ML_Desk, test startup, reviewed-label import and training guard, a small disposable training/cancel/retry run, detection, genuine-date tracking, export, diagnostics, and the previously qualified large-batch/resource cases as appropriate to the changed paths.
-4. Have an ecological reviewer assess repeated-date overlays and turnover interpretations on real data. A mechanical pass is not a biological accuracy claim; do not present self-generated labels as ground truth.
+4. For supervised operational use, do not block the fork release on ecological interpretation. Label tracking outputs as requiring review, retain input/model/settings provenance, and collect ecological feedback during use. A software pass is not a biological accuracy claim; do not present self-generated labels as ground truth or release a newly trained model as scientifically validated.
 5. After acceptance, compare fresh fork `main` with upstream `main`, freeze the exact tested head on a fork integration branch, and open one draft cross-fork PR. Summarize automation, reliability/security, Windows packaging, tests, and known scientific limitations in short bullets for the original maintainer. Upstream merge is a separate decision after review.
 
 The local `gh` credential currently fails authentication, although the public GitHub API confirms that #4 and #5 remain open drafts with the stacked bases above. Restore authenticated API access before any PR edits or merges. Direct SSH push capability is separate and has not been revalidated in this pass.
@@ -256,6 +256,49 @@ still incomplete. The controller needed about 23.6 minutes to transfer 15 files
 through the SSH-tunnelled browser; this is test-harness evidence only and must
 not be treated as native Windows upload performance.
 
+### 2026-09-18 live Eldena Pi source check and revised test sequence
+
+A read-only SSH check of `artigrowpi04` found the agent active but idle, about
+51 GB free on the Pi, and 60 JPEG scan copies (about 179 MB) under
+`/home/artigrow/scanner-images/`. The scanner SD card itself was not mounted;
+do not power or mount it merely to collect test data. The 18 September run has
+three JPEGs (`IMG_0002`–`IMG_0004`), matching `scan_windows: 3`; the first is
+5152 × 4752 and the other two are 5152 × 4768. The August 24, 27, and 28
+runs also include 16-pixel-short frames. The latest JPEG EXIF dates reflect the
+scanner's old 2013 clock, so use the run metadata and filename timestamp, not EXIF or
+file modification time, for observation dates.
+
+The newest metadata reports 224.8 mm measured travel, versus 384.9 mm on the
+August 24 and 28 runs; the Pi currently reports a 225 mm configured window
+height. Whether configuration, mechanics, or the physical start/end positions
+changed is unverified. Do not pair September 18 with August for growth/decay
+estimates until the field operator confirms the acquisition geometry and an ecologist
+approves same-level overlays. The deployed Pi uploader still writes names such
+as `04_20260918_110346_IMG_0002.JPG`, without `L001`; the newer level-aware
+format in the Rhizotron source repository is not deployed there. In particular,
+`IMG_0002` is not inherently level 2: assign top-to-bottom levels within each
+recorded scan run, including the two distinct runs on August 28.
+
+1. Keep the field Pi read-only. Once idle, select individual run directories;
+   make a manifest of source path, run metadata, ordered frame-to-level mapping,
+   dimensions, SHA-256, and travel/geometry evidence. Copy only the chosen
+   images to a separate test workspace, verify hashes, and create renamed
+   *derived* copies; never rename Pi or CKAN originals.
+2. First run a same-grid positive pilot on August 21–23 (nine images, three
+   levels, six consecutive pairs), checking pair preview, detection, tracking,
+   both exports, diagnostics, and resource high-water marks on the **new exact
+   Windows release build**. Equal dimensions are necessary, not proof of
+   physical registration.
+3. Separately exercise negative cases: a 16-pixel-short pair must fail early
+   with exact dimensions and no fabricated turnover; August 28's two same-day
+   runs must not auto-pair ambiguously. Use September 18 for fresh detection
+   and dimension-preflight checks, not as a scientific longitudinal result yet.
+4. Have the field operator explain the travel change and confirm tube, scan
+   origin, orientation, level ordering, and pixel scale. Have an ecological
+   reviewer inspect overlays and same/growth/decay regions before accepting
+   any turnover result. Keep private images and derived copies out of Git and
+   public release artifacts unless redistribution is authorized.
+
 The rebuilt package from commit `96e9956` and Actions run `34972004393` now
 qualifies the dimension preflight on the RTX 3080. Three CUDA detections
 completed; both unequal pairs failed in about 0.09 seconds with their exact
@@ -389,7 +432,7 @@ Every result should include a machine-readable manifest with application version
 4. **Treat models as executable content (P0).** Torch packages and legacy `.pkl` files can execute code during deserialization. Remove `.pkl` discovery, accept only trusted release models with allowlisted hashes/signatures, and document this trust boundary. Longer term, migrate inference artifacts to a non-pickle format after equivalence validation.
 5. **Harden downloads (P0).** Add TLS timeouts, retries, size limits, SHA-256 verification, atomic temporary writes, and actionable offline errors to model/runtime downloads. A partial file must never count as installed. Publish checksums and signatures with releases.
 6. **Harden the browser surface (P1; partially complete).** CSP, `X-Content-Type-Options`, `Referrer-Policy`, frame denial, and restrictive permissions headers are active. Filename escaping, Jinja autoescaping, inline-handler removal, and removal of `eval`-style template execution remain open; until then, CSP still permits inline script/style and `eval` for compatibility.
-7. **Isolate runtime state (P1).** Replace the shared working-directory cache, settings, and whole-cache deletion with `platformdirs` locations and unique session/project directories. Use atomic settings writes and a single-instance lock where needed.
+7. **Isolate runtime state and preserve settings (P1; partial-update fix implemented in source).** Replace the shared working-directory cache, settings, and whole-cache deletion with `platformdirs` locations and unique session/project directories. Use atomic settings writes and a single-instance lock where needed. The 2026-09-18 Windows training pilot exposed a concrete settings bug: a partial `POST /settings` replaced the entire nested `active_models` map and then prevented a full repair. The source now merges against defaults/current selections, restores omitted types on startup, validates against available model types, and includes a restart/recovery regression. Rebuild and retest the Windows binary before closing this item; atomic writes and runtime-state isolation remain open.
 8. **Make progress streaming finite (P2).** Unsubscribe SSE queues on disconnect, send heartbeats, bound queues, and surface reconnect state. Redact local paths and sensitive metadata from support logs.
 
 ### 3. Maintainable Service Architecture
@@ -526,9 +569,11 @@ Create/Open Project -> Import & Validate -> Detect -> Review/Correct
 ### 13. Training Experience
 
 - Turn training into a guided workflow: validate image/annotation pairs, preview labels, split train/validation data, select a compatible base model, review hyperparameters, estimate resources, then confirm.
+- Preserve annotation provenance beyond the current confirmation checkbox. An imported detection-results ZIP can still be declared "reviewed" by the user; distinguish original manual annotations from model predictions, show a source/overlay review step, and record reviewer and correction history before treating labels as ground truth.
 - Show live loss and validation metrics, epoch/step, elapsed/estimated time, device/memory, checkpoints, logs, and a genuine cancellation state. Preserve a recoverable checkpoint after interruption.
 - Treat display-off, screen lock, system sleep, application exit, and power loss as different states. Keep Windows awake only while an active job needs CPU/GPU execution, release the inhibition immediately afterward, warn before exit, and write restart-safe job/model checkpoints so interrupted work can be resumed or clearly restarted.
 - Record dataset/model provenance and compare the candidate to the base model on a held-out set. Do not allow a model to replace the active one until validation and an explicit save/name action succeed.
+- Use site- and tube-disjoint holdouts and report per-site precision/recall/IoU, not just a pooled score. The 2026-09-18 five-pair Windows pilot improved one of three held-out sites, worsened one, and left one almost unchanged; require a larger reviewed sample, known pretrained-model overlap, and ecological sign-off before any quality claim.
 - Add model cards covering intended specimens, image conditions, limitations, training data, metrics, version compatibility, and checksum.
 
 ### 14. Results, Export, and Diagnostics
