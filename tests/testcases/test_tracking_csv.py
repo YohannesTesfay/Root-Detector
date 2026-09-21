@@ -110,7 +110,7 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
             'version': 1,
             'batch_size': 512,
         },
-        'exclusion_mask_policy': 'union',
+        'exclusion_mask_policy': 'first',
         'exclusion_masks': {'combined_pixels': 17},
     }))
     (tmp_path / '{}.{}.csv'.format(*pair)).write_text(
@@ -125,7 +125,7 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
         assert manifest['pair_exclusion_masks'] == [{
             'filename0': 'one.png',
             'filename1': 'two.png',
-            'policy': 'union',
+            'policy': 'first',
             'masks': {'combined_pixels': 17},
             'matcher': {
                 'name': 'rootdetector-cancellable-bruteforce',

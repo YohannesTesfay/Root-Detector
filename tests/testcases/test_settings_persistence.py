@@ -48,7 +48,7 @@ def test_partial_settings_save_preserves_models_across_restart(tmp_path, monkeyp
         'tracking': 'tracking-a',
     }
     assert saved['use_gpu'] is True
-    assert saved['tracking_exclusion_policy'] == 'union'
+    assert 'tracking_exclusion_policy' not in saved
 
     restarted = App()
     restarted.testing = True

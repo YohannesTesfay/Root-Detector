@@ -29,8 +29,7 @@ TrackingStatus = tp.Union[bool, TooManyRootsError]
 TrackingResult = tp.Dict[str, tp.Any]
 FilePairs = tp.Sequence[tp.Sequence[str]]
 TRACKING_CSV_SCHEMA = 2
-EXCLUSION_MASK_POLICIES = {'union', 'intersection', 'first', 'second'}
-DEFAULT_EXCLUSION_MASK_POLICY = 'union'
+DEFAULT_EXCLUSION_MASK_POLICY = 'first'
 TRACKING_CSV_FIELDS = [
     'Filename 1', 'Filename 2',
     'same pixels', 'decay pixels', 'growth pixels',
@@ -64,11 +63,6 @@ def process(
     
     exmask0 = ensure_exclusionmask(filename0, settings)
     jobs.raise_if_cancelled(settings)
-    exmask1 = ensure_exclusionmask(filename1, settings)
-    jobs.raise_if_cancelled(settings)
-    exclusion_policy = validate_exclusion_mask_policy(
-        getattr(settings, 'tracking_exclusion_policy', DEFAULT_EXCLUSION_MASK_POLICY)
-    )
 
     outputname  = f'{filename0}.{os.path.basename(filename1)}'
     
@@ -157,14 +151,8 @@ def process(
     warped_exmask0 = None
     if exmask0 is not None:
         warped_exmask0 = matchmodel.warp(exmask0, imap)
-    combined_exmask = combine_exclusion_masks(
-        warped_exmask0,
-        exmask1,
-        exclusion_policy,
-        seg1.shape,
-    )
     gmap           = matchmodel.create_growth_map_rgba( warped_seg0>0.5, seg1>0.5, )
-    gmap           = paste_exclusionmask(gmap, combined_exmask)
+    gmap           = paste_exclusionmask(gmap, warped_exmask0)
     jobs.raise_if_cancelled(settings)
 
     output_file_rgb  = f'{outputname}.growthmap.png'
@@ -176,13 +164,13 @@ def process(
     output['growthmap_rgba'] = output_file_rgba
     output['segmentation0']  = seg0f
     output['segmentation1']  = seg1f
-    output['exclusion_mask_policy'] = exclusion_policy
+    output['exclusion_mask_policy'] = DEFAULT_EXCLUSION_MASK_POLICY
     output['exclusion_masks'] = {
         'observation0_present': exmask0 is not None,
-        'observation1_present': exmask1 is not None,
+        'observation1_present': False,
         'observation0_pixels': _mask_pixel_count(exmask0),
-        'observation1_pixels': _mask_pixel_count(exmask1),
-        'combined_pixels': _mask_pixel_count(combined_exmask),
+        'observation1_pixels': 0,
+        'combined_pixels': _mask_pixel_count(warped_exmask0),
     }
 
     output['statistics']     = compute_statistics(gmap)
@@ -197,18 +185,8 @@ def ensure_segmentation(input_image_path:str, settings:tp.Any) -> tp.Tuple[str, 
 
 
 def ensure_exclusionmask(input_image_path:str, settings:tp.Any) -> tp.Optional[np.ndarray]:
-    '''Run exclusion mask detection (if enabled) or load a custom mask or retrieve a cached result'''
+    '''Return the released observation-1 exclusion mask for tracking.'''
     return root_detection.maybe_compute_exclusionmask(input_image_path, settings)
-
-
-def validate_exclusion_mask_policy(policy:tp.Any) -> str:
-    if policy not in EXCLUSION_MASK_POLICIES:
-        raise ValueError(
-            'Invalid tracking exclusion-mask policy. Choose one of: {}.'.format(
-                ', '.join(sorted(EXCLUSION_MASK_POLICIES))
-            )
-        )
-    return tp.cast(str, policy)
 
 
 def validate_tracking_pair_shapes(
@@ -235,49 +213,10 @@ def validate_tracking_pair_shapes(
     return shape0
 
 
-def _binary_mask(mask:tp.Optional[np.ndarray], shape:tp.Tuple[int, ...]) -> np.ndarray:
-    if mask is None:
-        return np.zeros(shape, dtype=bool)
-    array = np.asarray(mask).squeeze()
-    if array.shape != shape:
-        raise ValueError(
-            'Exclusion mask shape {} does not match tracking image shape {}.'.format(
-                array.shape,
-                shape,
-            )
-        )
-    return array > 0.5
-
-
 def _mask_pixel_count(mask:tp.Optional[np.ndarray]) -> int:
     if mask is None:
         return 0
     return int((np.asarray(mask).squeeze() > 0.5).sum())
-
-
-def combine_exclusion_masks(
-    warped_observation0:tp.Optional[np.ndarray],
-    observation1:tp.Optional[np.ndarray],
-    policy:str=DEFAULT_EXCLUSION_MASK_POLICY,
-    shape:tp.Optional[tp.Tuple[int, ...]]=None,
-) -> tp.Optional[np.ndarray]:
-    """Combine both observation masks in observation-1 coordinates."""
-    policy = validate_exclusion_mask_policy(policy)
-    if warped_observation0 is None and observation1 is None:
-        return None
-    resolved_shape = shape
-    if resolved_shape is None:
-        source = observation1 if observation1 is not None else warped_observation0
-        resolved_shape = tuple(np.asarray(source).squeeze().shape)
-    first = _binary_mask(warped_observation0, resolved_shape)
-    second = _binary_mask(observation1, resolved_shape)
-    if policy == 'union':
-        return first | second
-    if policy == 'intersection':
-        return first & second
-    if policy == 'first':
-        return first
-    return second
 
 
 class COLORS:
@@ -521,7 +460,7 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
                     'filename1': filename1,
                     'policy': pair_metadata.get(
                         'exclusion_mask_policy',
-                        'legacy-first-observation-only',
+                        DEFAULT_EXCLUSION_MASK_POLICY,
                     ),
                     'masks': pair_metadata.get('exclusion_masks'),
                     'matcher': pair_metadata.get('tracking_matcher'),
