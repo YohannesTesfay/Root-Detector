@@ -48,6 +48,24 @@
         </div>
       </div>
 
+      <div class="field" id="settings-tracking-exclusion-policy-field">
+        <label>Tracking exclusion-mask policy</label>
+        <div class="ui dropdown selection" id="settings-tracking-exclusion-policy">
+          <input type="hidden" name="tracking-exclusion-policy" value="first">
+          <i class="dropdown icon"></i>
+          <div class="text">Released calculation — Observation 1 only</div>
+          <div class="menu">
+            <div class="item" data-value="first">Released calculation — Observation 1 only</div>
+            <div class="item" data-value="union">Experimental — both observations (union)</div>
+            <div class="item" data-value="intersection">Experimental — overlap only (intersection)</div>
+            <div class="item" data-value="second">Experimental — Observation 2 only</div>
+          </div>
+        </div>
+        <div class="ui pointing label">
+          Alternative policies can change turnover counts and require scientific review.
+        </div>
+      </div>
+
       <div class="field" id="settings-tracking-sampling-mode-field">
         <label>Tracking point sampling</label>
         <div class="ui dropdown selection" id="settings-tracking-sampling-mode">

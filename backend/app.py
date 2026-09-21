@@ -326,6 +326,7 @@ class App(BaseApp):
         allowed_settings = {
             'active_models',
             'exmask_enabled',
+            'tracking_exclusion_policy',
             'tracking_sampling_mode',
             'use_gpu',
             'too_many_roots',
@@ -358,6 +359,15 @@ class App(BaseApp):
             if modelname != '':
                 backend.security.validate_filename(modelname)
 
+        if 'tracking_exclusion_policy' in request_data:
+            try:
+                root_tracking.validate_exclusion_mask_policy(
+                    request_data['tracking_exclusion_policy']
+                )
+            except ValueError as exc:
+                raise backend.security.ValidationError(
+                    str(exc), 'invalid_tracking_exclusion_policy'
+                )
         if 'tracking_sampling_mode' in request_data:
             try:
                 root_tracking.validate_tracking_sampling_mode(

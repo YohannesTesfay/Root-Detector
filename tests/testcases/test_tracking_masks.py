@@ -8,6 +8,48 @@ import pytest
 from backend import root_tracking
 
 
+@pytest.mark.parametrize('policy, expected', [
+    ('union', [[True, True], [False, False]]),
+    ('intersection', [[False, False], [False, False]]),
+    ('first', [[True, False], [False, False]]),
+    ('second', [[False, True], [False, False]]),
+])
+def test_combine_exclusion_masks_has_explicit_policies(policy, expected):
+    first = np.asarray([[1.0, 0.0], [0.0, 0.0]])
+    second = np.asarray([[0.0, 1.0], [0.0, 0.0]])
+    combined = root_tracking.combine_exclusion_masks(first, second, policy)
+    assert combined.tolist() == expected
+
+
+def test_exclusion_mask_policy_and_shape_are_validated():
+    with pytest.raises(ValueError, match='Choose one of'):
+        root_tracking.combine_exclusion_masks(np.zeros((2, 2)), None, 'implicit')
+    with pytest.raises(ValueError, match='shape'):
+        root_tracking.combine_exclusion_masks(
+            np.zeros((2, 2)),
+            np.zeros((3, 3)),
+            'union',
+            (2, 2),
+        )
+
+
+@pytest.mark.parametrize('policy, requested', [
+    ('first', ['first']),
+    ('second', ['second']),
+    ('union', ['first', 'second']),
+    ('intersection', ['first', 'second']),
+])
+def test_exclusion_policy_loads_only_required_masks(monkeypatch, policy, requested):
+    calls = []
+    monkeypatch.setattr(
+        root_tracking,
+        'ensure_exclusionmask',
+        lambda path, _settings: calls.append(path) or np.zeros((2, 2)),
+    )
+    root_tracking.ensure_pair_exclusion_masks('first', 'second', object(), policy)
+    assert calls == requested
+
+
 def test_tracking_pair_shapes_are_validated_before_matching():
     assert root_tracking.validate_tracking_pair_shapes(
         np.zeros((48, 52)),
