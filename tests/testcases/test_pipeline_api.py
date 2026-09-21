@@ -279,11 +279,11 @@ def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path,
     assert unsafe_model_type.status_code == 400
     assert unsafe_model_type.get_json()['code'] == 'invalid_model_type'
 
-    invalid_policy = client.post(
+    scientific_policy = client.post(
         '/settings',
-        json={'active_models': {}, 'tracking_exclusion_policy': 'automatic'},
+        json={'active_models': {}, 'tracking_exclusion_policy': 'union'},
         headers=headers,
     )
-    assert invalid_policy.status_code == 400
-    assert invalid_policy.get_json()['code'] == 'invalid_tracking_exclusion_policy'
-    assert len(invalid_policy.get_json()['diagnostic_id']) == 12
+    assert scientific_policy.status_code == 400
+    assert scientific_policy.get_json()['code'] == 'invalid_settings'
+    assert len(scientific_policy.get_json()['diagnostic_id']) == 12
