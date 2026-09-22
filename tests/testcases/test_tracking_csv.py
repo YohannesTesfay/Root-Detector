@@ -133,6 +133,6 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
                 'batch_size': 512,
             },
         }]
-        assert manifest['tracking_matcher_schema'] == 1
+        assert manifest['tracking_matcher_schema'] == 2
         assert 'incorrect headers' in manifest['migration_warning']
         assert any(name.endswith('one.png.segmentation.cache.png') for name in archive.namelist())

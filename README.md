@@ -42,7 +42,7 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 1. Select **Files → Load Input Images** or **Load Input Folder**.
 2. Confirm that all images appear in the Detection tab.
 3. Open the Tracking tab and check the proposed image pairs.
-4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, or change the root threshold.
+4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, change the root threshold, or select tracking point sampling.
 5. Select **Run Analysis** once.
 6. Wait for the progress window to reach 100%. Detection runs for every image, followed by tracking for every valid pair.
 
@@ -61,7 +61,7 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 
 Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
-Tracking uses the released point-sampling behavior, so repeating the same pair can produce different turnover counts. Review tracking overlays before scientific interpretation, and retain the source images, selected models, settings, and exported results for each run.
+For repeat tests of a tracking pair, choose **Settings → Tracking point sampling → Seeded sampling** before analysis. The default **Released algorithm** retains earlier behavior and may produce different turnover counts on repeated runs. Seeded sampling repeats point selection for the same images, segmentations, models, and settings; it is experimental and still requires visual and ecological review. The tracking ZIP records the matcher version, seed, and input/model hashes. Do not combine results from the two modes without identifying them.
 
 ## Train a Model (Optional)
 

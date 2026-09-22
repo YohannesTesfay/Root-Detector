@@ -1,9 +1,8 @@
 """Cancellable implementation of the released RootDetector matcher.
 
 The released tracking package owns descriptor extraction, while this module
-owns the deterministic point-matching loop. Version 1 intentionally preserves
-the released 2022 algorithm and constants, adding only progress and
-cancellation checkpoints.
+owns the point-matching loop. Version 1 preserves the released 2022 algorithm;
+version 2 uses the same rule with a per-pair seeded random generator.
 """
 
 import copy
@@ -17,19 +16,34 @@ import torchvision
 
 MATCHER_NAME = 'rootdetector-cancellable-bruteforce'
 MATCHER_VERSION = 1
+DETERMINISTIC_MATCHER_VERSION = 2
 DEFAULT_BATCH_SIZE = 512
+DEFAULT_SAMPLE_COUNT = 5000
+UNIFORM_SAMPLE_COUNT = 512
 
 ProgressCallback = tp.Callable[[float, str], None]
 CancellationCheck = tp.Callable[[], None]
 
 
-def provenance(batch_size:int=DEFAULT_BATCH_SIZE) -> tp.Dict[str, tp.Any]:
-    return {
+def provenance(
+    batch_size:int=DEFAULT_BATCH_SIZE,
+    sampling_seed:tp.Optional[int]=None,
+    seed_identity:tp.Optional[tp.Dict[str, tp.Any]]=None,
+) -> tp.Dict[str, tp.Any]:
+    result = {
         'name': MATCHER_NAME,
-        'version': MATCHER_VERSION,
+        'version': MATCHER_VERSION if sampling_seed is None else DETERMINISTIC_MATCHER_VERSION,
         'batch_size': batch_size,
         'algorithm_compatibility': 'released-2022-bruteforce',
     }
+    if sampling_seed is not None:
+        result.update({
+            'sampling': 'numpy-randomstate-mt19937-permutation',
+            'seed': sampling_seed,
+            'seed_derivation': 'sha256-json-v1-first-32-bits',
+            'seed_identity': seed_identity,
+        })
+    return result
 
 
 def _empty_result() -> tp.Dict[str, tp.Any]:
@@ -57,7 +71,12 @@ def _progress(
         callback(max(0.0, min(1.0, float(value))), phase)
 
 
-def sample_points_mixed(points, n_uniform:int, n_random:int) -> np.ndarray:
+def sample_points_mixed(
+    points,
+    n_uniform:int,
+    n_random:int,
+    rng:tp.Optional[np.random.RandomState]=None,
+) -> np.ndarray:
     """Preserve the released spatially uniform plus random sampling rule."""
     points = np.asarray(points)
     p_min, p_max = points.min(0), points.max(0)
@@ -68,7 +87,8 @@ def sample_points_mixed(points, n_uniform:int, n_random:int) -> np.ndarray:
     ).reshape(-1, 2)
     distances = ((grid[:, None] - points[None]) ** 2).sum(-1)
     result = distances.argmin(1)
-    result = np.concatenate([result, np.random.permutation(len(points))[:n_random]])
+    permutation = np.random if rng is None else rng
+    result = np.concatenate([result, permutation.permutation(len(points))[:n_random]])
     return np.unique(result)
 
 
@@ -132,6 +152,7 @@ def match_descriptors(
     cyclic_threshold:float=4,
     progress_callback:tp.Optional[ProgressCallback]=None,
     cancellation_check:tp.Optional[CancellationCheck]=None,
+    sampling_seed:tp.Optional[int]=None,
 ) -> tp.Dict[str, tp.Any]:
     """Match released-model descriptors with a checkpoint per batch."""
     if step < 1:
@@ -141,10 +162,12 @@ def match_descriptors(
 
     _check(cancellation_check)
     n = min(n, len(descriptors0), len(descriptors1))
+    rng = None if sampling_seed is None else np.random.RandomState(sampling_seed)
     sampled_indices = sample_points_mixed(
         points0,
-        n_uniform=512,
+        n_uniform=UNIFORM_SAMPLE_COUNT,
         n_random=n,
+        rng=rng,
     )[:n]
     result = copy.deepcopy(_empty_result())
     starts = list(range(0, n - 1, step))
@@ -213,13 +236,14 @@ def match_images(
     image1:torch.Tensor,
     segmentation0:np.ndarray,
     segmentation1:np.ndarray,
-    n:int=5000,
+    n:int=DEFAULT_SAMPLE_COUNT,
     ratio_threshold:float=1.1,
     cyclic_threshold:float=4,
     device:str='cpu',
     step:int=DEFAULT_BATCH_SIZE,
     progress_callback:tp.Optional[ProgressCallback]=None,
     cancellation_check:tp.Optional[CancellationCheck]=None,
+    sampling_seed:tp.Optional[int]=None,
 ) -> tp.Dict[str, tp.Any]:
     """Extract descriptors with released weights, then match cancellably."""
     if not hasattr(model, 'compute_descriptors_at_points'):
@@ -292,6 +316,7 @@ def match_images(
             cyclic_threshold=cyclic_threshold,
             progress_callback=matching_progress,
             cancellation_check=cancellation_check,
+            sampling_seed=sampling_seed,
         )
         result['matched_percentage'] = len(result['points0']) / np.int32(len(points0))
         filtered0, filtered1 = filter_points(result['points0'], result['points1'])
