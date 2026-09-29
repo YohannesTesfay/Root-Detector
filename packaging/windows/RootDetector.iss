@@ -10,6 +10,7 @@
 [Setup]
 AppId={{C4886A85-376C-4C2A-BD59-956A8A3CA12F}
 AppName=RootDetector
+AppMutex=Local\RootDetector-C4886A85-376C-4C2A-BD59-956A8A3CA12F
 AppVersion={#AppVersion}
 AppPublisher=Experimental Plant Ecology, University of Greifswald
 DefaultDirName={localappdata}\Programs\RootDetector
@@ -22,7 +23,8 @@ OutputBaseFilename=RootDetector-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
 UninstallDisplayIcon={app}\main\main.exe
-CloseApplications=yes
+CloseApplications=no
+RestartApplications=no
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion

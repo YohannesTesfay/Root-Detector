@@ -71,17 +71,20 @@ run_url = (
     else 'local build'
 )
 build_info = (
-    'RootDetector portable build\n'
+    '{}\n'
     'Repository: {}\n'
     'Commit: {}\n'
     'Build UTC: {}\n'
     'GitHub Actions run: {}\n'
-    'Package: full portable ZIP (the legacy partial update ZIP is not published)\n'
+    'Package: {}\n'
 ).format(
+    'RootDetector installer preview' if args.installer_payload else 'RootDetector portable build',
     repository,
     commit,
     datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
     run_url,
+    'per-user installer payload with bundled CPU PyTorch'
+    if args.installer_payload else 'full portable ZIP (the legacy partial update ZIP is not published)',
 )
 open(build_dir+'/BUILD-INFO.txt', 'w').write(build_info)
 if args.installer_payload:
