@@ -6,7 +6,12 @@ import argparse, zipfile, glob
 parser = argparse.ArgumentParser()
 parser.add_argument('--zip', action='store_true')
 parser.add_argument('--prune-torchlibs', action='store_true')
+parser.add_argument('--installer-payload', action='store_true')
 args = parser.parse_args()
+if args.installer_payload and args.prune_torchlibs:
+    parser.error('An installed package must include its complete PyTorch runtime.')
+if args.installer_payload and args.zip:
+    parser.error('Build the portable ZIP separately so it never contains an install marker.')
 
 
 
@@ -17,7 +22,12 @@ from backend.app import App
 App().recompile_static(force=True)        #make sure the static/ folder is up to date
 
 build_name = '%s_DigIT_RootDetector'%(datetime.datetime.now().strftime('%Y-%m-%d_%Hh%Mm%Ss') )
-build_dir  = 'builds/%s'%build_name
+build_dir = (
+    'builds/RootDetector-Windows-installer-payload'
+    if args.installer_payload else 'builds/%s' % build_name
+)
+if os.path.exists(build_dir):
+    parser.error('Build destination already exists: {}'.format(build_dir))
 
 rc = subprocess.call(f'''pyinstaller --noupx                            \
               --hidden-import=sklearn.utils._cython_blas     \
@@ -34,7 +44,7 @@ os.makedirs(build_dir+'/models/')
 shutil.copy('models/pretrained_models.txt', build_dir+'/models/')
 if 'linux' in sys.platform:
     os.symlink('/main/main', build_dir+'/main.run')
-else:
+elif not args.installer_payload:
     launcher = (
         '@echo off\n'
         'cd /d "%~dp0"\n'
@@ -74,6 +84,15 @@ build_info = (
     run_url,
 )
 open(build_dir+'/BUILD-INFO.txt', 'w').write(build_info)
+if args.installer_payload:
+    torch_libs = os.path.join(build_dir, 'main', 'torch', 'lib')
+    if not os.path.isdir(torch_libs) or not any(
+        name.lower().endswith('.dll') for name in os.listdir(torch_libs)
+    ):
+        raise RuntimeError('Installer payload requires the complete bundled PyTorch runtime.')
+    open(os.path.join(build_dir, 'INSTALL-MODE.txt'), 'w').write(
+        'Installed RootDetector; per-user data is stored under LOCALAPPDATA.\n'
+    )
 shutil.rmtree('./build')
 os.remove('./main.spec')
 

@@ -17,6 +17,8 @@ RootDetector helps researchers and students analyze minirhizotron root images. I
 
 RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Download the full ZIP from the project's Releases page; do not choose GitHub's automatically generated “Source code” archives.
 
+A per-user installer is being prepared and is not yet a qualified release. Until its Windows acceptance tests pass, use the portable ZIP below.
+
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
 2. Open the extracted folder and double-click **`StartRootDetector.bat`**.
 3. Keep the console window open. RootDetector starts its local service and opens the interface in your default browser.

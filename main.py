@@ -1,4 +1,6 @@
 import sys
+from desktop_paths import configure_installed_paths
+import os
 
 
 def packaged_startup_error(exc):
@@ -14,11 +16,26 @@ def packaged_startup_error(exc):
     except Exception:
         pass
     print('[ERROR] RootDetector could not start: {}{}'.format(exc, diagnostic_hint))
-    print(
-        'The first launch requires internet access to download the PyTorch runtime '
-        'and pretrained models. Check the connection, proxy, firewall, and available '
-        'disk space, then run StartRootDetector.bat again.'
-    )
+    if os.environ.get('ROOTDETECTOR_INSTALLED') == '1':
+        print(
+            'The installed package includes PyTorch and downloads verified models '
+            'on first launch. If the runtime is incomplete, reinstall RootDetector. '
+            'For model downloads, check the connection and available disk space.'
+        )
+    else:
+        print(
+            'The first launch requires internet access to download the PyTorch runtime '
+            'and pretrained models. Check the connection, proxy, firewall, and available '
+            'disk space, then run StartRootDetector.bat again.'
+        )
+
+
+if __name__ == '__main__':
+    try:
+        configure_installed_paths()
+    except Exception as exc:
+        packaged_startup_error(exc)
+        sys.exit(1)
 
 
 try:
