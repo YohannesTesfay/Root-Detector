@@ -1,5 +1,5 @@
 import sys
-from desktop_paths import configure_installed_paths
+from desktop_paths import claim_installed_instance, configure_installed_paths
 import os
 
 
@@ -32,7 +32,14 @@ def packaged_startup_error(exc):
 
 if __name__ == '__main__':
     try:
-        configure_installed_paths()
+        installed_data = configure_installed_paths()
+        if not claim_installed_instance(installed_data):
+            print(
+                'RootDetector is already running for this Windows user. '
+                'Return to its browser tab at http://localhost:5000; '
+                'close that copy before starting another.'
+            )
+            sys.exit(0)
     except Exception as exc:
         packaged_startup_error(exc)
         sys.exit(1)

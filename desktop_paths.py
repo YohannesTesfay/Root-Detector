@@ -11,6 +11,7 @@ import sys
 
 
 INSTALL_MARKER = 'INSTALL-MODE.txt'
+_instance_lock = None
 
 
 def package_root(executable=None):
@@ -56,3 +57,29 @@ def configure_installed_paths(executable=None, local_app_data=None):
     os.environ['INSTANCE_PATH'] = data
     os.chdir(data)  # base.Settings still saves settings.json relative to CWD.
     return data
+
+
+def claim_installed_instance(data):
+    """Keep a second installed copy from deleting the first copy's cache.
+
+    The lock is retained for the process lifetime. Windows releases use
+    ``msvcrt`` byte-range locking, which the OS releases after a crash.
+    """
+    global _instance_lock
+    if data is None:
+        return True
+    import msvcrt
+
+    handle = open(os.path.join(data, '.instance.lock'), 'a+b')
+    handle.seek(0, os.SEEK_END)
+    if handle.tell() == 0:
+        handle.write(b'0')
+        handle.flush()
+    handle.seek(0)
+    try:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        handle.close()
+        return False
+    _instance_lock = handle
+    return True

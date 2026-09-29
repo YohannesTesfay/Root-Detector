@@ -1,5 +1,6 @@
 import os
 import sys
+import types
 
 import desktop_paths
 
@@ -82,3 +83,23 @@ def test_installed_package_requires_complete_assets(tmp_path, monkeypatch):
             os.environ.pop('ROOTDETECTOR_INSTALLED', None)
         else:
             os.environ['ROOTDETECTOR_INSTALLED'] = previous
+
+
+def test_installed_instance_lock_prevents_second_copy(tmp_path, monkeypatch):
+    observed = []
+
+    def lock(_fd, _mode, length):
+        observed.append(length)
+        if len(observed) == 2:
+            raise OSError('already locked')
+
+    fake_msvcrt = types.SimpleNamespace(LK_NBLCK=1, locking=lock)
+    monkeypatch.setitem(sys.modules, 'msvcrt', fake_msvcrt)
+    try:
+        assert desktop_paths.claim_installed_instance(str(tmp_path)) is True
+        assert desktop_paths.claim_installed_instance(str(tmp_path)) is False
+        assert observed == [1, 1]
+    finally:
+        if desktop_paths._instance_lock is not None:
+            desktop_paths._instance_lock.close()
+            desktop_paths._instance_lock = None
