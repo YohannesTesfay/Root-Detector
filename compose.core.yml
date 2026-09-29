@@ -35,6 +35,7 @@ services:
         mkdir -p /workspace/cache &&
         python -m pytest -q
         tests/testcases/test_cli.py
+        tests/testcases/test_desktop_paths.py
         tests/testcases/test_evaluation.py
         tests/testcases/test_model_downloads.py
         tests/testcases/test_postprocessing.py
