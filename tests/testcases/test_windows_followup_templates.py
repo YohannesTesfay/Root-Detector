@@ -8,8 +8,10 @@ def read(relative_path):
     return (ROOT / relative_path).read_text(encoding='utf-8')
 
 
-def test_file_import_controls_are_native_buttons():
+def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     template = read('templates/roots/top_menu.html')
+    pipeline = read('frontend/roots/pipeline.js')
+    app = read('frontend/roots/app.js')
 
     for control_id in [
         'load-input-images-button',
@@ -18,8 +20,12 @@ def test_file_import_controls_are_native_buttons():
         'load-exclude-masks-button',
     ]:
         assert 'id="{}"'.format(control_id) in template
-    assert template.count('type="button"') >= 6
+    assert template.count('<a href="#" class="ui') >= 6
+    assert "if(this.classList.contains('disabled')) return false" in template
     assert 'aria-disabled="true"' in template
+    assert "attr('tabindex', run_disabled ? '-1' : '0')" in pipeline
+    assert "keydown.rootdetector-menu" in app
+    assert 'event.target !== event.currentTarget' in app
 
 
 def test_settings_actions_are_keyboard_focusable():

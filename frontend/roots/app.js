@@ -23,10 +23,17 @@ RootDetectorApp = class extends BaseApp {
                 this.Training.refresh_tab()
         }})
         $(document).on('keydown.rootdetector-buttons', '[role="button"]', event => {
-            if(event.key != 'Enter' && event.key != ' ')
+            if(event.target !== event.currentTarget || (event.key != 'Enter' && event.key != ' '))
                 return
             event.preventDefault()
             event.currentTarget.click()
+        })
+        $(document).on('keydown.rootdetector-menu', '.ui.menu a.item[href="#"]', event => {
+            if(event.key != ' ')
+                return
+            event.preventDefault()
+            if(!event.currentTarget.classList.contains('disabled'))
+                event.currentTarget.click()
         })
         this.FileInput.setup_drag_and_drop()
         this.enhance_accessibility()
