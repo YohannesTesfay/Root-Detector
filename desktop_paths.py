@@ -23,8 +23,8 @@ def configure_installed_paths(executable=None, local_app_data=None):
     """Select per-user data paths for a marker-bearing frozen package.
 
     Returns the selected data directory, or ``None`` for source/portable runs.
-    No existing user data is removed. The program directory is treated as
-    read-only; compiled browser assets are copied into the user directory.
+    No existing user data is removed. Callers must claim the instance lock
+    before copying browser assets into the user directory.
     """
     if not getattr(sys, 'frozen', False):
         return None
@@ -38,6 +38,15 @@ def configure_installed_paths(executable=None, local_app_data=None):
 
     data = os.path.join(local_app_data, 'RootDetector')
     os.makedirs(data, exist_ok=True)
+    os.environ['ROOT_PATH'] = root
+    os.environ['INSTANCE_PATH'] = data
+    os.chdir(data)  # base.Settings still saves settings.json relative to CWD.
+    return data
+
+
+def prepare_installed_assets(data):
+    """Copy packaged assets only after this process owns the user lock."""
+    root = os.environ['ROOT_PATH']
     source_static = os.path.join(root, 'static')
     if not os.path.isfile(os.path.join(source_static, 'index.html')):
         raise RuntimeError('Installed RootDetector browser assets are incomplete.')
@@ -53,10 +62,6 @@ def configure_installed_paths(executable=None, local_app_data=None):
     build_info = os.path.join(root, 'BUILD-INFO.txt')
     if os.path.isfile(build_info):
         shutil.copy2(build_info, os.path.join(data, 'BUILD-INFO.txt'))
-    os.environ['ROOT_PATH'] = root
-    os.environ['INSTANCE_PATH'] = data
-    os.chdir(data)  # base.Settings still saves settings.json relative to CWD.
-    return data
 
 
 def claim_installed_instance(data):

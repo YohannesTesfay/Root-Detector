@@ -34,6 +34,7 @@ def test_installed_package_uses_per_user_paths_without_deleting_data(tmp_path, m
         selected = desktop_paths.configure_installed_paths(
             executable=str(executable), local_app_data=str(local)
         )
+        desktop_paths.prepare_installed_assets(selected)
         assert selected == str(user_data)
         assert os.getcwd() == str(user_data)
         assert os.environ['ROOT_PATH'] == str(root)
@@ -71,9 +72,10 @@ def test_installed_package_requires_complete_assets(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     previous = os.environ.get('ROOTDETECTOR_INSTALLED')
     try:
-        desktop_paths.configure_installed_paths(
+        selected = desktop_paths.configure_installed_paths(
             executable=str(executable), local_app_data=str(tmp_path)
         )
+        desktop_paths.prepare_installed_assets(selected)
     except RuntimeError as exc:
         assert 'browser assets are incomplete' in str(exc)
     else:

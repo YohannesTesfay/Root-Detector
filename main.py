@@ -1,5 +1,9 @@
 import sys
-from desktop_paths import claim_installed_instance, configure_installed_paths
+from desktop_paths import (
+    claim_installed_instance,
+    configure_installed_paths,
+    prepare_installed_assets,
+)
 import os
 
 
@@ -40,6 +44,8 @@ if __name__ == '__main__':
                 'close that copy before starting another.'
             )
             sys.exit(0)
+        if installed_data is not None:
+            prepare_installed_assets(installed_data)
     except Exception as exc:
         packaged_startup_error(exc)
         sys.exit(1)
