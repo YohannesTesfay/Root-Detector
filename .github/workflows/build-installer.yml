@@ -94,10 +94,23 @@ jobs:
               $modelPaths += $modelPath
             }
             if ($modelPaths.Count -ne 5) { throw 'Unexpected number of verified first-launch models.' }
+            $blockedUpgrade = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru
+            if (-not $blockedUpgrade.WaitForExit(30000)) {
+              Stop-Process -Id $blockedUpgrade.Id -Force
+              throw 'Installer did not refuse an upgrade while analysis could be running.'
+            }
+            if ($blockedUpgrade.ExitCode -eq 0 -or $applicationProcess.HasExited) {
+              throw 'Installer changed the running application instead of refusing the upgrade.'
+            }
+            $stillReady = Invoke-RestMethod -Uri 'http://127.0.0.1:5000/api/session' -TimeoutSec 10
+            if (-not $stillReady.asset_schema) { throw 'Blocked upgrade interrupted the running application.' }
           } finally {
             if (-not $applicationProcess.HasExited) { Stop-Process -Id $applicationProcess.Id -Force }
             $applicationProcess.WaitForExit()
           }
+          $upgrade = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw "Upgrade after shutdown failed: $($upgrade.ExitCode)" }
+          if (-not (Test-Path $modelPaths[0])) { throw 'Upgrade removed downloaded user models.' }
           $uninstaller = Get-ChildItem -Path $installed -Filter 'unins*.exe' | Select-Object -First 1
           if (-not $uninstaller) { throw 'Uninstaller is missing.' }
           $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
