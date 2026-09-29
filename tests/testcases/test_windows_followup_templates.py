@@ -28,6 +28,19 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert 'event.target !== event.currentTarget' in app
 
 
+def test_narrow_top_menu_keeps_run_analysis_visible():
+    styles = read('frontend/roots/styles.css')
+    template = read('templates/roots/top_menu.html')
+
+    assert 'class="ui container menu page-wide"' in template
+    assert 'id="pipeline-run-button"' in template
+    assert '@media (max-width: 480px)' in styles
+    assert '.ui.menu.page-wide {' in styles
+    assert 'flex-wrap: wrap;' in styles
+    assert '.ui.menu.page-wide > #pipeline-run-button {' in styles
+    assert 'flex: 1 0 100%;' in styles
+
+
 def test_settings_actions_are_keyboard_focusable():
     template = read('templates/roots/modals.html')
     styles = read('frontend/roots/styles.css')
