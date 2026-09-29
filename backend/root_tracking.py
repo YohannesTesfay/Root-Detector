@@ -3,7 +3,10 @@ import hashlib
 import io
 import json
 import os
+import re
+import tempfile
 import typing as tp
+import uuid
 import warnings
 import zipfile
 import torch, torchvision
@@ -30,6 +33,8 @@ TrackingStatus = tp.Union[bool, TooManyRootsError]
 TrackingResult = tp.Dict[str, tp.Any]
 FilePairs = tp.Sequence[tp.Sequence[str]]
 TRACKING_CSV_SCHEMA = 2
+TRACKING_PROFILE_SCHEMA = 1
+RUN_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
 EXCLUSION_MASK_POLICIES = {'union', 'intersection', 'first', 'second'}
 DEFAULT_EXCLUSION_MASK_POLICY = 'first'
 TRACKING_SAMPLING_MODES = {'legacy', 'deterministic'}
@@ -42,6 +47,68 @@ TRACKING_CSV_FIELDS = [
     'same kimura length', 'decay kimura length', 'growth kimura length',
     'status',
 ]
+
+
+def validate_tracking_run_id(run_id:tp.Any) -> str:
+    if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
+        raise ValueError('Invalid tracking result ID. Run tracking again.')
+    return run_id
+
+
+def _array_identity(array:np.ndarray) -> dict:
+    contiguous = np.ascontiguousarray(array)
+    return {
+        'shape': list(contiguous.shape),
+        'dtype': str(contiguous.dtype),
+        'sha256': hashlib.sha256(memoryview(contiguous).cast('B')).hexdigest(),
+    }
+
+
+def _tracking_profile_id(profile:dict) -> str:
+    identity = {key: value for key, value in profile.items() if key != 'profile_id'}
+    serialized = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def tracking_run_profile(
+    filename0:str,
+    filename1:str,
+    segmentation0:np.ndarray,
+    segmentation1:np.ndarray,
+    exclusion0:tp.Optional[np.ndarray],
+    exclusion1:tp.Optional[np.ndarray],
+    settings:tp.Any,
+    sampling_mode:str,
+    exclusion_policy:str,
+    match_device:str,
+    matcher:dict,
+) -> dict:
+    """Record every selected input and scientific option affecting this result."""
+    profile = {
+        'schema': TRACKING_PROFILE_SCHEMA,
+        'inputs': [
+            {'name': os.path.basename(path), 'sha256': root_detection._sha256(path)}
+            for path in (filename0, filename1)
+        ],
+        'segmentations': [
+            _array_identity(segmentation0), _array_identity(segmentation1)
+        ],
+        'exclusion_masks': [
+            _array_identity(mask) if mask is not None else None
+            for mask in (exclusion0, exclusion1)
+        ],
+        'models': {
+            kind: root_detection._model_identity(settings, kind)
+            for kind in ('detection', 'tracking')
+        },
+        'sampling_mode': sampling_mode,
+        'exclusion_mask_policy': exclusion_policy,
+        'match_device': match_device,
+        'matcher_version': matcher.get('version'),
+        'sampling_seed': matcher.get('seed'),
+    }
+    profile['profile_id'] = _tracking_profile_id(profile)
+    return profile
 
 
 
@@ -74,8 +141,9 @@ def process(
     sampling_mode = validate_tracking_sampling_mode(
         getattr(settings, 'tracking_sampling_mode', DEFAULT_TRACKING_SAMPLING_MODE)
     )
-
-    outputname  = f'{filename0}.{os.path.basename(filename1)}'
+    run_id = uuid.uuid4().hex
+    outputname = f'{filename0}.{os.path.basename(filename1)}.{run_id}'
+    device = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
     
     if previous_data is None:  #FIXME: better condition?
         seed_identity = None
@@ -88,7 +156,6 @@ def process(
         img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
         with GLOBALS.processing_lock:
             jobs.raise_if_cancelled(settings)
-            device  = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
             def on_progress(value, phase):
                 jobs.raise_if_cancelled(settings)
                 operation_callback = getattr(
@@ -134,7 +201,11 @@ def process(
                 sampling_seed=sampling_seed,
                 seed_identity=seed_identity,
             )
+            output['match_device'] = device
     else:
+        validate_previous_tracking_data(
+            previous_data, filename0, filename1, seg0, seg1, settings, sampling_mode
+        )
         output      = {
             'points0'            : np.asarray(previous_data['points0']).reshape(-1,2),
             'points1'            : np.asarray(previous_data['points1']).reshape(-1,2),
@@ -145,10 +216,24 @@ def process(
                 'name': 'released-model-internal-matcher',
                 'version': 0,
             }),
+            'match_device'       : previous_data.get('match_device', 'unknown'),
         }
         corrections = np.array(previous_data['corrections']).reshape(-1,4)
         if len(corrections)>0:
-            imap   = np.load(f'{outputname}.imap.npy').astype('float32')
+            previous_prefix = f'{filename0}.{os.path.basename(filename1)}'
+            if previous_data.get('run_id') is not None:
+                previous_prefix += '.' + validate_tracking_run_id(previous_data['run_id'])
+            previous_map = previous_prefix + '.imap.npy'
+            if os.path.isfile(previous_map):
+                imap = np.load(previous_map, allow_pickle=False).astype('float32')
+            else:
+                previous_points0 = np.asarray(previous_data['points0']).reshape(-1, 2)
+                previous_points1 = np.asarray(previous_data['points1']).reshape(-1, 2)
+                if len(previous_points0) != len(previous_points1) or not len(previous_points0):
+                    raise ValueError('Saved match points are incomplete. Run tracking again.')
+                imap = matchmodel.interpolation_map(
+                    previous_points1, previous_points0, seg0.shape
+                )
             corrections_p0 = corrections[:,:2][:,::-1] #xy to yx
             corrections_p1 = corrections[:,2:][:,::-1]
             corrections_p0 = np.stack([
@@ -199,6 +284,12 @@ def process(
         'observation1_pixels': _mask_pixel_count(exmask1),
         'combined_pixels': _mask_pixel_count(combined_exmask),
     }
+    output['run_id'] = run_id
+    output['run_profile'] = tracking_run_profile(
+        filename0, filename1, seg0, seg1, exmask0, exmask1, settings,
+        sampling_mode, exclusion_policy, output['match_device'],
+        output['tracking_matcher'],
+    )
 
     output['statistics']     = compute_statistics(gmap)
     
@@ -248,6 +339,7 @@ def ensure_pair_exclusion_masks(
     if policy in {'second', 'union', 'intersection'}:
         exmask1 = ensure_exclusionmask(filename1, settings)
         jobs.raise_if_cancelled(settings)
+    _validate_combined_mask_availability(exmask0, exmask1, policy)
     return exmask0, exmask1
 
 
@@ -280,6 +372,82 @@ def deterministic_sampling_seed(
     }
     serialized = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
     return int.from_bytes(hashlib.sha256(serialized).digest()[:4], 'big'), identity
+
+
+def validate_previous_tracking_data(
+    previous_data:tp.Dict[str, tp.Any],
+    filename0:str,
+    filename1:str,
+    segmentation0:np.ndarray,
+    segmentation1:np.ndarray,
+    settings:tp.Any,
+    sampling_mode:str,
+) -> None:
+    """Reject corrections imported from another pair, model, or sampling mode."""
+    for key, path in (('filename0', filename0), ('filename1', filename1)):
+        if key in previous_data and previous_data[key] != os.path.basename(path):
+            raise ValueError('Saved tracking points belong to a different image pair. Run tracking again.')
+    for key, kind in (('tracking_model', 'tracking'), ('segmentation_model', 'detection')):
+        if previous_data.get(key) != settings.active_models[kind]:
+            raise ValueError(
+                'Saved tracking points used a different {}. Run tracking again before correcting.'.format(
+                    key.replace('_', ' ')
+                )
+            )
+
+    provenance = previous_data.get('tracking_matcher')
+    if provenance is None:
+        # Older exports omitted matcher metadata and always used original sampling.
+        provenance = {'version': 0}
+    if not isinstance(provenance, dict):
+        raise ValueError('Saved tracking points have unknown matcher metadata. Run tracking again.')
+    version = provenance.get('version')
+    if type(version) is not int or version not in {0, 1, 2}:
+        raise ValueError('Saved tracking points have unknown matcher metadata. Run tracking again.')
+    stored_mode = 'deterministic' if version == 2 else 'legacy'
+    if stored_mode != sampling_mode:
+        raise ValueError(
+            'Saved tracking points used a different sampling mode. Restore that mode '
+            'or run tracking again before correcting.'
+        )
+    if stored_mode == 'deterministic':
+        expected_seed, expected_identity = deterministic_sampling_seed(
+            filename0, filename1, segmentation0, segmentation1, settings
+        )
+        if (provenance.get('seed') != expected_seed
+                or provenance.get('seed_identity') != expected_identity):
+            raise ValueError(
+                'Saved seeded tracking points do not match these images, segmentations, '
+                'or models. Run tracking again before correcting.'
+            )
+    if 'run_id' in previous_data:
+        validate_tracking_run_id(previous_data['run_id'])
+    saved_profile = previous_data.get('run_profile')
+    if 'run_id' in previous_data and saved_profile is None:
+        raise ValueError('Saved tracking points lack their result profile. Run tracking again.')
+    if saved_profile is not None:
+        if (not isinstance(saved_profile, dict)
+                or saved_profile.get('schema') != TRACKING_PROFILE_SCHEMA
+                or saved_profile.get('profile_id') != _tracking_profile_id(saved_profile)):
+            raise ValueError('Saved tracking points have unknown profile metadata. Run tracking again.')
+        current_inputs = [
+            {'name': os.path.basename(path), 'sha256': root_detection._sha256(path)}
+            for path in (filename0, filename1)
+        ]
+        current_segmentations = [
+            _array_identity(segmentation0), _array_identity(segmentation1)
+        ]
+        current_models = {
+            kind: root_detection._model_identity(settings, kind)
+            for kind in ('detection', 'tracking')
+        }
+        if (saved_profile.get('inputs') != current_inputs
+                or saved_profile.get('segmentations') != current_segmentations
+                or saved_profile.get('models') != current_models):
+            raise ValueError(
+                'Saved tracking points do not match these images, segmentations, or models. '
+                'Run tracking again before correcting.'
+            )
 
 
 def validate_tracking_pair_shapes(
@@ -326,6 +494,21 @@ def _binary_mask(mask:tp.Optional[np.ndarray], shape:tp.Tuple[int, ...]) -> np.n
     return array > 0.5
 
 
+def _validate_combined_mask_availability(
+    observation0:tp.Optional[np.ndarray],
+    observation1:tp.Optional[np.ndarray],
+    policy:str,
+) -> None:
+    """Do not silently treat one missing mask as an empty observation."""
+    if policy in {'union', 'intersection'} and ((observation0 is None) != (observation1 is None)):
+        raise ValueError(
+            'The {} exclusion-mask policy needs masks for both observations. '
+            'One is missing; provide both masks or select the available observation.'.format(
+                policy
+            )
+        )
+
+
 def combine_exclusion_masks(
     warped_observation0:tp.Optional[np.ndarray],
     observation1:tp.Optional[np.ndarray],
@@ -334,6 +517,7 @@ def combine_exclusion_masks(
 ) -> tp.Optional[np.ndarray]:
     """Combine masks in observation-2 coordinates under an explicit policy."""
     policy = validate_exclusion_mask_policy(policy)
+    _validate_combined_mask_availability(warped_observation0, observation1, policy)
     if warped_observation0 is None and observation1 is None:
         return None
     resolved_shape = shape
@@ -433,37 +617,54 @@ def cache_output_for_download(
     dirname     =   paths.get_cache_path()
     filename0   =   os.path.basename(filename0)
     filename1   =   os.path.basename(filename1)
-    outputname  =   os.path.join(dirname, f'{filename0}.{filename1}')
-    
-    open(f'{outputname}.csv', 'w').write(
-        statistics_to_csv(
-            output.get('statistics', {}),
-            filename0, 
-            filename1, 
-            success
-        )
+    pair_prefix = os.path.join(dirname, f'{filename0}.{filename1}')
+    run_id = output.get('run_id')
+    outputname = pair_prefix + ('.' + validate_tracking_run_id(run_id) if run_id else '')
+    csv_text = statistics_to_csv(
+        output.get('statistics', {}), filename0, filename1, success
     )
+    with open(f'{outputname}.csv', 'w') as destination:
+        destination.write(csv_text)
+    if run_id:
+        # The pair-named file remains a latest-result compatibility alias.
+        with open(f'{pair_prefix}.csv', 'w') as destination:
+            destination.write(csv_text)
 
     if isinstance(success, TooManyRootsError):
+        # A skipped rerun must not leave the previous successful pair alias
+        # pointing at stale growth maps. Run-specific artifacts stay intact.
+        with open(f'{pair_prefix}.json', 'w') as destination:
+            json.dump({
+                'filename0': filename0,
+                'filename1': filename1,
+                'status': 'skipped',
+            }, destination)
         return
 
-    open(f'{outputname}.json', 'w').write(
-        json.dumps({
-            'filename0'             : filename0,
-            'filename1'             : filename1,
-            'points0'               : output['points0'].tolist(),
-            'points1'               : output['points1'].tolist(),
-            'n_matched_points'      : output['n_matched_points'],
-            'tracking_model'        : output['tracking_model'],
-            'segmentation_model'    : output['segmentation_model'],
-            'tracking_matcher'      : output['tracking_matcher'],
-            'segmentation0'         : os.path.basename(output['segmentation0']),
-            'segmentation1'         : os.path.basename(output['segmentation1']),
-            'growthmap'             : os.path.basename(output['growthmap']),
-            'exclusion_mask_policy' : output['exclusion_mask_policy'],
-            'exclusion_masks'       : output['exclusion_masks'],
-        })
-    )
+    metadata = {
+        'filename0'             : filename0,
+        'filename1'             : filename1,
+        'run_id'                : run_id,
+        'run_profile'           : output.get('run_profile'),
+        'match_device'          : output.get('match_device', 'unknown'),
+        'points0'               : output['points0'].tolist(),
+        'points1'               : output['points1'].tolist(),
+        'n_matched_points'      : output['n_matched_points'],
+        'tracking_model'        : output['tracking_model'],
+        'segmentation_model'    : output['segmentation_model'],
+        'tracking_matcher'      : output['tracking_matcher'],
+        'segmentation0'         : os.path.basename(output['segmentation0']),
+        'segmentation1'         : os.path.basename(output['segmentation1']),
+        'growthmap'             : os.path.basename(output['growthmap']),
+        'statistics_file'       : os.path.basename(f'{outputname}.csv'),
+        'exclusion_mask_policy' : output['exclusion_mask_policy'],
+        'exclusion_masks'       : output['exclusion_masks'],
+    }
+    with open(f'{outputname}.json', 'w') as destination:
+        json.dump(metadata, destination)
+    if run_id:
+        with open(f'{pair_prefix}.json', 'w') as destination:
+            json.dump(metadata, destination)
 
 
 def _statistics_record(
@@ -510,13 +711,35 @@ def statistics_to_csv(
     return output.getvalue()
 
 
-def collect_result_files(filename0:str, filename1:str) -> tp.Optional[tp.List[str]]:
+def _pair_result_metadata(
+    filename0:str, filename1:str, run_id:tp.Optional[str]=None
+) -> tp.Optional[tp.Tuple[str, dict]]:
     cache_path = paths.get_cache_path()
-    metadata_path = os.path.join(cache_path, f'{filename0}.{filename1}.json')
+    suffix = '.' + validate_tracking_run_id(run_id) if run_id is not None else ''
+    metadata_path = os.path.join(cache_path, f'{filename0}.{filename1}{suffix}.json')
     try:
         with open(metadata_path, 'r') as source:
             metadata = json.load(source)
     except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    if metadata.get('filename0', filename0) != filename0 or metadata.get('filename1', filename1) != filename1:
+        return None
+    if run_id is not None and metadata.get('run_id') != run_id:
+        return None
+    return metadata_path, metadata
+
+
+def collect_result_files(
+    filename0:str, filename1:str, run_id:tp.Optional[str]=None
+) -> tp.Optional[tp.List[str]]:
+    cache_path = paths.get_cache_path()
+    loaded = _pair_result_metadata(filename0, filename1, run_id)
+    if loaded is None:
+        return None
+    metadata_path, metadata = loaded
+    if metadata.get('status') == 'skipped':
         return None
 
     segmentation0 = metadata.get('segmentation0', filename0 + '.segmentation.cache.png')
@@ -526,7 +749,9 @@ def collect_result_files(filename0:str, filename1:str) -> tp.Optional[tp.List[st
         os.path.join(cache_path, os.path.basename(segmentation0)),
         os.path.join(cache_path, os.path.basename(segmentation1)),
         os.path.join(cache_path, os.path.basename(growthmap)),
-        os.path.join(cache_path, f'{filename0}.{filename1}.csv'),
+        os.path.join(cache_path, os.path.basename(
+            metadata.get('statistics_file', f'{filename0}.{filename1}.csv')
+        )),
         metadata_path,
 
     ]
@@ -534,13 +759,37 @@ def collect_result_files(filename0:str, filename1:str) -> tp.Optional[tp.List[st
         return files
     #else: return None
 
-def combine_csv_statistics(file_pairs:FilePairs) -> str:
-    cache_path         = paths.get_cache_path()
+
+def _selected_pair(pair:tp.Sequence[str]) -> tp.Tuple[str, str, tp.Optional[str]]:
+    if not isinstance(pair, (list, tuple)) or len(pair) not in {2, 3}:
+        raise ValueError('A tracking selection must contain two image names and an optional result ID.')
+    filename0, filename1 = pair[:2]
+    run_id = validate_tracking_run_id(pair[2]) if len(pair) == 3 else None
+    return filename0, filename1, run_id
+
+
+def _selected_csv_path(filename0:str, filename1:str, run_id:tp.Optional[str]) -> str:
+    cache_path = paths.get_cache_path()
+    loaded = _pair_result_metadata(filename0, filename1, run_id)
+    if loaded is None:
+        if run_id is not None:
+            raise ValueError('Selected tracking result was not found. Run tracking again.')
+        return os.path.join(cache_path, f'{filename0}.{filename1}.csv')
+    _metadata_path, metadata = loaded
+    return os.path.join(cache_path, os.path.basename(
+        metadata.get('statistics_file', f'{filename0}.{filename1}.csv')
+    ))
+
+def combine_csv_statistics(
+    file_pairs:FilePairs, include_index:bool=False
+) -> tp.Union[str, tp.Tuple[str, tp.List[dict]]]:
     combined = io.StringIO(newline='')
     writer = csv.writer(combined)
     header_written = False
-    for filename0, filename1 in file_pairs:
-        csv_file   = os.path.join(cache_path, f'{filename0}.{filename1}.csv')
+    row_index = []
+    for selection_index, pair in enumerate(file_pairs):
+        filename0, filename1, run_id = _selected_pair(pair)
+        csv_file = _selected_csv_path(filename0, filename1, run_id)
         with open(csv_file, 'r', newline='') as source:
             rows = list(csv.reader(source))
         if len(rows) < 2:
@@ -551,6 +800,11 @@ def combine_csv_statistics(file_pairs:FilePairs) -> str:
                 'Skipping tracking CSV with an unsupported or legacy schema: {}'.format(csv_file)
             )
             continue
+        loaded = _pair_result_metadata(filename0, filename1, run_id)
+        metadata = loaded[1] if loaded is not None else {}
+        profile = metadata.get('run_profile')
+        if not isinstance(profile, dict):
+            profile = {}
         if not header_written:
             writer.writerow(rows[0])
             header_written = True
@@ -559,6 +813,19 @@ def combine_csv_statistics(file_pairs:FilePairs) -> str:
                 warnings.warn('Skipping malformed tracking CSV row in {}'.format(csv_file))
                 continue
             writer.writerow(row)
+            row_index.append({
+                'statistics_row': len(row_index) + 1,
+                'selection_index': selection_index,
+                'filename0': filename0,
+                'filename1': filename1,
+                'run_id': run_id or metadata.get('run_id'),
+                'profile_id': profile.get('profile_id'),
+                'sampling_mode': profile.get('sampling_mode'),
+                'exclusion_mask_policy': metadata.get('exclusion_mask_policy'),
+                'status': row[-1],
+            })
+    if include_index:
+        return combined.getvalue(), row_index
     return combined.getvalue()
 
     
@@ -568,51 +835,86 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
        (Doing this here in Python because frontend passes out if too many files)'''
     
     cache_path = paths.get_cache_path()
-    resultpath = os.path.join(cache_path, 'tracking_results.zip')
+    selected_pairs = []
+    selected_records = []
     pair_exclusion_masks = []
-    with zipfile.ZipFile(resultpath, 'w') as resultzip:
-        for filename0, filename1 in file_pairs:
-            outputname   = f'{filename0}.{filename1}'
-            result_files = collect_result_files(filename0, filename1)
-            if result_files is None:
-                print(f'[ERROR] could not find tracking results for {outputname}')
-                continue
-
-            archive_names = [
-                filename0 + '.segmentation.cache.png',
-                filename1 + '.segmentation.cache.png',
-            ] + [os.path.basename(path) for path in result_files[2:]]
-            for path, archive_name in zip(result_files, archive_names):
-                resultzip.write(path, os.path.join(outputname, archive_name))
-            try:
-                with open(os.path.join(cache_path, f'{filename0}.{filename1}.json'), 'r') as source:
-                    pair_metadata = json.load(source)
-                pair_exclusion_masks.append({
-                    'filename0': filename0,
-                    'filename1': filename1,
-                    'policy': pair_metadata.get(
-                        'exclusion_mask_policy',
-                        DEFAULT_EXCLUSION_MASK_POLICY,
-                    ),
-                    'masks': pair_metadata.get('exclusion_masks'),
-                    'matcher': pair_metadata.get('tracking_matcher'),
-                })
-            except (OSError, ValueError, json.JSONDecodeError):
-                pass
-        combined_stats = combine_csv_statistics(file_pairs)
-        resultzip.writestr('statistics.csv', combined_stats)
-        resultzip.writestr(
-            'tracking-results-manifest.json',
-            json.dumps({
-                'tracking_csv_schema': TRACKING_CSV_SCHEMA,
-                'exclusion_mask_coordinate_system': 'observation1',
-                'pair_exclusion_masks': pair_exclusion_masks,
-                'tracking_matcher_schema': 2,
-                'migration_warning': (
-                    'Tracking CSV files exported by RootDetector before schema 2 may have '
-                    'background, mask, same, decay, and growth values under incorrect headers. '
-                    'Re-export those analyses before comparing or aggregating them.'
+    for pair in file_pairs:
+        filename0, filename1, run_id = _selected_pair(pair)
+        loaded = _pair_result_metadata(filename0, filename1, run_id)
+        if run_id is not None and loaded is None:
+            raise ValueError('Selected tracking result was not found. Run tracking again.')
+        metadata = loaded[1] if loaded is not None else {}
+        effective_id = run_id or metadata.get('run_id')
+        result_files = collect_result_files(filename0, filename1, run_id)
+        if effective_id is not None and result_files is None:
+            raise ValueError('Selected tracking result files are incomplete. Run tracking again.')
+        csv_path = _selected_csv_path(filename0, filename1, run_id)
+        if not os.path.isfile(csv_path):
+            raise ValueError('Selected tracking statistics are missing. Run tracking again.')
+        selected_pairs.append((filename0, filename1, effective_id))
+        selected_records.append((filename0, filename1, effective_id, result_files))
+        if result_files is not None:
+            pair_entry = {
+                'filename0': filename0,
+                'filename1': filename1,
+                'policy': metadata.get(
+                    'exclusion_mask_policy', DEFAULT_EXCLUSION_MASK_POLICY
                 ),
-            }, indent=2, sort_keys=True),
-        )
+                'masks': metadata.get('exclusion_masks'),
+                'matcher': metadata.get('tracking_matcher'),
+            }
+            if metadata.get('run_id'):
+                pair_entry['run_id'] = metadata['run_id']
+                pair_entry['run_profile'] = metadata.get('run_profile')
+            pair_exclusion_masks.append(pair_entry)
+
+    # Parse statistics before creating an archive, so malformed/missing input
+    # cannot leave a seemingly complete ZIP at the final download path.
+    combined_stats, statistics_rows = combine_csv_statistics(
+        file_pairs, include_index=True
+    )
+    selection_json = json.dumps(selected_pairs, separators=(',', ':')).encode('utf-8')
+    archive_id = hashlib.sha256(selection_json).hexdigest()[:24]
+    resultpath = os.path.join(cache_path, 'tracking_results.{}.zip'.format(archive_id))
+    if (all(run_id is not None for _first, _second, run_id in selected_pairs)
+            and os.path.isfile(resultpath) and zipfile.is_zipfile(resultpath)):
+        return os.path.basename(resultpath)
+    handle, temporary_path = tempfile.mkstemp(
+        prefix='.tracking-results-', suffix='.zip', dir=cache_path
+    )
+    os.close(handle)
+    try:
+        with zipfile.ZipFile(temporary_path, 'w') as resultzip:
+            for filename0, filename1, run_id, result_files in selected_records:
+                if result_files is None:
+                    continue
+                outputname = f'{filename0}.{filename1}'
+                if run_id is not None:
+                    outputname += '.' + run_id
+                archive_names = [
+                    filename0 + '.segmentation.cache.png',
+                    filename1 + '.segmentation.cache.png',
+                ] + [os.path.basename(path) for path in result_files[2:]]
+                for path, archive_name in zip(result_files, archive_names):
+                    resultzip.write(path, '{}/{}'.format(outputname, archive_name))
+            resultzip.writestr('statistics.csv', combined_stats)
+            resultzip.writestr(
+                'tracking-results-manifest.json',
+                json.dumps({
+                    'tracking_csv_schema': TRACKING_CSV_SCHEMA,
+                    'exclusion_mask_coordinate_system': 'observation1',
+                    'pair_exclusion_masks': pair_exclusion_masks,
+                    'statistics_rows': statistics_rows,
+                    'tracking_matcher_schema': 2,
+                    'migration_warning': (
+                        'Tracking CSV files exported by RootDetector before schema 2 may have '
+                        'background, mask, same, decay, and growth values under incorrect headers. '
+                        'Re-export those analyses before comparing or aggregating them.'
+                    ),
+                }, indent=2, sort_keys=True),
+            )
+        os.replace(temporary_path, resultpath)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
     return os.path.basename(resultpath)

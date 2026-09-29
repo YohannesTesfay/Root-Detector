@@ -4,6 +4,7 @@ import os
 import json
 import zipfile
 
+import numpy as np
 import pytest
 
 from backend import root_tracking
@@ -136,3 +137,151 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
         assert manifest['tracking_matcher_schema'] == 2
         assert 'incorrect headers' in manifest['migration_warning']
         assert any(name.endswith('one.png.segmentation.cache.png') for name in archive.namelist())
+
+
+def test_failed_zip_write_cannot_be_reused_as_a_complete_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
+    first, second = 'one.png', 'two.png'
+    for name in ('first.segmentation.png', 'second.segmentation.png',
+                 'one.png.two.png.growthmap.png'):
+        (tmp_path / name).write_bytes(b'fixture')
+    (tmp_path / '{}.{}.json'.format(first, second)).write_text(json.dumps({
+        'filename0': first,
+        'filename1': second,
+        'segmentation0': 'first.segmentation.png',
+        'segmentation1': 'second.segmentation.png',
+        'growthmap': 'one.png.two.png.growthmap.png',
+    }))
+    (tmp_path / '{}.{}.csv'.format(first, second)).write_text(
+        root_tracking.statistics_to_csv({}, first, second, True)
+    )
+
+    original_write = zipfile.ZipFile.write
+    attempts = []
+
+    def fail_after_first_file(self, *args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 2:
+            raise OSError('simulated ZIP write failure')
+        return original_write(self, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, 'write', fail_after_first_file)
+    with pytest.raises(OSError, match='simulated ZIP write failure'):
+        root_tracking.compile_results_into_zip([(first, second)])
+    assert list(tmp_path.glob('tracking_results.*.zip')) == []
+    assert list(tmp_path.glob('.tracking-results-*.zip')) == []
+
+    monkeypatch.setattr(zipfile.ZipFile, 'write', original_write)
+    archive_name = root_tracking.compile_results_into_zip([(first, second)])
+    with zipfile.ZipFile(str(tmp_path / archive_name)) as archive:
+        assert archive.read('statistics.csv')
+
+
+def test_tracking_variants_keep_separate_artifacts_and_selected_exports(tmp_path, monkeypatch):
+    monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
+    first, second = 'one.png', 'two.png'
+    for name in ('one.segmentation.png', 'two.segmentation.png'):
+        (tmp_path / name).write_bytes(b'segmentation')
+
+    selected = []
+    for index, policy in enumerate(('first', 'union'), 1):
+        run_id = str(index) * 32
+        prefix = '{}.{}.{}'.format(first, second, run_id)
+        growthmap = tmp_path / (prefix + '.growthmap.png')
+        growthmap.write_bytes(policy.encode('ascii'))
+        profile = {'schema': 1, 'exclusion_mask_policy': policy, 'profile_id': policy}
+        output = {
+            'run_id': run_id,
+            'run_profile': profile,
+            'match_device': 'cpu',
+            'points0': np.zeros((1, 2)),
+            'points1': np.zeros((1, 2)),
+            'n_matched_points': 1,
+            'tracking_model': 'track-a',
+            'segmentation_model': 'detect-a',
+            'tracking_matcher': {'name': 'matcher', 'version': index},
+            'segmentation0': str(tmp_path / 'one.segmentation.png'),
+            'segmentation1': str(tmp_path / 'two.segmentation.png'),
+            'growthmap': str(growthmap),
+            'exclusion_mask_policy': policy,
+            'exclusion_masks': {'combined_pixels': index},
+            'statistics': {'sum_same': index},
+        }
+        root_tracking.cache_output_for_download(first, second, True, output)
+        selected.append((first, second, run_id))
+
+    assert json.loads((tmp_path / '{}.{}.json'.format(first, second)).read_text())['run_id'] == selected[-1][2]
+    for _first, _second, run_id in selected:
+        assert (tmp_path / '{}.{}.{}.json'.format(first, second, run_id)).exists()
+        assert (tmp_path / '{}.{}.{}.csv'.format(first, second, run_id)).exists()
+
+    archive_name = root_tracking.compile_results_into_zip(selected)
+    with zipfile.ZipFile(str(tmp_path / archive_name)) as archive:
+        names = archive.namelist()
+        for _first, _second, run_id in selected:
+            assert any(name.startswith('{}.{}.{}/'.format(first, second, run_id)) for name in names)
+        rows = list(csv.DictReader(io.StringIO(archive.read('statistics.csv').decode('utf-8'))))
+        assert [row['same pixels'] for row in rows] == ['1', '2']
+        manifest = json.loads(archive.read('tracking-results-manifest.json'))
+        assert [item['run_id'] for item in manifest['pair_exclusion_masks']] == [
+            pair[2] for pair in selected
+        ]
+        assert [item['run_id'] for item in manifest['statistics_rows']] == [
+            pair[2] for pair in selected
+        ]
+        assert [item['statistics_row'] for item in manifest['statistics_rows']] == [1, 2]
+        assert [item['profile_id'] for item in manifest['statistics_rows']] == [
+            'first', 'union'
+        ]
+        assert [item['run_profile']['exclusion_mask_policy'] for item in manifest['pair_exclusion_masks']] == [
+            'first', 'union'
+        ]
+    assert root_tracking.compile_results_into_zip([selected[0]]) != archive_name
+    assert root_tracking.compile_results_into_zip(selected) == archive_name
+    latest_name = root_tracking.compile_results_into_zip([(first, second)])
+    with zipfile.ZipFile(str(tmp_path / latest_name)) as archive:
+        latest = list(csv.DictReader(io.StringIO(archive.read('statistics.csv').decode('utf-8'))))
+        assert [row['same pixels'] for row in latest] == ['2']
+    assert json.loads((tmp_path / '{}.{}.json'.format(first, second)).read_text())['run_id'] == selected[-1][2]
+
+
+def test_skipped_rerun_does_not_export_a_stale_pair_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
+    first, second = 'one.png', 'two.png'
+    run_id = 'a' * 32
+    pair_prefix = '{}.{}'.format(first, second)
+    for name in ('one.segmentation.png', 'two.segmentation.png'):
+        (tmp_path / name).write_bytes(b'segmentation')
+    growthmap = tmp_path / (pair_prefix + '.' + run_id + '.growthmap.png')
+    growthmap.write_bytes(b'previous result')
+    output = {
+        'run_id': run_id,
+        'run_profile': {'schema': 1},
+        'match_device': 'cpu',
+        'points0': np.zeros((1, 2)),
+        'points1': np.zeros((1, 2)),
+        'n_matched_points': 1,
+        'tracking_model': 'track-a',
+        'segmentation_model': 'detect-a',
+        'tracking_matcher': {'version': 1},
+        'segmentation0': str(tmp_path / 'one.segmentation.png'),
+        'segmentation1': str(tmp_path / 'two.segmentation.png'),
+        'growthmap': str(growthmap),
+        'exclusion_mask_policy': 'first',
+        'exclusion_masks': {'combined_pixels': 0},
+        'statistics': {'sum_same': 1},
+    }
+    root_tracking.cache_output_for_download(first, second, True, output)
+    root_tracking.cache_output_for_download(
+        first, second, root_tracking.TOO_MANY_ROOTS_ERROR, {}
+    )
+
+    archive_name = root_tracking.compile_results_into_zip([(first, second)])
+    with zipfile.ZipFile(str(tmp_path / archive_name)) as archive:
+        assert not any(name.endswith('growthmap.png') for name in archive.namelist())
+        rows = list(csv.DictReader(io.StringIO(archive.read('statistics.csv').decode('utf-8'))))
+        assert rows[0]['status'] == 'SKIPPED: Too many roots'
+        manifest = json.loads(archive.read('tracking-results-manifest.json'))
+        assert manifest['statistics_rows'][0]['status'] == 'SKIPPED: Too many roots'
+        assert manifest['statistics_rows'][0]['run_id'] is None
+    assert (tmp_path / (pair_prefix + '.' + run_id + '.json')).exists()

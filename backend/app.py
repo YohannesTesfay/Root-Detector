@@ -475,7 +475,10 @@ class App(BaseApp):
             must_exist=True,
         )
         previous_data = data if 'points0' in data else None
-        result = root_tracking.process(fname0, fname1, self.settings, previous_data)
+        try:
+            result = root_tracking.process(fname0, fname1, self.settings, previous_data)
+        except ValueError as exc:
+            raise backend.security.ValidationError(str(exc), 'invalid_tracking_pair')
         
         if isinstance(result, root_tracking.TooManyRootsError):
             return flask.jsonify({
@@ -497,6 +500,9 @@ class App(BaseApp):
             'tracking_model'     : result['tracking_model'],
             'segmentation_model' : result['segmentation_model'],
             'tracking_matcher'     : result['tracking_matcher'],
+            'run_id'             : result['run_id'],
+            'run_profile'        : result['run_profile'],
+            'match_device'       : result['match_device'],
             'exclusion_mask_policy': result['exclusion_mask_policy'],
             'exclusion_masks'      : result['exclusion_masks'],
             'statistics'         : result['statistics'],
@@ -505,16 +511,24 @@ class App(BaseApp):
     def compile_tracking_results(self):
         file_pairs = flask.request.get_json(force=True)['file_pairs']
         for pair in file_pairs:
-            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            if not isinstance(pair, (list, tuple)) or len(pair) not in {2, 3}:
                 raise backend.security.ValidationError('Invalid tracking pair.', 'invalid_tracking_pair')
-            for filename in pair:
+            for filename in pair[:2]:
                 backend.security.safe_resolve(
                     self.cache_path,
                     filename,
                     backend.security.SUPPORTED_IMAGE_EXTENSIONS,
                     must_exist=True,
                 )
-        return root_tracking.compile_results_into_zip(file_pairs)
+            if len(pair) == 3:
+                try:
+                    root_tracking.validate_tracking_run_id(pair[2])
+                except ValueError as exc:
+                    raise backend.security.ValidationError(str(exc), 'invalid_tracking_result')
+        try:
+            return root_tracking.compile_results_into_zip(file_pairs)
+        except ValueError as exc:
+            raise backend.security.ValidationError(str(exc), 'invalid_tracking_result')
 
     def create_pipeline_run(self):
         request_data = flask.request.get_json(force=True) or {}
