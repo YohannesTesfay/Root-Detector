@@ -33,7 +33,7 @@ TrackingStatus = tp.Union[bool, TooManyRootsError]
 TrackingResult = tp.Dict[str, tp.Any]
 FilePairs = tp.Sequence[tp.Sequence[str]]
 TRACKING_CSV_SCHEMA = 2
-TRACKING_PROFILE_SCHEMA = 1
+TRACKING_PROFILE_SCHEMA = 2
 RUN_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
 EXCLUSION_MASK_POLICIES = {'union', 'intersection', 'first', 'second'}
 DEFAULT_EXCLUSION_MASK_POLICY = 'first'
@@ -64,6 +64,18 @@ def _array_identity(array:np.ndarray) -> dict:
     }
 
 
+def _file_sha256(filename:str) -> str:
+    digest = hashlib.sha256()
+    with open(filename, 'rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _segmentation_array_path(preview_path:str) -> str:
+    return os.path.splitext(preview_path)[0] + '.npy'
+
+
 def _tracking_profile_id(profile:dict) -> str:
     identity = {key: value for key, value in profile.items() if key != 'profile_id'}
     serialized = json.dumps(identity, sort_keys=True, separators=(',', ':')).encode('utf-8')
@@ -82,6 +94,7 @@ def tracking_run_profile(
     exclusion_policy:str,
     match_device:str,
     matcher:dict,
+    segmentation_previews:tp.Sequence[str],
 ) -> dict:
     """Record every selected input and scientific option affecting this result."""
     profile = {
@@ -92,6 +105,10 @@ def tracking_run_profile(
         ],
         'segmentations': [
             _array_identity(segmentation0), _array_identity(segmentation1)
+        ],
+        'segmentation_previews': [
+            {'name': os.path.basename(path), 'sha256': _file_sha256(path)}
+            for path in segmentation_previews
         ],
         'exclusion_masks': [
             _array_identity(mask) if mask is not None else None
@@ -276,6 +293,8 @@ def process(
     output['growthmap_rgba'] = output_file_rgba
     output['segmentation0']  = seg0f
     output['segmentation1']  = seg1f
+    output['segmentation_array0'] = _segmentation_array_path(seg0f)
+    output['segmentation_array1'] = _segmentation_array_path(seg1f)
     output['exclusion_mask_policy'] = exclusion_policy
     output['exclusion_masks'] = {
         'observation0_present': exmask0 is not None,
@@ -288,7 +307,7 @@ def process(
     output['run_profile'] = tracking_run_profile(
         filename0, filename1, seg0, seg1, exmask0, exmask1, settings,
         sampling_mode, exclusion_policy, output['match_device'],
-        output['tracking_matcher'],
+        output['tracking_matcher'], (seg0f, seg1f),
     )
 
     output['statistics']     = compute_statistics(gmap)
@@ -427,7 +446,7 @@ def validate_previous_tracking_data(
         raise ValueError('Saved tracking points lack their result profile. Run tracking again.')
     if saved_profile is not None:
         if (not isinstance(saved_profile, dict)
-                or saved_profile.get('schema') != TRACKING_PROFILE_SCHEMA
+                or saved_profile.get('schema') not in {1, TRACKING_PROFILE_SCHEMA}
                 or saved_profile.get('profile_id') != _tracking_profile_id(saved_profile)):
             raise ValueError('Saved tracking points have unknown profile metadata. Run tracking again.')
         current_inputs = [
@@ -655,6 +674,12 @@ def cache_output_for_download(
         'tracking_matcher'      : output['tracking_matcher'],
         'segmentation0'         : os.path.basename(output['segmentation0']),
         'segmentation1'         : os.path.basename(output['segmentation1']),
+        'segmentation_array0'   : os.path.basename(output.get(
+            'segmentation_array0', _segmentation_array_path(output['segmentation0'])
+        )),
+        'segmentation_array1'   : os.path.basename(output.get(
+            'segmentation_array1', _segmentation_array_path(output['segmentation1'])
+        )),
         'growthmap'             : os.path.basename(output['growthmap']),
         'statistics_file'       : os.path.basename(f'{outputname}.csv'),
         'exclusion_mask_policy' : output['exclusion_mask_policy'],
@@ -731,8 +756,69 @@ def _pair_result_metadata(
     return metadata_path, metadata
 
 
+def _cached_file_identity(path:str, kind:str, cache:tp.Optional[dict]) -> tp.Any:
+    signature = os.stat(path)
+    version = (signature.st_ino, signature.st_size, signature.st_mtime_ns,
+               signature.st_ctime_ns)
+    key = (kind, path)
+    if cache is not None and key in cache and cache[key][0] == version:
+        return cache[key][1]
+    if kind == 'preview':
+        identity = _file_sha256(path)
+    else:
+        identity = _array_identity(np.load(path, mmap_mode='r', allow_pickle=False))
+    if cache is not None:
+        cache[key] = (version, identity)
+    return identity
+
+
+def _verify_segmentation_cache(
+    cache_path:str, metadata:dict, identity_cache:tp.Optional[dict]=None
+) -> None:
+    """Do not export a run under a profile whose cached masks have changed."""
+    if not metadata.get('run_id'):
+        return  # Older pair-named results had no saved profile to check.
+    profile = metadata.get('run_profile')
+    if (not isinstance(profile, dict)
+            or profile.get('schema') != TRACKING_PROFILE_SCHEMA
+            or profile.get('profile_id') != _tracking_profile_id(profile)):
+        raise ValueError('Tracking result profile is incomplete. Run tracking again before exporting.')
+    segmentations = profile.get('segmentations')
+    previews = profile.get('segmentation_previews')
+    if (not isinstance(segmentations, list) or len(segmentations) != 2
+            or not isinstance(previews, list) or len(previews) != 2):
+        raise ValueError('Tracking result profile is incomplete. Run tracking again before exporting.')
+    for index in (0, 1):
+        preview_name = metadata.get('segmentation{}'.format(index))
+        array_name = metadata.get('segmentation_array{}'.format(index))
+        expected_preview = previews[index]
+        if (not isinstance(preview_name, str) or not isinstance(array_name, str)
+                or os.path.basename(preview_name) != preview_name
+                or os.path.basename(array_name) != array_name
+                or not array_name.endswith('.npy')
+                or not isinstance(expected_preview, dict)
+                or expected_preview.get('name') != preview_name):
+            raise ValueError('Tracking segmentation cache is incomplete. Run tracking again before exporting.')
+        preview_path = os.path.join(cache_path, preview_name)
+        array_path = os.path.join(cache_path, array_name)
+        try:
+            preview_hash = _cached_file_identity(preview_path, 'preview', identity_cache)
+            array_identity = _cached_file_identity(array_path, 'array', identity_cache)
+        except (OSError, EOFError, ValueError) as error:
+            raise ValueError(
+                'Tracking segmentation cache is unavailable. Run tracking again before exporting.'
+            ) from error
+        if (preview_hash != expected_preview.get('sha256')
+                or array_identity != segmentations[index]):
+            raise ValueError(
+                'Tracking segmentation cache changed after this run. '
+                'Run tracking again before exporting.'
+            )
+
+
 def collect_result_files(
-    filename0:str, filename1:str, run_id:tp.Optional[str]=None
+    filename0:str, filename1:str, run_id:tp.Optional[str]=None,
+    identity_cache:tp.Optional[dict]=None,
 ) -> tp.Optional[tp.List[str]]:
     cache_path = paths.get_cache_path()
     loaded = _pair_result_metadata(filename0, filename1, run_id)
@@ -756,6 +842,7 @@ def collect_result_files(
 
     ]
     if all(map(os.path.exists, files)):
+        _verify_segmentation_cache(cache_path, metadata, identity_cache)
         return files
     #else: return None
 
@@ -838,6 +925,7 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
     selected_pairs = []
     selected_records = []
     pair_exclusion_masks = []
+    segmentation_identities = {}
     for pair in file_pairs:
         filename0, filename1, run_id = _selected_pair(pair)
         loaded = _pair_result_metadata(filename0, filename1, run_id)
@@ -845,7 +933,9 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
             raise ValueError('Selected tracking result was not found. Run tracking again.')
         metadata = loaded[1] if loaded is not None else {}
         effective_id = run_id or metadata.get('run_id')
-        result_files = collect_result_files(filename0, filename1, run_id)
+        result_files = collect_result_files(
+            filename0, filename1, run_id, segmentation_identities
+        )
         if effective_id is not None and result_files is None:
             raise ValueError('Selected tracking result files are incomplete. Run tracking again.')
         csv_path = _selected_csv_path(filename0, filename1, run_id)
@@ -913,6 +1003,14 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
                     ),
                 }, indent=2, sort_keys=True),
             )
+        # Inputs can be refreshed while the archive is being written. Check
+        # once more before publishing the completed ZIP under its final name.
+        for _first, _second, run_id, _files in selected_records:
+            if run_id is not None:
+                loaded = _pair_result_metadata(_first, _second, run_id)
+                if loaded is None:
+                    raise ValueError('Selected tracking result was removed. Run tracking again.')
+                _verify_segmentation_cache(cache_path, loaded[1], segmentation_identities)
         os.replace(temporary_path, resultpath)
     finally:
         if os.path.exists(temporary_path):

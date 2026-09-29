@@ -103,6 +103,9 @@ def test_tracking_uses_released_observation0_mask_and_exports_provenance(tmp_pat
     PIL.Image.new('RGB', (2, 2)).save(image1)
 
     segmentation = np.ones((2, 2), dtype='float32')
+    for image in (image0, image1):
+        PIL.Image.new('L', (2, 2), 255).save(image + '.soft.png')
+        np.save(image + '.soft.npy', segmentation)
     mask_requests = []
     monkeypatch.setattr(
         root_tracking,
@@ -318,10 +321,15 @@ def test_saved_tracking_points_require_matching_pair_model_and_sampling(tmp_path
     profile = root_tracking.tracking_run_profile(
         str(first), str(second), segmentation, segmentation,
         None, None, Settings(), 'legacy', 'first', 'cpu', {'version': 1},
+        (str(first), str(second)),
     )
     profiled = dict(saved, run_id='a' * 32, run_profile=profile,
                     tracking_matcher={'version': 1})
     validate(profiled, 'legacy')
+    previous_profile = dict(profile, schema=1)
+    previous_profile.pop('segmentation_previews')
+    previous_profile['profile_id'] = root_tracking._tracking_profile_id(previous_profile)
+    validate(dict(profiled, run_profile=previous_profile), 'legacy')
     with pytest.raises(ValueError, match='unknown profile metadata'):
         validate(dict(profiled, run_profile=dict(profile, sampling_mode='deterministic')),
                  'legacy')
@@ -345,22 +353,23 @@ def test_tracking_run_profile_separates_sampling_and_mask_choices(tmp_path, monk
         mask, None, object(),
     )
     original = root_tracking.tracking_run_profile(
-        *args, 'legacy', 'first', 'cpu', {'version': 1}
+        *args, 'legacy', 'first', 'cpu', {'version': 1}, (str(first), str(second))
     )
     assert original == root_tracking.tracking_run_profile(
-        *args, 'legacy', 'first', 'cpu', {'version': 1}
+        *args, 'legacy', 'first', 'cpu', {'version': 1}, (str(first), str(second))
     )
     seeded = root_tracking.tracking_run_profile(
-        *args, 'deterministic', 'first', 'cpu', {'version': 2, 'seed': 123}
+        *args, 'deterministic', 'first', 'cpu', {'version': 2, 'seed': 123},
+        (str(first), str(second)),
     )
     second_mask = root_tracking.tracking_run_profile(
-        *args, 'legacy', 'second', 'cpu', {'version': 1}
+        *args, 'legacy', 'second', 'cpu', {'version': 1}, (str(first), str(second))
     )
     assert len({original['profile_id'], seeded['profile_id'], second_mask['profile_id']}) == 3
     assert root_tracking._tracking_profile_id(original) == original['profile_id']
     assert root_tracking._tracking_profile_id(dict(original, sampling_mode='deterministic')) != original['profile_id']
     first.write_bytes(b'changed')
     changed = root_tracking.tracking_run_profile(
-        *args, 'legacy', 'first', 'cpu', {'version': 1}
+        *args, 'legacy', 'first', 'cpu', {'version': 1}, (str(first), str(second))
     )
     assert changed['profile_id'] != original['profile_id']

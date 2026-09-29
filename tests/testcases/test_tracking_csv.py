@@ -182,14 +182,29 @@ def test_tracking_variants_keep_separate_artifacts_and_selected_exports(tmp_path
     first, second = 'one.png', 'two.png'
     for name in ('one.segmentation.png', 'two.segmentation.png'):
         (tmp_path / name).write_bytes(b'segmentation')
+        np.save(tmp_path / (name[:-4] + '.npy'), np.zeros((2, 2), dtype='float32'))
 
     selected = []
+    profile_ids = []
     for index, policy in enumerate(('first', 'union'), 1):
         run_id = str(index) * 32
         prefix = '{}.{}.{}'.format(first, second, run_id)
         growthmap = tmp_path / (prefix + '.growthmap.png')
         growthmap.write_bytes(policy.encode('ascii'))
-        profile = {'schema': 1, 'exclusion_mask_policy': policy, 'profile_id': policy}
+        profile = {
+            'schema': root_tracking.TRACKING_PROFILE_SCHEMA,
+            'exclusion_mask_policy': policy,
+            'segmentations': [
+                root_tracking._array_identity(np.zeros((2, 2), dtype='float32'))
+                for _ in range(2)
+            ],
+            'segmentation_previews': [
+                {'name': name, 'sha256': root_tracking._file_sha256(str(tmp_path / name))}
+                for name in ('one.segmentation.png', 'two.segmentation.png')
+            ],
+        }
+        profile['profile_id'] = root_tracking._tracking_profile_id(profile)
+        profile_ids.append(profile['profile_id'])
         output = {
             'run_id': run_id,
             'run_profile': profile,
@@ -230,9 +245,7 @@ def test_tracking_variants_keep_separate_artifacts_and_selected_exports(tmp_path
             pair[2] for pair in selected
         ]
         assert [item['statistics_row'] for item in manifest['statistics_rows']] == [1, 2]
-        assert [item['profile_id'] for item in manifest['statistics_rows']] == [
-            'first', 'union'
-        ]
+        assert [item['profile_id'] for item in manifest['statistics_rows']] == profile_ids
         assert [item['run_profile']['exclusion_mask_policy'] for item in manifest['pair_exclusion_masks']] == [
             'first', 'union'
         ]
@@ -243,6 +256,48 @@ def test_tracking_variants_keep_separate_artifacts_and_selected_exports(tmp_path
         latest = list(csv.DictReader(io.StringIO(archive.read('statistics.csv').decode('utf-8'))))
         assert [row['same pixels'] for row in latest] == ['2']
     assert json.loads((tmp_path / '{}.{}.json'.format(first, second)).read_text())['run_id'] == selected[-1][2]
+
+
+@pytest.mark.parametrize('index', [0, 1])
+@pytest.mark.parametrize('artifact', ['array', 'preview'])
+def test_tracking_export_rejects_changed_segmentation_cache(tmp_path, monkeypatch, index, artifact):
+    monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
+    first, second = 'one.png', 'two.png'
+    run_id = 'a' * 32
+    previews = [tmp_path / 'one.segmentation.png', tmp_path / 'two.segmentation.png']
+    arrays = [tmp_path / 'one.segmentation.npy', tmp_path / 'two.segmentation.npy']
+    for preview, array in zip(previews, arrays):
+        preview.write_bytes(b'preview')
+        np.save(array, np.zeros((2, 2), dtype='float32'))
+    profile = {
+        'schema': root_tracking.TRACKING_PROFILE_SCHEMA,
+        'segmentations': [root_tracking._array_identity(np.load(array)) for array in arrays],
+        'segmentation_previews': [
+            {'name': preview.name, 'sha256': root_tracking._file_sha256(str(preview))}
+            for preview in previews
+        ],
+    }
+    profile['profile_id'] = root_tracking._tracking_profile_id(profile)
+    growthmap = tmp_path / '{}.{}.{}.growthmap.png'.format(first, second, run_id)
+    growthmap.write_bytes(b'growth map')
+    root_tracking.cache_output_for_download(first, second, True, {
+        'run_id': run_id, 'run_profile': profile, 'match_device': 'cpu',
+        'points0': np.zeros((1, 2)), 'points1': np.zeros((1, 2)),
+        'n_matched_points': 1, 'tracking_model': 'track-a',
+        'segmentation_model': 'detect-a', 'tracking_matcher': {'version': 1},
+        'segmentation0': str(previews[0]), 'segmentation1': str(previews[1]),
+        'growthmap': str(growthmap), 'exclusion_mask_policy': 'first',
+        'exclusion_masks': {}, 'statistics': {'sum_same': 1},
+    })
+    selection = [(first, second, run_id)]
+    archive_name = root_tracking.compile_results_into_zip(selection)
+    assert (tmp_path / archive_name).is_file()
+    if artifact == 'array':
+        np.save(arrays[index], np.ones((2, 2), dtype='float32'))
+    else:
+        previews[index].write_bytes(b'changed preview')
+    with pytest.raises(ValueError, match='segmentation cache changed'):
+        root_tracking.compile_results_into_zip(selection)
 
 
 def test_skipped_rerun_does_not_export_a_stale_pair_result(tmp_path, monkeypatch):
