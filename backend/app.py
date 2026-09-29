@@ -198,6 +198,7 @@ class App(BaseApp):
                 'max_image_pixels': backend.security.MAX_IMAGE_PIXELS,
                 'preparation_source_bytes': min(self.max_upload_bytes, backend.preparation.MAX_SOURCE_BYTES),
                 'preparation_source_pixels': backend.preparation.MAX_SOURCE_PIXELS,
+                'preparation_min_analysis_dimension': backend.preparation.MIN_ANALYSIS_DIMENSION,
             },
         })
 
@@ -297,6 +298,7 @@ class App(BaseApp):
                 stage['metadata'],
                 payload.get('rectangle'),
                 temporary_output,
+                min_analysis_dimension=backend.preparation.MIN_ANALYSIS_DIMENSION,
             )
             os.replace(temporary_output, output_path)
         except Exception:

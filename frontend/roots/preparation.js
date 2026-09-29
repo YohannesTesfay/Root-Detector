@@ -125,6 +125,7 @@ RootPreparation = class {
             && left >= 0 && top >= 0 && width > 0 && height > 0
             && left + width <= this.stage.source_width
             && top + height <= this.stage.source_height
+            && Math.min(width, height) >= Number(RootSecurity.limits?.preparation_min_analysis_dimension ?? 1280)
             && width * height <= Number(RootSecurity.limits?.preparation_source_pixels ?? 16000000)
             && Math.max(width, height) <= 32768
         $('#preparation-apply').prop('disabled', !valid || this.busy)
@@ -140,7 +141,7 @@ RootPreparation = class {
         $('#preparation-summary').text(valid
             ? `New copy: ${width} × ${height} pixels (${(width * height / 1000000).toFixed(2)} MP). `
                 + 'No resampling is applied; verify the same physical region on every date.'
-            : 'Enter whole-pixel crop bounds inside the original image. The selected region must fit the preparation limits.'
+            : 'Enter whole-pixel crop bounds inside the original image. The released model needs at least 1280 × 1280 pixels; the selected region must also fit the preparation limits.'
         )
         return valid
     }
@@ -221,12 +222,20 @@ RootPreparation = class {
                 await RootSecurity.request(`/api/preparation/${encodeURIComponent(this.stage.id)}/discard`, 'POST')
                 this.stage = undefined
             }
+            // The shared file importer opens its own progress modal. Wait for
+            // this dialog to close first so Fomantic does not leave that modal
+            // active behind the preparation dialog.
+            await new Promise(resolve => {
+                $('#preparation-dialog')
+                    .modal('setting', 'onHidden', resolve)
+                    .modal('hide')
+            })
             await RootsFileInput.set_input_files(this.prepared)
-            $('#preparation-dialog').modal('hide')
             this.sources = []
             this.prepared = []
             this.bounds_template = undefined
         } catch(error) {
+            $('#preparation-dialog').modal('show')
             this.show_error(error)
         } finally {
             this.set_busy(false)

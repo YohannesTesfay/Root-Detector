@@ -32,7 +32,7 @@ The Windows package is currently unsigned, so Windows may show a security warnin
 
 If a scan needs a smaller region, choose **Files → Prepare / Crop Images** before loading it for analysis. Inspect the downscaled preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. The crop keeps pixel values and scale within the selected area; it does not resize or align scans. Download the prepared copies and their manifest before importing them. Keep the untouched originals, and verify that the selected rectangles represent the same physical location across dates. Reviewed training annotations and exclusion masks must be cropped to the same bounds before import.
 
-The built-in preparation path currently supports single-page 8-bit RGB/grayscale PNG, JPEG, and TIFF sources up to 64 MiB and 16 million decoded pixels. Larger, multi-page, rotated, or higher-bit-depth scans need external preparation; this limit is separate from the normal upload limit. A larger upload setting alone does not make a large scan safe to crop in the app.
+The built-in preparation path currently supports single-page 8-bit RGB/grayscale PNG, JPEG, and TIFF sources up to 64 MiB and 16 million decoded pixels. The resulting crop must be at least 1280 × 1280 pixels for the released detection model; smaller crops cause its patch-stitching code to fail. Larger, multi-page, rotated, or higher-bit-depth scans need external preparation; this limit is separate from the normal upload limit. A larger upload setting alone does not make a large scan safe to crop in the app.
 
 Tracking depends on filenames that identify both the sample and observation date. Keep the sample portion identical and include a supported date separated by underscores:
 

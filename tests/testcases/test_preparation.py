@@ -149,6 +149,7 @@ def test_preparation_api_stages_crops_and_discards_without_mutating_original(tmp
     original = encode(source_image())
     session = client.get('/api/session').get_json()
     assert session['limits']['preparation_source_bytes'] == preparation.MAX_SOURCE_BYTES
+    assert session['limits']['preparation_min_analysis_dimension'] == 1280
     without_token = client.post(
         '/api/preparation/inspect',
         data={'files': (io.BytesIO(original), 'Tube_04.04.24_scan.tiff')},
@@ -178,6 +179,15 @@ def test_preparation_api_stages_crops_and_discards_without_mutating_original(tmp
     assert malformed_id.status_code == 400
     assert malformed_id.get_json()['code'] == 'invalid_preparation_id'
 
+    too_small = client.post(
+        '/api/preparation/apply',
+        json={'id': stage['id'], 'rectangle': {'left': 5, 'top': 7, 'width': 13, 'height': 11}},
+        headers=headers,
+    )
+    assert too_small.status_code == 413
+    assert too_small.get_json()['code'] == 'crop_too_small'
+    monkeypatch.setattr(preparation, 'MIN_ANALYSIS_DIMENSION', 1)
+
     applied = client.post(
         '/api/preparation/apply',
         json={'id': stage['id'], 'rectangle': {'left': 5, 'top': 7, 'width': 13, 'height': 11}},
@@ -197,6 +207,7 @@ def test_preparation_api_stages_crops_and_discards_without_mutating_original(tmp
 
 
 def test_preparation_rejects_source_mutation_after_inspection_and_cleans_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(preparation, 'MIN_ANALYSIS_DIMENSION', 1)
     monkeypatch.setenv('ROOT_PATH', os.getcwd())
     monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
     monkeypatch.setenv('DO_NOT_RELOAD', '1')

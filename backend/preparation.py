@@ -22,6 +22,7 @@ PREPARATION_SCHEMA = 1
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 MAX_SOURCE_PIXELS = 16_000_000
 MAX_PREVIEW_EDGE = 1024
+MIN_ANALYSIS_DIMENSION = 1280
 SUPPORTED_MODES = {'RGB', 'L'}
 DATE_TOKEN = re.compile(r'^\d{1,4}\.\d{1,2}\.\d{1,4}$')
 
@@ -107,7 +108,9 @@ def inspect_source(path:str, source_name:str, preview_path:str) -> tp.Dict[str, 
     }
 
 
-def validate_rectangle(rectangle:tp.Any, width:int, height:int) -> tp.Dict[str, int]:
+def validate_rectangle(
+    rectangle:tp.Any, width:int, height:int, min_dimension:int=0
+) -> tp.Dict[str, int]:
     if not isinstance(rectangle, dict):
         raise security.ValidationError('Enter a crop rectangle in original-image pixels.', 'invalid_crop')
     keys = ('left', 'top', 'width', 'height')
@@ -124,6 +127,13 @@ def validate_rectangle(rectangle:tp.Any, width:int, height:int) -> tp.Dict[str, 
         raise security.ValidationError(
             'The crop exceeds supported analysis dimensions. Select a smaller region.',
             'crop_too_large',
+            413,
+        )
+    if crop_width < min_dimension or crop_height < min_dimension:
+        raise security.ValidationError(
+            'The released detection model needs a prepared image at least 1280 × 1280 pixels. '
+            'Select a larger crop or prepare this scan externally.',
+            'crop_too_small',
             413,
         )
     return values
@@ -152,12 +162,14 @@ def apply_crop(
     source_metadata:tp.Dict[str, tp.Any],
     rectangle:tp.Any,
     output_path:str,
+    min_analysis_dimension:int=0,
 ) -> tp.Dict[str, tp.Any]:
     """Write a lossless crop and return source/output provenance."""
     roi = validate_rectangle(
         rectangle,
         source_metadata['source_width'],
         source_metadata['source_height'],
+        min_analysis_dimension,
     )
     if security.sha256(source_path) != source_metadata['source_sha256']:
         raise security.ValidationError(
