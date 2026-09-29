@@ -196,6 +196,40 @@ def test_preparation_api_stages_crops_and_discards_without_mutating_original(tmp
     assert not list((tmp_path / 'cache').glob('prepare-*'))
 
 
+def test_preparation_rejects_source_mutation_after_inspection_and_cleans_output(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+    app = App()
+    app.testing = True
+    client = app.test_client()
+    headers = request_headers(app)
+    inspected = client.post(
+        '/api/preparation/inspect',
+        data={'files': (io.BytesIO(encode(source_image())), 'Tube_04.04.24_scan.tiff')},
+        headers=headers,
+    )
+    assert inspected.status_code == 200
+    stage_id = inspected.get_json()['id']
+    source_path = app.preparation_stages[stage_id]['source_path']
+    PIL.Image.new('RGB', (48, 32), (1, 2, 3)).save(source_path, format='TIFF')
+
+    applied = client.post(
+        '/api/preparation/apply',
+        json={'id': stage_id, 'rectangle': {'left': 5, 'top': 7, 'width': 13, 'height': 11}},
+        headers=headers,
+    )
+    assert applied.status_code == 409
+    assert applied.get_json()['code'] == 'preparation_source_changed'
+    assert app.preparation_stages[stage_id]['output_path'] is None
+    assert not list((tmp_path / 'cache').glob('prepare-output-*'))
+    assert not list((tmp_path / 'cache').glob('.preparation-output-*'))
+    assert client.post('/api/preparation/{}/discard'.format(stage_id), headers=headers).status_code == 200
+    assert not os.path.exists(source_path)
+
+
 def test_preparation_respects_smaller_configured_upload_limit(tmp_path, monkeypatch):
     monkeypatch.setenv('ROOT_PATH', os.getcwd())
     monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))

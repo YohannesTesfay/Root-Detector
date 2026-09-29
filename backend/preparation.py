@@ -159,6 +159,12 @@ def apply_crop(
         source_metadata['source_width'],
         source_metadata['source_height'],
     )
+    if security.sha256(source_path) != source_metadata['source_sha256']:
+        raise security.ValidationError(
+            'The staged image changed. Inspect it again.',
+            'preparation_source_changed',
+            409,
+        )
     with PIL.Image.open(source_path) as image:
         if getattr(image, 'n_frames', 1) != 1 or image.mode != source_metadata['source_mode']:
             raise security.ValidationError('The staged image changed. Inspect it again.', 'preparation_source_changed', 409)
