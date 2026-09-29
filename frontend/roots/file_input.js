@@ -99,8 +99,12 @@ RootsFileInput = class extends BaseFileInput{
         this.reset_uploaded_files()
         RootsTraining.clear_imported_labels()
         GLOBAL.files = []
-        for(const file of files)
-            GLOBAL.files[file.name] = new InputFile(file)
+        for(const file of files){
+            const input = new InputFile(file)
+            if(file.preparation)
+                input.preparation = file.preparation
+            GLOBAL.files[file.name] = input
+        }
         $('.tabs .item[data-tab="detection"]').click()
         const result = await this.refresh_filetable(files)
         RootPipeline.on_files_ready()
@@ -187,6 +191,7 @@ RootsFileInput = class extends BaseFileInput{
     static async load_result(filename, resultfiles){
         const inputfile = GLOBAL.files[filename]
         if(inputfile != undefined){
+            await this.validate_prepared_companion(inputfile, resultfiles[0], 'training annotation')
             const training_label = new File(
                 [resultfiles[0]],
                 `training-label-${Date.now()}-${Math.random().toString(36).slice(2)}.png`,
@@ -218,6 +223,25 @@ RootsFileInput = class extends BaseFileInput{
         }
     }
 
+    static async validate_prepared_companion(inputfile, file, description){
+        if(!inputfile.preparation)
+            return
+        if(typeof createImageBitmap != 'function')
+            throw new Error('This browser cannot inspect prepared-image masks. Use a current Edge or Chrome release.')
+        const bitmap = await createImageBitmap(file)
+        try {
+            const expected = inputfile.preparation
+            if(bitmap.width != expected.output_width || bitmap.height != expected.output_height)
+                throw new Error(
+                    `The ${description} for ${inputfile.name} is ${bitmap.width} × ${bitmap.height}, `
+                    + `but the prepared image is ${expected.output_width} × ${expected.output_height}. `
+                    + 'Crop the reviewed mask with the same original-pixel rectangle before importing it.'
+                )
+        } finally {
+            bitmap.close?.()
+        }
+    }
+
     static async on_exclusionmasks_select(event){
         try {
             for(const selected_mask of event.target.files){
@@ -225,6 +249,7 @@ RootsFileInput = class extends BaseFileInput{
 
                 for(const inputfile of Object.values(GLOBAL.files)){
                     if( wildcard_test(maskbasename, remove_file_extension(inputfile.name)) ){
+                        await this.validate_prepared_companion(inputfile, selected_mask, 'exclusion mask')
                         console.log('Matched mask for input file ', inputfile.name);
             
                         //indicate in the file table that a mask is available
@@ -241,6 +266,8 @@ RootsFileInput = class extends BaseFileInput{
                     }
                 }
             }
+        } catch(error) {
+            this.show_file_error(error)
         } finally {
             event.target.value = ""; //reset the input
         }

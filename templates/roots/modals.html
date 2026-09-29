@@ -107,6 +107,48 @@
 {% endmacro %}
 
 
+{% macro modal_preparation() %}
+<div class="ui large modal" id="preparation-dialog" role="dialog" aria-modal="true"
+     aria-labelledby="preparation-dialog-title">
+  <div class="header" id="preparation-dialog-title">Prepare / Crop Images</div>
+  <div class="scrolling content">
+    <p>Optional: create a lossless PNG copy for analysis. The preview below is downscaled;
+       all crop coordinates refer to the <strong>original pixels</strong>. Source files are not changed.
+       Different dates must show the same physical region before tracking.</p>
+    <div class="ui warning message">This preparation path supports one-page 8-bit RGB/grayscale
+      PNG, JPEG, or TIFF files up to 64 MiB and 16 million decoded pixels. Larger, multi-page,
+      rotated, or higher-bit-depth scans need external preparation for now. The released detection
+      model needs the resulting crop to be at least 1280 × 1280 pixels.</div>
+    <p id="preparation-source-info" aria-live="polite"></p>
+    <div id="preparation-preview-wrap" style="display:none">
+      <img id="preparation-preview" alt="Downscaled preview of the original image" src="">
+      <div id="preparation-selection" aria-hidden="true"></div>
+    </div>
+    <div class="ui form" id="preparation-fields">
+      <div class="four fields">
+        <div class="field"><label for="crop-left">Left (px)</label><input id="crop-left" type="number" min="0" step="1" oninput="RootPreparation.update_bounds()"></div>
+        <div class="field"><label for="crop-top">Top (px)</label><input id="crop-top" type="number" min="0" step="1" oninput="RootPreparation.update_bounds()"></div>
+        <div class="field"><label for="crop-width">Width (px)</label><input id="crop-width" type="number" min="1" step="1" oninput="RootPreparation.update_bounds()"></div>
+        <div class="field"><label for="crop-height">Height (px)</label><input id="crop-height" type="number" min="1" step="1" oninput="RootPreparation.update_bounds()"></div>
+      </div>
+      <div class="field">
+        <label><input id="crop-reuse-bounds" type="checkbox" checked> Prefill these bounds for the next image (review each preview before applying)</label>
+      </div>
+      <button type="button" class="ui button" id="preparation-reset" onclick="RootPreparation.reset_bounds()">Reset to full image</button>
+    </div>
+    <p id="preparation-summary" aria-live="polite"></p>
+    <div class="ui negative message" id="preparation-error" role="alert" style="display:none"></div>
+  </div>
+  <div class="actions">
+    <button type="button" class="ui button" onclick="RootPreparation.cancel()">Close</button>
+    <button type="button" class="ui primary button" id="preparation-apply" onclick="RootPreparation.apply_current()">Apply crop to new copy</button>
+    <button type="button" class="ui button" id="preparation-download" onclick="RootPreparation.download_prepared()" style="display:none">Download prepared copies</button>
+    <button type="button" class="ui positive button" id="preparation-import" onclick="RootPreparation.import_prepared()" style="display:none">Import prepared copies</button>
+  </div>
+</div>
+{% endmacro %}
+
+
 {% macro modal_training_progress() %}
 <div class="ui tiny modal" id="training-modal" role="dialog" aria-modal="true"
      aria-labelledby="training-modal-title">
