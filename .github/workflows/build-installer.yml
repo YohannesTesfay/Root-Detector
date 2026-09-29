@@ -2,6 +2,9 @@ name: Build Windows Installer Preview
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/windows-desktop-installer
 
 jobs:
   build:
