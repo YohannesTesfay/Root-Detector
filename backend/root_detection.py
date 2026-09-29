@@ -362,6 +362,8 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
     expected = exclusionmask_cache_manifest(image_path, settings)
     if expected is None:
         return None
+    with PIL.Image.open(image_path) as input_image:
+        input_shape = (input_image.height, input_image.width)
     cache_key = _cache_key(expected)
     paths = _artifact_cache_paths(image_path, 'exclusionmask', cache_key)
 
@@ -374,6 +376,7 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
             artifact = actual.get('artifact', {})
             artifact_valid = (
                 artifact.get('shape') == list(cached.shape)
+                and tuple(cached.shape) == input_shape
                 and artifact.get('dtype') == str(cached.dtype)
                 and artifact.get('array_sha256') == _sha256(paths['array'])
                 and artifact.get('preview_sha256') == _sha256(paths['preview'])
@@ -390,6 +393,11 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
     else:
         mask = run_model(image_path, settings, 'exclusion_mask')
     mask = np.asarray(mask, dtype='float32').squeeze()
+    if mask.shape != input_shape:
+        raise ValueError(
+            'Exclusion mask dimensions {} do not match the input image {}. '
+            'Crop the mask with the same original-pixel rectangle.'.format(mask.shape, input_shape)
+        )
     _atomic_save_array(paths['array'], mask)
 
     preview_tmp = paths['preview'] + '.tmp.png'

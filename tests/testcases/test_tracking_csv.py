@@ -117,9 +117,14 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
         root_tracking.statistics_to_csv({}, pair[0], pair[1], True)
     )
 
-    archive_path = tmp_path / root_tracking.compile_results_into_zip([pair])
+    preparation = {'prepared_name': 'one.png', 'roi': {'x': 0, 'y': 0, 'width': 10, 'height': 10}}
+    archive_path = tmp_path / root_tracking.compile_results_into_zip(
+        [pair], preparations={'one.png': preparation}
+    )
     with zipfile.ZipFile(str(archive_path)) as archive:
         manifest = json.loads(archive.read('tracking-results-manifest.json'))
+        preparation_manifest = json.loads(archive.read('preparation-manifest.json'))
+        assert preparation_manifest == {'schema': 1, 'preparations': [preparation]}
         assert manifest['tracking_csv_schema'] == root_tracking.TRACKING_CSV_SCHEMA
         assert manifest['exclusion_mask_coordinate_system'] == 'observation1'
         assert manifest['pair_exclusion_masks'] == [{

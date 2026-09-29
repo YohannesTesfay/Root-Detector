@@ -431,7 +431,10 @@ def combine_csv_statistics(file_pairs:FilePairs) -> str:
 
     
 
-def compile_results_into_zip(file_pairs:FilePairs) -> str:
+def compile_results_into_zip(
+    file_pairs:FilePairs,
+    preparations:tp.Optional[tp.Dict[str, tp.Dict[str, tp.Any]]]=None,
+) -> str:
     '''Create a zip file containing the processed tracking results.
        (Doing this here in Python because frontend passes out if too many files)'''
     
@@ -483,4 +486,12 @@ def compile_results_into_zip(file_pairs:FilePairs) -> str:
                 ),
             }, indent=2, sort_keys=True),
         )
+        if preparations:
+            resultzip.writestr(
+                'preparation-manifest.json',
+                json.dumps({
+                    'schema': 1,
+                    'preparations': [preparations[name] for name in sorted(preparations)],
+                }, indent=2, sort_keys=True),
+            )
     return os.path.basename(resultpath)

@@ -46,6 +46,16 @@ async function test_pairing_key(tracking_utils){
 }
 
 
+async function test_prepared_roi_names_do_not_mix_regions(tracking_utils){
+    const first = 'Tube_roiL5T7W13H11_04.04.24_scan.png'
+    const matching = 'Tube_roiL5T7W13H11_12.04.24_scan.png'
+    const different = 'Tube_roiL6T7W13H11_12.04.24_scan.png'
+    const original = 'Tube_12.04.24_scan.tiff'
+    const plan = tracking_utils.plan_tracking_pairs([first, matching, different, original])
+    assert.deepStrictEqual(plan.pairs, [[first, matching]])
+}
+
+
 async function test_valid_consecutive_pairs(tracking_utils){
     const files = [
         'site_T001_L001_30.04.24_101500.tif',
@@ -186,6 +196,7 @@ load_tracking_utils()
     .then(async tracking_utils => {
         await test_parse_filename(tracking_utils)
         await test_pairing_key(tracking_utils)
+        await test_prepared_roi_names_do_not_mix_regions(tracking_utils)
         await test_valid_consecutive_pairs(tracking_utils)
         await test_same_day_duplicates_are_not_paired(tracking_utils)
         await test_invalid_dates_are_reported(tracking_utils)

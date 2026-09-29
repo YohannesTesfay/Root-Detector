@@ -28,6 +28,22 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert 'event.target !== event.currentTarget' in app
 
 
+def test_optional_preparation_uses_original_pixel_bounds_and_separate_preview():
+    menu = read('templates/roots/top_menu.html')
+    modal = read('templates/roots/modals.html')
+    scripts = read('templates/roots/scripts.html')
+    preparation = read('frontend/roots/preparation.js')
+
+    assert 'id="prepare-images-button"' in menu
+    assert 'roots/preparation.js' in scripts
+    assert 'id="preparation-preview"' in modal
+    assert 'original pixels' in modal
+    assert 'id="crop-left"' in modal and 'id="crop-width"' in modal
+    assert 'RootSecurity.request(\'/api/preparation/apply\'' in preparation
+    assert 'file.preparation = result.manifest' in preparation
+    assert 'RootDetector-prepared-images.zip' in preparation
+
+
 def test_settings_actions_are_keyboard_focusable():
     template = read('templates/roots/modals.html')
     styles = read('frontend/roots/styles.css')

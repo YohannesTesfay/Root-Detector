@@ -41,6 +41,15 @@
       <input type="file" id="input_folder" style="display:none"
              onchange="{{ app }}.FileInput.on_inputfolder_select(event)" webkitdirectory directory multiple>
 
+      <a href="#" class="ui icon item" id="prepare-images-button"
+         title="Crop copies of supported images before detection"
+         onclick="if(this.classList.contains('disabled')) return false; document.getElementById('preparation-input').click(); return false;">
+        <i class="crop icon"></i>
+        Prepare / Crop Images
+      </a>
+      <input type="file" id="preparation-input" style="display:none"
+             onchange="RootPreparation.on_files_select(event)" accept=".png,.jpg,.jpeg,.tif,.tiff" multiple>
+
       <div class="ui divider"></div>
 
       <a href="#" class="ui icon item" id="load-annotations-button"

@@ -40,3 +40,50 @@
     max-height: calc(100vh - 11rem);
     overflow-y: auto;
 }
+
+#preparation-dialog {
+    max-width: calc(100vw - 1.5rem);
+}
+
+#preparation-dialog #preparation-preview-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    margin: 0 auto 1rem;
+}
+
+#preparation-dialog #preparation-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 38vh;
+    object-fit: contain;
+}
+
+#preparation-dialog #preparation-selection {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #2185d0;
+    background: rgba(33, 133, 208, 0.18);
+    pointer-events: none;
+}
+
+#preparation-dialog > .content {
+    box-sizing: border-box;
+    max-height: calc(100vh - 11rem);
+    overflow-y: auto;
+}
+
+#preparation-dialog .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#preparation-dialog .ui.form .four.fields {
+    flex-wrap: wrap;
+}
+
+#preparation-dialog .ui.form .four.fields > .field {
+    min-width: 7rem;
+}
