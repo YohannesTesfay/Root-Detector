@@ -62,8 +62,6 @@ jobs:
           $application = Join-Path $installed 'main\main.exe'
           if (-not (Test-Path $application)) { throw 'Installed application is missing.' }
           $models = Join-Path $data 'models'
-          New-Item -ItemType Directory -Path $models -Force | Out-Null
-          Copy-Item -Path 'models\*' -Destination $models -Recurse -Force
           & $application --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Installed application failed startup: $LASTEXITCODE" }
           if (-not (Test-Path (Join-Path $data 'static\index.html'))) { throw 'Installed browser assets are missing.' }
@@ -71,7 +69,7 @@ jobs:
           $applicationProcess = Start-Process -FilePath $application -WorkingDirectory $env:TEMP -PassThru
           try {
             $ready = $false
-            for ($attempt = 0; $attempt -lt 120; $attempt++) {
+            for ($attempt = 0; $attempt -lt 300; $attempt++) {
               $applicationProcess.Refresh()
               if ($applicationProcess.HasExited) { throw "Installed app exited before readiness: $($applicationProcess.ExitCode)" }
               try {
@@ -79,11 +77,23 @@ jobs:
                 if ($session.asset_schema -and $session.token) { $ready = $true; break }
               } catch { Start-Sleep -Seconds 1 }
             }
-            if (-not $ready) { throw 'Installed app did not become ready within 120 seconds.' }
+            if (-not $ready) { throw 'Installed app did not become ready within 300 seconds.' }
             $page = Invoke-WebRequest -Uri 'http://127.0.0.1:5000/' -UseBasicParsing -TimeoutSec 10
             if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'RootDetector') {
               throw 'Installed browser UI did not load.'
             }
+            $modelPaths = @()
+            Get-Content (Join-Path $installed 'models\pretrained_models.txt') | ForEach-Object {
+              if (-not $_.Trim() -or $_.Trim().StartsWith('#')) { return }
+              $entry = $_ -split ' : '
+              if ($entry.Count -ne 3) { throw 'Packaged model manifest lacks SHA-256.' }
+              $modelPath = Join-Path $models $entry[0]
+              if (-not (Test-Path $modelPath)) { throw "First launch did not download $($entry[0])." }
+              $hash = (Get-FileHash -Algorithm SHA256 $modelPath).Hash.ToLowerInvariant()
+              if ($hash -ne $entry[2].ToLowerInvariant()) { throw "First-launch model checksum mismatch: $($entry[0])." }
+              $modelPaths += $modelPath
+            }
+            if ($modelPaths.Count -ne 5) { throw 'Unexpected number of verified first-launch models.' }
           } finally {
             if (-not $applicationProcess.HasExited) { Stop-Process -Id $applicationProcess.Id -Force }
             $applicationProcess.WaitForExit()
@@ -94,7 +104,7 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Uninstaller failed: $($process.ExitCode)" }
           for ($attempt = 0; $attempt -lt 30 -and (Test-Path $application); $attempt++) { Start-Sleep -Seconds 1 }
           if (Test-Path $application) { throw 'Uninstall left the application executable behind.' }
-          if (-not (Test-Path (Join-Path $models 'pretrained_models.txt'))) { throw 'Uninstall removed user data.' }
+          if (-not (Test-Path $modelPaths[0])) { throw 'Uninstall removed downloaded user models.' }
       - uses: actions/upload-artifact@v6
         with:
           name: RootDetector-Windows-installer-preview
