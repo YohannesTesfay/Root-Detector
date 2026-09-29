@@ -68,6 +68,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Installed application failed startup: $LASTEXITCODE" }
           if (-not (Test-Path (Join-Path $data 'static\index.html'))) { throw 'Installed browser assets are missing.' }
           if (-not (Test-Path (Join-Path $data 'BUILD-INFO.txt'))) { throw 'Build provenance was not retained.' }
+          $applicationProcess = Start-Process -FilePath $application -WorkingDirectory $env:TEMP -PassThru
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 120; $attempt++) {
+              $applicationProcess.Refresh()
+              if ($applicationProcess.HasExited) { throw "Installed app exited before readiness: $($applicationProcess.ExitCode)" }
+              try {
+                $session = Invoke-RestMethod -Uri 'http://127.0.0.1:5000/api/session' -TimeoutSec 2
+                if ($session.asset_schema -and $session.token) { $ready = $true; break }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'Installed app did not become ready within 120 seconds.' }
+            $page = Invoke-WebRequest -Uri 'http://127.0.0.1:5000/' -UseBasicParsing -TimeoutSec 10
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'RootDetector') {
+              throw 'Installed browser UI did not load.'
+            }
+          } finally {
+            if (-not $applicationProcess.HasExited) { Stop-Process -Id $applicationProcess.Id -Force }
+            $applicationProcess.WaitForExit()
+          }
           $uninstaller = Get-ChildItem -Path $installed -Filter 'unins*.exe' | Select-Object -First 1
           if (-not $uninstaller) { throw 'Uninstaller is missing.' }
           $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru

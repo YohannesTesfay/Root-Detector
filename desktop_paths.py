@@ -8,10 +8,13 @@ in-place behavior.
 import os
 import shutil
 import sys
+import ctypes
 
 
 INSTALL_MARKER = 'INSTALL-MODE.txt'
+APP_MUTEX_NAME = 'Local\\RootDetector-C4886A85-376C-4C2A-BD59-956A8A3CA12F'
 _instance_lock = None
+_upgrade_mutex = None
 
 
 def package_root(executable=None):
@@ -88,3 +91,17 @@ def claim_installed_instance(data):
         return False
     _instance_lock = handle
     return True
+
+
+def mark_installed_app_running(kernel32=None):
+    """Expose the running application to the installer's AppMutex gate."""
+    global _upgrade_mutex
+    if kernel32 is None:
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    create_mutex = kernel32.CreateMutexW
+    create_mutex.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p)
+    create_mutex.restype = ctypes.c_void_p
+    handle = create_mutex(None, 0, APP_MUTEX_NAME)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), 'Could not create the installer safety mutex')
+    _upgrade_mutex = handle  # Keep the OS handle until this process exits.

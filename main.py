@@ -2,6 +2,7 @@ import sys
 from desktop_paths import (
     claim_installed_instance,
     configure_installed_paths,
+    mark_installed_app_running,
     prepare_installed_assets,
 )
 import os
@@ -45,6 +46,7 @@ if __name__ == '__main__':
             )
             sys.exit(0)
         if installed_data is not None:
+            mark_installed_app_running()
             prepare_installed_assets(installed_data)
     except Exception as exc:
         packaged_startup_error(exc)

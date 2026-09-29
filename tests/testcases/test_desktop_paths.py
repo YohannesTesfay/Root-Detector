@@ -70,7 +70,8 @@ def test_installed_package_requires_complete_assets(tmp_path, monkeypatch):
     (root / 'INSTALL-MODE.txt').write_text('installed')
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
     monkeypatch.chdir(tmp_path)
-    previous = os.environ.get('ROOTDETECTOR_INSTALLED')
+    names = ('ROOT_PATH', 'INSTANCE_PATH', 'ROOTDETECTOR_INSTALLED')
+    previous = {name: os.environ.get(name) for name in names}
     try:
         selected = desktop_paths.configure_installed_paths(
             executable=str(executable), local_app_data=str(tmp_path)
@@ -81,10 +82,12 @@ def test_installed_package_requires_complete_assets(tmp_path, monkeypatch):
     else:
         raise AssertionError('Incomplete installed assets were accepted')
     finally:
-        if previous is None:
-            os.environ.pop('ROOTDETECTOR_INSTALLED', None)
-        else:
-            os.environ['ROOTDETECTOR_INSTALLED'] = previous
+        os.chdir(str(tmp_path))
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def test_installed_instance_lock_prevents_second_copy(tmp_path, monkeypatch):
@@ -105,3 +108,29 @@ def test_installed_instance_lock_prevents_second_copy(tmp_path, monkeypatch):
         if desktop_paths._instance_lock is not None:
             desktop_paths._instance_lock.close()
             desktop_paths._instance_lock = None
+
+
+def test_installer_mutex_matches_package_script():
+    from pathlib import Path
+
+    script = Path(__file__).parents[2] / 'packaging' / 'windows' / 'RootDetector.iss'
+    assert 'AppMutex={}'.format(desktop_paths.APP_MUTEX_NAME) in script.read_text()
+    assert 'CloseApplications=no' in script.read_text()
+
+
+def test_installed_app_creates_upgrade_mutex():
+    class CreateMutex:
+        argtypes = None
+        restype = None
+
+        def __call__(self, security, initial_owner, name):
+            assert security is None
+            assert initial_owner == 0
+            assert name == desktop_paths.APP_MUTEX_NAME
+            return 123
+
+    desktop_paths.mark_installed_app_running(
+        kernel32=types.SimpleNamespace(CreateMutexW=CreateMutex())
+    )
+    assert desktop_paths._upgrade_mutex == 123
+    desktop_paths._upgrade_mutex = None
