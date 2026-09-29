@@ -86,6 +86,9 @@ def _serialize_tracking(result:dict) -> dict:
             'name': 'released-model-internal-matcher',
             'version': 0,
         })),
+        'run_id': result.get('run_id'),
+        'run_profile': copy.deepcopy(result.get('run_profile')),
+        'match_device': result.get('match_device', 'unknown'),
         'exclusion_mask_policy': result.get(
             'exclusion_mask_policy',
             root_tracking.DEFAULT_EXCLUSION_MASK_POLICY,

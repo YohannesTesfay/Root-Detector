@@ -48,6 +48,42 @@
         </div>
       </div>
 
+      <div class="field" id="settings-tracking-exclusion-policy-field">
+        <label>Tracking exclusion-mask policy</label>
+        <div class="ui dropdown selection" id="settings-tracking-exclusion-policy">
+          <input type="hidden" name="tracking-exclusion-policy" value="first">
+          <i class="dropdown icon"></i>
+          <div class="text">First observation (original method)</div>
+          <div class="menu">
+            <div class="item" data-value="first">First observation (original method)</div>
+            <div class="item" data-value="second">Second observation only</div>
+            <div class="item" data-value="union">Either observation (union)</div>
+            <div class="item" data-value="intersection">Both observations (intersection)</div>
+          </div>
+        </div>
+        <div class="ui pointing label">
+          Masks are compared in the second image's coordinates. Either/Both require both
+          masks if one is present. Other policies can change turnover counts; review results.
+        </div>
+      </div>
+
+      <div class="field" id="settings-tracking-sampling-mode-field">
+        <label>Tracking point sampling</label>
+        <div class="ui dropdown selection" id="settings-tracking-sampling-mode">
+          <input type="hidden" name="tracking-sampling-mode" value="legacy">
+          <i class="dropdown icon"></i>
+          <div class="text">Original sampling</div>
+          <div class="menu">
+            <div class="item" data-value="legacy">Original sampling (variable point selection)</div>
+            <div class="item" data-value="deterministic">Seeded sampling (repeatable point selection)</div>
+          </div>
+        </div>
+        <div class="ui pointing label">
+          Original sampling preserves prior behavior. Seeded sampling repeats point selection
+          for identical inputs but does not guarantee identical CPU/GPU results. Changing modes
+          can change turnover counts; review tracking overlays before scientific use.
+        </div>
+      </div>
       <div class="ui divider"></div>
       <div class="field" id="settings-tracking-model-field">
         <label id="settings-tracking-model-label">Root tracking model</label>
