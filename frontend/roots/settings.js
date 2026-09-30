@@ -4,9 +4,18 @@ RootsSettings = class extends BaseSettings{
 
     static settings_keydown_handler = undefined
 
-    static on_settings(){
-        super.on_settings()
+    static async on_settings(){
+        try {
+            await this.load_settings()
+        } catch(error) {
+            $('body').toast({
+                message:`Could not load settings: ${RootSecurity.error_message(error)}`,
+                class:'error',
+            })
+            return
+        }
         const $dialog = $('#settings-dialog')
+        $dialog.modal({onApprove: _ => this.on_save_settings()}).modal('show')
         const dialog = $dialog[0]
         if(this.settings_keydown_handler)
             dialog.removeEventListener('keydown', this.settings_keydown_handler, true)

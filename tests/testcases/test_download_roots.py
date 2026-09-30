@@ -27,7 +27,7 @@ class TestDownloadRootDetection(BaseCase):
             subprocess.call('xdotool key Return', shell=True)
 
         self.sleep(0.5)
-        f = self.get_path_of_downloaded_file('test_image1.jpg.results.zip')
+        f = self.get_path_of_downloaded_file('test_image1.jpg.detection-results.zip')
         import zipfile
         zip = zipfile.ZipFile(f)
         assert 'test_image1.jpg.segmentation.png' in zip.namelist()
