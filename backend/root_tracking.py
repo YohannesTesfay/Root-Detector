@@ -676,11 +676,11 @@ def cache_output_for_download(
     csv_text = statistics_to_csv(
         output.get('statistics', {}), filename0, filename1, success
     )
-    with open(f'{outputname}.csv', 'w') as destination:
+    with open(f'{outputname}.csv', 'w', encoding='utf-8', newline='') as destination:
         destination.write(csv_text)
     if run_id:
         # The pair-named file remains a latest-result compatibility alias.
-        with open(f'{pair_prefix}.csv', 'w') as destination:
+        with open(f'{pair_prefix}.csv', 'w', encoding='utf-8', newline='') as destination:
             destination.write(csv_text)
 
     if isinstance(success, TooManyRootsError):
@@ -911,7 +911,7 @@ def combine_csv_statistics(
     for selection_index, pair in enumerate(file_pairs):
         filename0, filename1, run_id = _selected_pair(pair)
         csv_file = _selected_csv_path(filename0, filename1, run_id)
-        with open(csv_file, 'r', newline='') as source:
+        with open(csv_file, 'r', encoding='utf-8', newline='') as source:
             rows = list(csv.reader(source))
         if len(rows) < 2:
             warnings.warn('Skipping incomplete tracking CSV: {}'.format(csv_file))

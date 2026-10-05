@@ -64,9 +64,9 @@ def test_combined_tracking_csv_uses_first_valid_header(tmp_path, monkeypatch):
     monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
     first = ('broken-a.png', 'broken-b.png')
     second = ('good,a.png', 'good-b.png')
-    with open(os.path.join(str(tmp_path), '{}.{}.csv'.format(*first)), 'w') as output:
+    with open(os.path.join(str(tmp_path), '{}.{}.csv'.format(*first)), 'w', encoding='utf-8', newline='') as output:
         output.write('incomplete\n')
-    with open(os.path.join(str(tmp_path), '{}.{}.csv'.format(*second)), 'w') as output:
+    with open(os.path.join(str(tmp_path), '{}.{}.csv'.format(*second)), 'w', encoding='utf-8', newline='') as output:
         output.write(root_tracking.statistics_to_csv({}, second[0], second[1], True))
 
     with pytest.warns(UserWarning, match='incomplete tracking CSV'):
@@ -80,12 +80,12 @@ def test_combined_tracking_csv_keeps_every_valid_data_row(tmp_path, monkeypatch)
     monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
     pair = ('one.png', 'two.png')
     csv_path = tmp_path / '{}.{}.csv'.format(*pair)
-    csv_path.write_text(
+    csv_path.write_bytes((
         root_tracking.statistics_to_csv({}, pair[0], pair[1], True)
         + root_tracking.statistics_to_csv(
             {}, 'three.png', 'four.png', True, include_header=False
         )
-    )
+    ).encode('utf-8'))
     rows = list(csv.DictReader(io.StringIO(root_tracking.combine_csv_statistics([pair]))))
     assert [(row['Filename 1'], row['Filename 2']) for row in rows] == [
         pair,
@@ -114,8 +114,8 @@ def test_compile_tracking_results_records_schema_and_migration_warning(tmp_path,
         'exclusion_mask_policy': 'first',
         'exclusion_masks': {'combined_pixels': 17},
     }))
-    (tmp_path / '{}.{}.csv'.format(*pair)).write_text(
-        root_tracking.statistics_to_csv({}, pair[0], pair[1], True)
+    (tmp_path / '{}.{}.csv'.format(*pair)).write_bytes(
+        root_tracking.statistics_to_csv({}, pair[0], pair[1], True).encode('utf-8')
     )
 
     preparation = {'prepared_name': 'one.png', 'roi': {'x': 0, 'y': 0, 'width': 10, 'height': 10}}
@@ -157,8 +157,8 @@ def test_failed_zip_write_cannot_be_reused_as_a_complete_archive(tmp_path, monke
         'segmentation1': 'second.segmentation.png',
         'growthmap': 'one.png.two.png.growthmap.png',
     }))
-    (tmp_path / '{}.{}.csv'.format(first, second)).write_text(
-        root_tracking.statistics_to_csv({}, first, second, True)
+    (tmp_path / '{}.{}.csv'.format(first, second)).write_bytes(
+        root_tracking.statistics_to_csv({}, first, second, True).encode('utf-8')
     )
 
     original_write = zipfile.ZipFile.write
@@ -345,3 +345,36 @@ def test_skipped_rerun_does_not_export_a_stale_pair_result(tmp_path, monkeypatch
         assert manifest['statistics_rows'][0]['status'] == 'SKIPPED: Too many roots'
         assert manifest['statistics_rows'][0]['run_id'] is None
     assert (tmp_path / (pair_prefix + '.' + run_id + '.json')).exists()
+
+
+def test_tracking_csv_files_preserve_utf8_and_crlf_on_windows(tmp_path, monkeypatch):
+    """Exercise both cache write sites with Windows newline/codepage behavior."""
+    monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
+
+    def windows_open(path, mode='r', **kwargs):
+        if str(path).endswith('.csv') and 'b' not in mode:
+            kwargs.setdefault('encoding', 'cp1252')
+            if 'w' in mode:
+                kwargs.setdefault('newline', '\r\n')
+        return io.open(path, mode, **kwargs)
+
+    monkeypatch.setattr(root_tracking, 'open', windows_open, raising=False)
+    first, second = 'one-根.png', 'two-ä.png'
+    run_id = 'a' * 32
+    root_tracking.cache_output_for_download(
+        first, second, root_tracking.TOO_MANY_ROOTS_ERROR, {'run_id': run_id}
+    )
+    expected = root_tracking.statistics_to_csv(
+        {}, first, second, root_tracking.TOO_MANY_ROOTS_ERROR
+    ).encode('utf-8')
+    for suffix in ('', '.' + run_id):
+        raw = (tmp_path / ('{}.{}{}.csv'.format(first, second, suffix))).read_bytes()
+        assert raw == expected
+        assert b'\r\r\n' not in raw
+        rows = list(csv.reader(io.StringIO(raw.decode('utf-8'), newline='')))
+        assert len(rows) == 2
+        assert rows[1][:2] == [first, second]
+    combined = root_tracking.combine_csv_statistics([(first, second)])
+    rows = list(csv.reader(io.StringIO(combined, newline='')))
+    assert len(rows) == 2
+    assert rows[1][:2] == [first, second]

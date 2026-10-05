@@ -118,9 +118,32 @@ async function waitDetection(page, name) {
 
 async function selectDetectionModel(page, name) {
     await page.locator('#settings-button').click();
-    await page.locator('#settings-dialog').waitFor({state: 'visible'});
-    await page.locator('#settings-active-model').click();
-    await page.locator('#settings-active-model .item').filter({hasText: name}).click();
+    // Fomantic makes the modal visible before its entrance transition finishes.
+    // Its onComplete then autofocuses the first field, which can close a dropdown
+    // clicked too early. Wait for the real interactive state, not a fixed delay.
+    await page.waitForFunction(() => {
+        const dialog = document.querySelector('#settings-dialog');
+        return dialog.classList.contains('active') && dialog.classList.contains('visible')
+            && !dialog.classList.contains('animating');
+    });
+    const dropdown = page.locator('#settings-active-model');
+    if (!(await dropdown.evaluate(element => element.classList.contains('active')))) {
+        await dropdown.click();
+    }
+    await page.waitForFunction(() => {
+        const dropdown = document.querySelector('#settings-active-model');
+        const menu = dropdown.querySelector('.menu');
+        return dropdown.classList.contains('active') && menu.classList.contains('visible')
+            && !menu.classList.contains('animating');
+    });
+    const exactName = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+    await dropdown.locator('.item').filter({hasText: exactName}).click();
+    await page.waitForFunction(expected => {
+        const dropdown = document.querySelector('#settings-active-model');
+        return dropdown.querySelector('input').value === expected
+            && !dropdown.classList.contains('active')
+            && !dropdown.querySelector('.menu').classList.contains('animating');
+    }, name);
     await page.locator('#settings-ok-button').click();
     await page.locator('#settings-dialog').waitFor({state: 'hidden'});
     const response = await page.request.get(new URL('/settings', baseURL).href);
