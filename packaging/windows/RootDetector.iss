@@ -105,8 +105,8 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  { All install mutations are complete. Release before the flagged postinstall
-    [Run] entry launches the app on the Completed page. }
+  { All install mutations are complete. Release before the optional
+    postinstall launch on the Completed page. }
   if CurStep = ssPostInstall then
     ReleaseLifecycleLock;
 end;

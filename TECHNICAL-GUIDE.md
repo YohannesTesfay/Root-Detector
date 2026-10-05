@@ -229,16 +229,18 @@ The launcher:
 
 When `--prune-torchlibs` is used, the first launch downloads the required Windows PyTorch libraries. The application then downloads and verifies missing model packages, loads the configured models, starts Flask, and opens the default browser. Therefore the end-user launch pattern remains effectively the same; users should double-click the BAT launcher, not the source `main.py`.
 
-The PyTorch-library downloader verifies pinned wheel hashes, bounds downloads/extraction, stages replacement atomically, and verifies a local runtime manifest before reuse. Signed installers, completely offline model bundles, and Python/runtime modernization remain follow-ups.
+The PyTorch-library downloader verifies pinned wheel hashes, bounds downloads/extraction, stages replacement atomically, and verifies a local runtime manifest before reuse. Code signing, completely offline model bundles, and Python/runtime modernization remain follow-ups.
 
 ## Windows Release Workflow
 
-Pushing source does not replace a Windows download. The **Build Windows Binaries** workflow is manually dispatched for a selected branch or tag and publishes one full `RootDetector-Windows-portable` artifact. It fetches and verifies model weights before packaging. The older PDF's `main.bat` instruction applies only to historical downloads; new full ZIPs contain `StartRootDetector.bat` and `main\main.exe`.
+Pushing source does not replace a Windows download. The **Build Windows Binaries** and **Build Windows Installer Preview** workflows produce full packages for the selected branch; their Action artifacts are temporary. The portable artifact contains `RootDetector-Windows-portable.zip` and its SHA-256 file; the installer artifact contains `RootDetector-Windows-Setup.exe` and its SHA-256 file. An early installer compile with a small placeholder payload catches script syntax errors before the large runtime build. The older PDF's `main.bat` instruction applies only to historical downloads; new full ZIPs contain `StartRootDetector.bat` and `main\main.exe`.
 
 1. Open a PR against the fork's `main`, run both Docker suites, and dispatch the Windows build on that PR branch.
 2. Verify the ZIP hash and `BUILD-INFO.txt`, extract into a fresh folder, then test launch, first-run downloads, detection, tracking, export, restart, and paths with spaces.
 3. Qualify release-sensitive GPU behavior on the packaged Windows build. Record its evidence and remaining gates in the fork PR; historical acceptance notes are kept locally and in Git history.
-4. After review and merge, build the exact fork `main` head intended for release. Publish its tested full ZIP and SHA-256 on a GitHub Release; workflow artifacts are temporary, not public releases.
+4. After review and merge, build the exact fork `main` head intended for release. Verify both package `release.json` files, checksums and `BUILD-INFO.txt` against that commit. Publish the tested installer, portable ZIP, and both SHA-256 files on a GitHub Release with a matching tag such as `v0.1.0-rc.1`. Keep it a draft until artifacts and release notes are reviewed; mark preview versions as prereleases. Do not use the legacy partial update ZIP.
+
+`release.json` is the common application version and release channel for both packages; `BUILD-INFO.txt` additionally records the source commit and Actions run. The installer uses the same version in Windows Add/Remove Programs. The browser reads package metadata through `GET /api/version` at runtime, not from copied user-data files. **About → Check for updates** calls token-protected `POST /api/updates/check`; the backend reads up to 20 published GitHub releases with a short timeout, accepts only comparable version tags containing the relevant complete Windows package, and returns a fixed GitHub release-page link. Preview builds can see preview and stable releases; stable builds ignore previews. The app never downloads, replaces, or executes an update. A release in another repository requires an intentional metadata and backend URL change before building.
 
 PyInstaller cannot cross-build the Windows package from macOS or Linux. A new package also changes the launcher name, so existing scripts calling `main.bat` require an explicit update.
 

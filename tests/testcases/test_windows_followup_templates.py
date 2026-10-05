@@ -162,7 +162,8 @@ def test_windows_workflow_uploads_only_the_full_portable_zip():
     assert 'actions/setup-python@v6' in workflow
     assert 'actions/upload-artifact@v6' in workflow
     assert 'Get-ChildItem tests/testcases_js/test_*.js' in workflow
-    assert 'path: builds/*_DigIT_RootDetector.zip' in workflow
+    assert 'builds/RootDetector-Windows-portable.zip' in workflow
+    assert 'builds/RootDetector-Windows-portable.sha256' in workflow
     assert 'path: builds/*.zip' not in workflow
 
 

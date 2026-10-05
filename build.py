@@ -1,8 +1,18 @@
 #!/bin/python
-import os, shutil, sys, subprocess
+import os, shutil, sys, subprocess, json
 import datetime
 import argparse, zipfile, glob
 from runtime_manifest import validate_bundled_dlls, write_runtime_manifest
+from backend.release import REPOSITORY, version_key
+
+with open('release.json', encoding='utf-8') as release_source:
+    release_metadata = json.load(release_source)
+release_key = version_key(release_metadata.get('version')) if isinstance(release_metadata, dict) else None
+if (release_key is None
+        or release_metadata.get('channel') not in ('preview', 'stable')
+        or (release_metadata['channel'] == 'preview') != (release_key[3] == 0)
+        or release_metadata.get('repository') != REPOSITORY):
+    raise SystemExit('release.json has invalid version, channel, or repository metadata.')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--zip', action='store_true')
@@ -43,6 +53,7 @@ if rc!=0:
 shutil.copytree('static', build_dir+'/static')
 os.makedirs(build_dir+'/models/')
 shutil.copy('models/pretrained_models.txt', build_dir+'/models/')
+shutil.copy('release.json', build_dir+'/release.json')
 if 'linux' in sys.platform:
     os.symlink('/main/main', build_dir+'/main.run')
 elif not args.installer_payload:
@@ -73,6 +84,7 @@ run_url = (
 )
 build_info = (
     '{}\n'
+    'Version: {}\n'
     'Repository: {}\n'
     'Commit: {}\n'
     'Build UTC: {}\n'
@@ -80,6 +92,7 @@ build_info = (
     'Package: {}\n'
 ).format(
     'RootDetector installer preview' if args.installer_payload else 'RootDetector portable build',
+    release_metadata['version'],
     repository,
     commit,
     datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',

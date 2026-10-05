@@ -18,6 +18,23 @@ jobs:
         with:
           python-version: '3.7'
 
+      - name: Validate installer script with a small payload
+        shell: pwsh
+        run: |
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if (-not $compiler) {
+            $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+            $compiler = Get-ChildItem -Path $programFilesX86 -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $compiler) { throw 'Inno Setup ISCC.exe is not available on this runner.' }
+          $compilerPath = if ($compiler.FullName) { $compiler.FullName } else { $compiler.Source }
+          $scratch = Join-Path $env:RUNNER_TEMP 'rootdetector-installer-preflight'
+          New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+          Set-Content -Path (Join-Path $scratch 'placeholder.txt') -Value 'Installer syntax check only.'
+          $release = Get-Content release.json -Raw | ConvertFrom-Json
+          & $compilerPath "/DSourceDir=$scratch" "/DAppVersion=$($release.version)" "/O$scratch" packaging/windows/RootDetector.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer script failed its small-payload compile: $LASTEXITCODE" }
+
       - name: Install pinned application dependencies
         run: |
           python -m pip install -r requirements.txt -c constraints-legacy.txt
@@ -48,7 +65,8 @@ jobs:
           }
           if (-not $compiler) { throw 'Inno Setup ISCC.exe is not available on this runner.' }
           $compilerPath = if ($compiler.FullName) { $compiler.FullName } else { $compiler.Source }
-          & $compilerPath "/DAppVersion=0.0.0-dev.${{ github.run_number }}" packaging/windows/RootDetector.iss
+          $release = Get-Content release.json -Raw | ConvertFrom-Json
+          & $compilerPath "/DAppVersion=$($release.version)" packaging/windows/RootDetector.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
       - name: Record installer checksum
         shell: pwsh
@@ -66,6 +84,9 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
           $application = Join-Path $installed 'main\main.exe'
           if (-not (Test-Path $application)) { throw 'Installed application is missing.' }
+          $release = Get-Content release.json -Raw | ConvertFrom-Json
+          $installedRelease = Get-Content (Join-Path $installed 'release.json') -Raw | ConvertFrom-Json
+          if ($installedRelease.version -ne $release.version) { throw 'Installed application version differs from source.' }
           $models = Join-Path $data 'models'
           & $application --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Installed application failed startup: $LASTEXITCODE" }
@@ -83,6 +104,10 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'Installed app did not become ready within 300 seconds.' }
+            $version = Invoke-RestMethod -Uri 'http://127.0.0.1:5000/api/version' -TimeoutSec 10
+            if ($version.version -ne $release.version -or $version.package -ne 'installer') {
+              throw 'Installed About version differs from package metadata.'
+            }
             $page = Invoke-WebRequest -Uri 'http://127.0.0.1:5000/' -UseBasicParsing -TimeoutSec 10
             if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'RootDetector') {
               throw 'Installed browser UI did not load.'

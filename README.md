@@ -15,7 +15,7 @@ RootDetector helps researchers and students analyze minirhizotron root images. I
 
 ## Install and Start on Windows
 
-RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Download the full ZIP from the project's Releases page; do not choose GitHub's automatically generated “Source code” archives.
+Download a Windows package from the [RootDetector Releases page](https://github.com/YohannesTesfay/Root-Detector/releases), not GitHub's automatically generated “Source code” archives. The complete portable package is named **RootDetector-Windows-portable.zip**. A per-user installer, **RootDetector-Windows-Setup.exe**, will be offered after its acceptance tests pass.
 
 A per-user installer is being prepared and is not yet a qualified release. Until its Windows acceptance tests pass, use the portable ZIP below.
 
@@ -29,6 +29,8 @@ The installer candidate includes both CPU and NVIDIA GPU processing libraries. I
 New full Windows packages contain **only `StartRootDetector.bat`** as the launcher. Older 2023 downloads used `main.bat`; those existing downloads are unchanged. GitHub's “Source code” ZIP is not a ready-to-run Windows package.
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
+
+To check for a newer version, open **About → Check for updates**. RootDetector checks published GitHub releases only when you click; it displays a link to the release. Export any results you need and close RootDetector before installing a newer version. A newer per-user installer keeps saved settings and models in `%LOCALAPPDATA%\RootDetector`. For a portable ZIP, extract the new package into a separate folder and retain the old folder until you have transferred any local settings or models you need. The app does not install updates by itself.
 
 Only use model files from a trusted source: model packages can contain executable code. Images and result archives are data and should be imported through the app, not copied into its models folder.
 
@@ -92,7 +94,7 @@ Training is separate from ordinary analysis. You do not need to review or label 
 
 ## Data and Privacy
 
-Image processing happens on the local computer. RootDetector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files.
+Image processing happens on the local computer. RootDetector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files, and contacts GitHub Releases if you choose **Check for updates**.
 
 ## Further Documentation
 

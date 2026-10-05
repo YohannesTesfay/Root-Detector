@@ -24,6 +24,7 @@ import backend.preparation
 import backend.security
 import backend.settings
 import backend.diagnostics
+import backend.release
 from . import root_detection
 from . import root_tracking
 
@@ -64,6 +65,8 @@ class App(BaseApp):
         self.view_functions['images'] = self.images
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
+        self.route('/api/version', methods=['GET'])(self.get_version)
+        self.route('/api/updates/check', methods=['POST'])(self.check_updates)
         self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
         self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
         self.route('/api/preparation/inspect', methods=['POST'])(self.inspect_preparation_source)
@@ -206,6 +209,14 @@ class App(BaseApp):
                 'preparation_min_analysis_dimension': backend.preparation.MIN_ANALYSIS_DIMENSION,
             },
         })
+
+    def get_version(self):
+        return flask.jsonify(backend.release.package_info())
+
+    def check_updates(self):
+        return flask.jsonify(backend.release.find_update(
+            backend.release.package_info()
+        ))
 
     def inspect_preparation_source(self):
         with self.preparation_lock:

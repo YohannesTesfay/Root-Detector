@@ -45,9 +45,23 @@ jobs:
       - name: Build
         run: python build.py --zip --prune-torchlibs
 
+      - name: Name portable download and record checksum
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem builds/*_DigIT_RootDetector.zip)
+          if ($archives.Count -ne 1) { throw 'Expected one complete portable archive.' }
+          $output = 'builds/RootDetector-Windows-portable.zip'
+          Copy-Item $archives[0].FullName $output
+          $hash = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
+          "$hash  RootDetector-Windows-portable.zip" | Set-Content builds/RootDetector-Windows-portable.sha256
+          python -c "import json,zipfile; z=zipfile.ZipFile('builds/RootDetector-Windows-portable.zip'); m=json.loads(z.read('release.json')); assert m==json.load(open('release.json'))"
+          if ($LASTEXITCODE -ne 0) { throw 'Portable archive version differs from source.' }
+
       - name: Archive binaries
         uses: actions/upload-artifact@v6
         with:
           name: RootDetector-Windows-portable
-          path: builds/*_DigIT_RootDetector.zip
+          path: |
+            builds/RootDetector-Windows-portable.zip
+            builds/RootDetector-Windows-portable.sha256
           if-no-files-found: error
