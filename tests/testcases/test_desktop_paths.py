@@ -1,6 +1,10 @@
 import os
 import sys
 import types
+import ctypes
+import errno
+
+import pytest
 
 import desktop_paths
 
@@ -134,3 +138,53 @@ def test_installed_app_creates_upgrade_mutex():
     )
     assert desktop_paths._upgrade_mutex == 123
     desktop_paths._upgrade_mutex = None
+
+
+@pytest.mark.parametrize('winerror, error_number', [(32, None), (None, errno.EACCES)])
+def test_installation_lock_reports_maintenance(tmp_path, monkeypatch, winerror, error_number):
+    def sharing_violation(*args, **kwargs):
+        error = OSError(error_number, 'Sharing violation')
+        error.winerror = winerror
+        raise error
+
+    monkeypatch.setitem(sys.modules, 'msvcrt', types.SimpleNamespace())
+    monkeypatch.setattr(desktop_paths, 'open', sharing_violation, raising=False)
+    with pytest.raises(RuntimeError, match='installation, update, or uninstall may be in progress'):
+        desktop_paths.claim_installed_instance(str(tmp_path))
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows file-sharing contract requires Windows.')
+def test_windows_installer_exclusive_handle_interlocks_with_app(tmp_path):
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                           ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    create_file.restype = ctypes.c_void_p
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+    invalid_handle = ctypes.c_void_p(-1).value
+    exclusive = invalid_handle
+    lock_path = str(tmp_path / '.instance.lock')
+    try:
+        assert desktop_paths.claim_installed_instance(str(tmp_path))
+        # Installer cannot acquire deny-sharing access while the app owns its lock.
+        exclusive = create_file(lock_path, 0xC0000000, 0, None, 4, 0x80, None)
+        assert exclusive == invalid_handle
+        assert ctypes.get_last_error() == 32
+        desktop_paths._instance_lock.close()
+        desktop_paths._instance_lock = None
+        exclusive = create_file(lock_path, 0xC0000000, 0, None, 4, 0x80, None)
+        assert exclusive != invalid_handle
+        with pytest.raises(RuntimeError, match='installation, update, or uninstall may be in progress'):
+            desktop_paths.claim_installed_instance(str(tmp_path))
+        close_handle(exclusive)
+        exclusive = invalid_handle
+        # A stale lock file is harmless after the owning handle closes or crashes.
+        assert desktop_paths.claim_installed_instance(str(tmp_path))
+    finally:
+        if exclusive != invalid_handle:
+            close_handle(exclusive)
+        if desktop_paths._instance_lock is not None:
+            desktop_paths._instance_lock.close()
+            desktop_paths._instance_lock = None

@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import ctypes
+import errno
 
 
 INSTALL_MARKER = 'INSTALL-MODE.txt'
@@ -78,7 +79,19 @@ def claim_installed_instance(data):
         return True
     import msvcrt
 
-    handle = open(os.path.join(data, '.instance.lock'), 'a+b')
+    try:
+        handle = open(os.path.join(data, '.instance.lock'), 'a+b')
+    except OSError as exc:
+        # Python's CRT file open can translate a sharing violation to EACCES
+        # without preserving winerror. Do not mislabel a folder permission error
+        # as a broken runtime requiring reinstallation.
+        if getattr(exc, 'winerror', None) in (32, 33) or exc.errno == errno.EACCES:
+            raise RuntimeError(
+                'RootDetector user data is unavailable. An installation, update, '
+                'or uninstall may be in progress. Wait for it to finish and retry. '
+                'If no maintenance is running, check permissions on the user-data folder.'
+            ) from exc
+        raise
     handle.seek(0, os.SEEK_END)
     if handle.tell() == 0:
         handle.write(b'0')

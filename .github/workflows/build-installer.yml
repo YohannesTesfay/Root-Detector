@@ -113,6 +113,8 @@ jobs:
             if (-not $applicationProcess.HasExited) { Stop-Process -Id $applicationProcess.Id -Force }
             $applicationProcess.WaitForExit()
           }
+          python tests/acceptance/installer_lifecycle.py --installer $installer --installed $installed --data $data
+          if ($LASTEXITCODE -ne 0) { throw 'Session-independent installer lifecycle test failed.' }
           $obsoleteRuntimeFile = Join-Path $installed 'main\torch\lib\obsolete-runtime-test.dll'
           'obsolete runtime test fixture' | Set-Content $obsoleteRuntimeFile
           $upgrade = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru

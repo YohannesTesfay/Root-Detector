@@ -76,6 +76,13 @@ Separate release checks still cover genuine exclusion masks, human ecological
 review, GUI/display scaling, launcher/installer lifecycle, cold starts, sleep,
 and prolonged resource use. This harness does not certify those areas.
 
+The installer CI additionally runs `installer_lifecycle.py` against its disposable
+installation. A helper owns only the app's per-user file lock, without its named
+mutex; both upgrade and uninstall must refuse and preserve program/user-data
+sentinels. Terminating the helper checks stale-lock recovery. The workflow then
+tests a stopped upgrade, startup, and uninstall. Do not run this lifecycle helper
+against a working research installation.
+
 Harness-only unit tests (no app, models, or GPU needed):
 
 ```sh
