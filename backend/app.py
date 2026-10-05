@@ -11,6 +11,7 @@ import signal
 import tempfile
 import threading
 import urllib.parse
+from pathlib import Path
 import flask
 from werkzeug.exceptions import HTTPException
 
@@ -940,6 +941,8 @@ class App(BaseApp):
     def save_model(self):
         request_data = flask.request.get_json(force=True) or {}
         newname = backend.security.validate_filename(request_data.get('newname'))
+        if newname.endswith('.pt.zip'):
+            newname = backend.security.validate_filename(newname[:-7])
         options = request_data.get('options') or {}
         modeltype = options.get('training_type', 'detection')
         if modeltype not in {'detection', 'exclusion_mask'} or modeltype not in self.settings.models:
@@ -953,8 +956,19 @@ class App(BaseApp):
             )
         model_folder = os.path.join(get_models_path(), modeltype)
         os.makedirs(model_folder, exist_ok=True)
-        path = backend.security.safe_resolve(model_folder, newname)
-        self.settings.models[modeltype].save(path)
+        path = backend.security.safe_resolve(model_folder, newname + '.pt.zip', {'.zip'})
+        handle, staged_path = tempfile.mkstemp(prefix='.model-save-', suffix='.pt.zip', dir=model_folder)
+        os.close(handle)
+        try:
+            # Released save() treats strings as strftime templates and appends
+            # a suffix. Path preserves the exact destination validated here.
+            self.settings.models[modeltype].save(Path(staged_path))
+            if not os.path.getsize(staged_path):
+                raise RuntimeError('The model writer did not produce a model package.')
+            os.replace(staged_path, path)
+        finally:
+            if os.path.isfile(staged_path):
+                os.remove(staged_path)
         self.settings.active_models[modeltype] = newname
         return flask.jsonify({'saved': newname, 'model_type': modeltype})
 

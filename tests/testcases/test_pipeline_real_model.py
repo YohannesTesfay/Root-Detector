@@ -19,6 +19,18 @@ def released_settings():
 
 
 @pytest.mark.real_model
+def test_released_detection_model_saves_and_reloads_exact_path(released_settings, tmp_path):
+    destination = tmp_path / 'literal-%Y-model.pt.zip'
+    model = released_settings.models['detection']
+    model.save(destination)
+    restored = Settings.load_modelfile(str(destination))
+    expected, actual = model.state_dict(), restored.state_dict()
+    assert expected.keys() == actual.keys()
+    assert all(torch.equal(value.cpu(), actual[name].cpu()) for name, value in expected.items())
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.real_model
 def test_released_models_complete_detection_and_tracking_pipeline(released_settings):
     filenames = [
         'PD_T088_L004_17.10.18_140056_014_SS_crop.tiff',

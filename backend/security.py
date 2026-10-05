@@ -3,6 +3,7 @@
 import hashlib
 import ntpath
 import os
+from pathlib import Path
 import typing as tp
 import unicodedata
 import warnings
@@ -60,6 +61,8 @@ def validate_filename(
         raise ValidationError('A non-empty filename is required.', 'invalid_filename')
     if '\x00' in value or value in {'.', '..'}:
         raise ValidationError('The filename is not valid.', 'invalid_filename')
+    if value.endswith(('.', ' ')):
+        raise ValidationError('Filenames must not end with a dot or space.', 'invalid_filename')
     if os.path.isabs(value) or ntpath.isabs(value) or ntpath.splitdrive(value)[0]:
         raise ValidationError('Absolute filenames are not allowed.', 'invalid_filename')
     if os.path.basename(value) != value or ntpath.basename(value) != value:
@@ -79,20 +82,49 @@ def validate_filename(
     return value
 
 
+def _path_entry_exists(path:str) -> bool:
+    """Detect dangling links too, including Python 3.7 Windows junctions."""
+    if os.name != 'nt':
+        return os.path.lexists(path)
+    # Python 3.7's lstat/lexists does not handle every Windows reparse point.
+    # GetFileAttributesW inspects the named link rather than following its target.
+    import ctypes
+    get_attributes = ctypes.WinDLL('kernel32', use_last_error=True).GetFileAttributesW
+    get_attributes.argtypes = [ctypes.c_wchar_p]
+    get_attributes.restype = ctypes.c_uint32
+    native_path = path
+    if not native_path.startswith('\\\\?\\'):
+        native_path = ('\\\\?\\UNC\\' + native_path[2:] if native_path.startswith('\\\\')
+                       else '\\\\?\\' + native_path)
+    if get_attributes(native_path) != 0xFFFFFFFF:
+        return True
+    error = ctypes.get_last_error()
+    if error in (2, 3):  # ERROR_FILE_NOT_FOUND / ERROR_PATH_NOT_FOUND
+        return False
+    raise ctypes.WinError(error)
+
+
 def safe_resolve(
     base_path:str,
     untrusted_name:tp.Any,
     allowed_extensions:tp.Optional[tp.Set[str]]=None,
     must_exist:bool=False,
 ) -> str:
-    """Resolve a validated filename and prove that it remains below ``base_path``."""
+    """Resolve a filename beneath an existing base, allowing a new ordinary file."""
     name = validate_filename(untrusted_name, allowed_extensions)
-    base = os.path.realpath(base_path)
-    candidate = os.path.realpath(os.path.join(base, name))
     try:
-        contained = os.path.commonpath([base, candidate]) == base
-    except ValueError:
-        contained = False
+        # ntpath.realpath in Python 3.7 is only abspath. Path.resolve uses the
+        # Windows final-path API and resolves junctions as well as symbolic links.
+        base = str(Path(base_path).resolve(strict=True))
+        if not os.path.isdir(base):
+            raise OSError('The allowed directory does not exist.')
+        unresolved = os.path.join(base, name)
+        # Non-strict resolution may preserve a dangling link's lexical pathname
+        # on Windows 3.7. Only genuinely absent leaf entries may use that mode.
+        candidate = str(Path(unresolved).resolve(strict=_path_entry_exists(unresolved)))
+        contained = os.path.normcase(os.path.commonpath([base, candidate])) == os.path.normcase(base)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValidationError('The requested path cannot be resolved safely.', 'unsafe_path') from exc
     if not contained:
         raise ValidationError('The requested path is outside the allowed directory.', 'unsafe_path')
     if must_exist and not os.path.isfile(candidate):
