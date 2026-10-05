@@ -26,6 +26,12 @@ UninstallDisplayIcon={app}\main\main.exe
 CloseApplications=no
 RestartApplications=no
 
+[InstallDelete]
+; AppMutex refuses upgrades while RootDetector is running. Replace only the
+; packaged DLL set so obsolete CPU/CUDA files cannot survive an upgrade and
+; conflict with the new runtime manifest. User models/cache are outside {app}.
+Type: filesandordirs; Name: "{app}\main\torch\lib"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
