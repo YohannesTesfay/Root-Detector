@@ -47,21 +47,21 @@ Filename: "{app}\main\main.exe"; Description: "Start RootDetector"; Flags: nowai
 
 [Code]
 var
-  LifecycleHandle: THandle;
+  LifecycleHandle: Integer;
   LifecycleAcquired: Boolean;
 
-function OpenLifecycleFile(FileName: String; DesiredAccess, ShareMode: DWORD;
-  SecurityAttributes: NativeUInt; CreationDisposition, FlagsAndAttributes: DWORD;
-  TemplateFile: THandle): THandle;
+function OpenLifecycleFile(FileName: String; DesiredAccess, ShareMode: Cardinal;
+  SecurityAttributes: Integer; CreationDisposition, FlagsAndAttributes: Cardinal;
+  TemplateFile: Integer): Integer;
   external 'CreateFileW@kernel32.dll stdcall';
 
-function CloseLifecycleHandle(Handle: THandle): BOOL;
+function CloseLifecycleHandle(Handle: Integer): Integer;
   external 'CloseHandle@kernel32.dll stdcall';
 
 function AcquireLifecycleLock: String;
 var
   DataDirectory: String;
-  ErrorCode: DWORD;
+  ErrorCode: LongInt;
 begin
   Result := '';
   if LifecycleAcquired then
@@ -76,7 +76,7 @@ begin
     OPEN_ALWAYS preserves existing bytes; no models/settings/cache are changed. }
   LifecycleHandle := OpenLifecycleFile(DataDirectory + '\.instance.lock',
     $C0000000, 0, 0, 4, $80, 0);
-  LifecycleAcquired := LifecycleHandle <> THandle(-1);
+  LifecycleAcquired := LifecycleHandle <> -1;
   if not LifecycleAcquired then begin
     ErrorCode := DLLGetLastError;
     Result := 'RootDetector user data is in use or unavailable. Close RootDetector in all Windows sessions and retry. ' +
