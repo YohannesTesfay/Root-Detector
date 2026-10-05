@@ -25,6 +25,7 @@ jobs:
           docker compose -f compose.core.yml run --rm model-fetch
           docker compose -f compose.core.yml run --rm test-fast
           docker compose -f compose.core.yml run --rm test-smoke
+          docker compose -f compose.core.yml run --rm test-fast python -m unittest discover -s tests/acceptance -p "test_*.py" -v
       - name: Browser-side regressions
         run: |
           for test in tests/testcases_js/test_*.js; do node "$test" || exit; done
