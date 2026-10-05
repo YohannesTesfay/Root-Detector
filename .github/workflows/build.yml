@@ -37,6 +37,8 @@ jobs:
 
       - name: Test settings-load failure
         run: node tests/testcases_js/test_settings_failure.js
+      - name: Test tracking result selection
+        run: node tests/testcases_js/test_tracking_download_selection.js
 
       - name: Test reviewed training label selection
         run: node tests/testcases_js/test_training_labels.js

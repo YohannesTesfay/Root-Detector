@@ -67,6 +67,7 @@ RootDetectionDownload = class extends BaseDownload{
 
     //override
     static zipdata_for_files(filenames){
+        filenames = filenames.filter(filename => !!GLOBAL.files[filename]?.results)
         var zipdata      = super.zipdata_for_files(filenames)
         var combined_csv = ''
         for(var i in filenames){
@@ -118,8 +119,9 @@ RootDetectionDownload = class extends BaseDownload{
 
 RootTrackingDownload = class extends BaseDownload {
     static async on_single_item_download_click(event){
-        const $root = $(event.target).closest('[filename]')
+        const $root = $(event.target).closest('[filename0][filename1][filename]')
         const filename = $root.attr('filename')
+        const data = GLOBAL.files[$root.attr('filename0')]?.tracking_results?.[$root.attr('filename1')]
         const zipdata = this.zipdata_for_file(filename)
         if(!zipdata){
             $('body').toast({message:'No tracking result is available for this pair.', class:'warning'})
@@ -128,7 +130,7 @@ RootTrackingDownload = class extends BaseDownload {
         const $button = $(event.currentTarget ?? event.target)
         $button.addClass('loading disabled').attr('aria-busy', 'true')
         try {
-            await download_root_zip(`${filename}.tracking-results.zip`, zipdata)
+            await download_root_zip(`RootDetector-tracking-${data?.run_id ?? filename}.zip`, zipdata)
         } catch(error) {
             $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
@@ -169,6 +171,9 @@ RootTrackingDownload = class extends BaseDownload {
             tracking_model     : tracking_data.tracking_model,
             segmentation_model : tracking_data.segmentation_model,
             tracking_matcher   : tracking_data.tracking_matcher,
+            run_id             : tracking_data.run_id,
+            run_profile        : tracking_data.run_profile,
+            match_device       : tracking_data.match_device,
             exclusion_mask_policy : tracking_data.exclusion_mask_policy,
             exclusion_masks       : tracking_data.exclusion_masks,
         }
@@ -179,6 +184,8 @@ RootTrackingDownload = class extends BaseDownload {
             exclusion_mask_coordinate_system: 'observation1',
             exclusion_mask_policy: tracking_data.exclusion_mask_policy,
             tracking_matcher: tracking_data.tracking_matcher,
+            run_id: tracking_data.run_id,
+            run_profile: tracking_data.run_profile,
             migration_warning: 'Tracking CSV files exported by RootDetector before schema 2 may have background, mask, same, decay, and growth values under incorrect headers. Re-export those analyses before comparing or aggregating them.',
         }, null, 2)
         const preparations = [filename0, filename1]
@@ -202,8 +209,11 @@ RootTrackingDownload = class extends BaseDownload {
                 continue;
             
             for(const filename1 of Object.keys(tracking_results)){
-                if(this.is_exportable_result(tracking_results[filename1])){
-                    file_pairs.push([filename0, filename1])
+                const selected = tracking_results[filename1]
+                if(this.is_exportable_result(selected)){
+                    file_pairs.push(selected.run_id
+                        ? [filename0, filename1, selected.run_id]
+                        : [filename0, filename1])
                 }
             }
         }
@@ -215,7 +225,7 @@ RootTrackingDownload = class extends BaseDownload {
         this.download_in_progress = true
         $button.addClass('loading disabled').attr('aria-busy', 'true')
         try {
-            const pair_names = new Set(file_pairs.flat())
+            const pair_names = new Set(file_pairs.flatMap(pair => pair.slice(0, 2)))
             const result = await RootSecurity.request(
                 '/compile_tracking_results',
                 'POST',

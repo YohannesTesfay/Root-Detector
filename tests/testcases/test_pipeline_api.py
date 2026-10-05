@@ -150,6 +150,51 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     assert cleared.get_json() == {'cleared': True}
 
 
+def test_tracking_provenance_mismatch_is_actionable_validation_error(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+
+    def reject_stale_tracking(*_args):
+        raise ValueError('Saved tracking points used a different sampling mode. Run tracking again.')
+
+    monkeypatch.setattr(
+        'backend.root_tracking.process',
+        reject_stale_tracking,
+    )
+
+    app = App()
+    app.testing = True
+    for name in ('first.png', 'second.png'):
+        with open(os.path.join(app.cache_path, name), 'wb') as output:
+            output.write(png_bytes())
+    response = app.test_client().post(
+        '/process_root_tracking',
+        json={'filename0': 'first.png', 'filename1': 'second.png', 'points0': []},
+        headers=request_headers(app),
+    )
+    assert response.status_code == 400
+    assert response.get_json()['code'] == 'invalid_tracking_pair'
+    assert 'Run tracking again' in response.get_json()['message']
+
+    invalid_run = app.test_client().post(
+        '/compile_tracking_results',
+        json={'file_pairs': [['first.png', 'second.png', '../wrong']]},
+        headers=request_headers(app),
+    )
+    assert invalid_run.status_code == 400
+    assert invalid_run.get_json()['code'] == 'invalid_tracking_result'
+    missing_run = app.test_client().post(
+        '/compile_tracking_results',
+        json={'file_pairs': [['first.png', 'second.png', 'a' * 32]]},
+        headers=request_headers(app),
+    )
+    assert missing_run.status_code == 400
+    assert missing_run.get_json()['code'] == 'invalid_tracking_result'
+
+
 def test_diagnostics_download_excludes_research_data(tmp_path, monkeypatch):
     monkeypatch.setenv('ROOT_PATH', os.getcwd())
     monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
@@ -279,14 +324,14 @@ def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path,
     assert unsafe_model_type.status_code == 400
     assert unsafe_model_type.get_json()['code'] == 'invalid_model_type'
 
-    scientific_policy = client.post(
+    invalid_policy = client.post(
         '/settings',
-        json={'active_models': {}, 'tracking_exclusion_policy': 'union'},
+        json={'active_models': {}, 'tracking_exclusion_policy': 'automatic'},
         headers=headers,
     )
-    assert scientific_policy.status_code == 400
-    assert scientific_policy.get_json()['code'] == 'invalid_settings'
-    assert len(scientific_policy.get_json()['diagnostic_id']) == 12
+    assert invalid_policy.status_code == 400
+    assert invalid_policy.get_json()['code'] == 'invalid_tracking_exclusion_policy'
+    assert len(invalid_policy.get_json()['diagnostic_id']) == 12
 
 
 def test_configured_upload_limit_is_reported_and_enforced(tmp_path, monkeypatch):

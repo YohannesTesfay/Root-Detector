@@ -221,6 +221,11 @@ var RootTracking = new function() {
                 success: 'TOO_MANY_ROOTS',
                 code: 'too_many_roots',
             };
+        else if(!no_matches)
+            GLOBAL.files[filename0].tracking_results[filename1] = {
+                success: false,
+                code: data_or_error?.code ?? 'tracking_failed',
+            };
     }
 
     this.apply_pipeline_result = function(item){
@@ -401,6 +406,10 @@ var RootTracking = new function() {
             n_matched_points   : tracking_results.n_matched_points,
             tracking_model     : tracking_results.tracking_model,
             segmentation_model : tracking_results.segmentation_model,
+            tracking_matcher   : tracking_results.tracking_matcher,
+            run_id             : tracking_results.run_id,
+            run_profile        : tracking_results.run_profile,
+            match_device       : tracking_results.match_device,
         }
 
         process_single(filename0, filename1, false, post_data);

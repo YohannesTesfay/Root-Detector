@@ -126,7 +126,12 @@ def system_snapshot(settings=None):
             'active_models': dict(getattr(settings, 'active_models', {})),
             'use_gpu': bool(getattr(settings, 'use_gpu', False)),
             'exmask_enabled': bool(getattr(settings, 'exmask_enabled', False)),
-            'tracking_exclusion_mask_source': 'first_observation_warped',
+            'tracking_exclusion_policy': getattr(
+                settings,
+                'tracking_exclusion_policy',
+                'first',
+            ),
+            'tracking_sampling_mode': getattr(settings, 'tracking_sampling_mode', None),
         }
 
     return {

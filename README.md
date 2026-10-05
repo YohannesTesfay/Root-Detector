@@ -48,7 +48,7 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 1. Select **Files → Load Input Images** or **Load Input Folder**.
 2. Confirm that all images appear in the Detection tab.
 3. Open the Tracking tab and check the proposed image pairs.
-4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, or change the root threshold.
+4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, change the root threshold, or select tracking point sampling.
 5. Select **Run Analysis** once.
 6. Wait for the progress window to reach 100%. Detection runs for every image, followed by tracking for every valid pair.
 
@@ -67,7 +67,7 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 
 Use **Download All** in the relevant tab to save `RootDetector-detection-results.zip` or `RootDetector-tracking-results.zip` before closing the application. The archives keep their existing per-image folders and statistics files. A failed tracking rerun is not exported as if it were successful; a pair marked for review remains available for inspection and export. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
-Tracking uses the released point-sampling behavior, so repeating the same pair can produce different turnover counts. Review tracking overlays before scientific interpretation, and retain the source images, selected models, settings, and exported results for each run.
+For repeat tests of a tracking pair, choose **Settings → Tracking point sampling → Seeded sampling** before analysis. The default **Original sampling** preserves earlier behavior and may produce different turnover counts on repeated runs. Seeded sampling repeats point selection for identical images, segmentations, models, and settings, but does not guarantee identical results across CPU and GPU. Also in Settings, the default exclusion-mask policy uses the first observation; optional policies use the second, either, or both observations. **Either** and **Both** require a mask for each observation if one is present. These choices can change turnover counts, so identify them in comparisons and visually and ecologically review results. Download each variant before changing settings: the app displays only the latest result for a pair. Tracking ZIPs have distinct names and record the selected result ID, policy, and matcher provenance.
 
 ## Train a Model (Optional)
 
