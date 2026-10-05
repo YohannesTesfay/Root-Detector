@@ -59,7 +59,7 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 - Pink/red: root decay.
 - Red mask: excluded material such as tape.
 
-Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
+Use **Download All** in the relevant tab to save `RootDetector-detection-results.zip` or `RootDetector-tracking-results.zip` before closing the application. The archives keep their existing per-image folders and statistics files. A failed tracking rerun is not exported as if it were successful; a pair marked for review remains available for inspection and export. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
 Tracking uses the released point-sampling behavior, so repeating the same pair can produce different turnover counts. Review tracking overlays before scientific interpretation, and retain the source images, selected models, settings, and exported results for each run.
 
