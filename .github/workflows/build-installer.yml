@@ -24,7 +24,7 @@ jobs:
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
       - name: Installed-path and runtime tests
-        run: python -m pytest -q tests/testcases/test_desktop_paths.py tests/testcases/test_startup.py
+        run: python -m pytest -q tests/testcases/test_desktop_paths.py tests/testcases/test_startup.py tests/testcases/test_preparation.py tests/testcases/test_windows_followup_templates.py
       - name: Browser-side regression tests
         run: |
           node tests/testcases_js/test_upload_reliability_node.js

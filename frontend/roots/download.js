@@ -58,6 +58,10 @@ RootDetectionDownload = class extends BaseDownload{
         zipdata[`${segmentation.name}`] = segmentation
         zipdata[`${skeleton.name}`]     = skeleton
         zipdata[`statistics.csv`]       = this.csv_data_for_file(filename)
+        if(f.preparation)
+            zipdata['preparation-manifest.json'] = JSON.stringify({
+                schema: 1, preparations: [f.preparation],
+            }, null, 2)
         return zipdata;
     }
 
@@ -72,6 +76,13 @@ RootDetectionDownload = class extends BaseDownload{
         }
         if(combined_csv.length > 0)
             zipdata['statistics.csv'] = combined_csv;
+        const preparations = filenames
+            .map(filename => GLOBAL.files[filename]?.preparation)
+            .filter(Boolean)
+        if(preparations.length)
+            zipdata['preparation-manifest.json'] = JSON.stringify({
+                schema: 1, preparations: preparations,
+            }, null, 2)
         return zipdata;
     }
 
@@ -170,6 +181,13 @@ RootTrackingDownload = class extends BaseDownload {
             tracking_matcher: tracking_data.tracking_matcher,
             migration_warning: 'Tracking CSV files exported by RootDetector before schema 2 may have background, mask, same, decay, and growth values under incorrect headers. Re-export those analyses before comparing or aggregating them.',
         }, null, 2)
+        const preparations = [filename0, filename1]
+            .map(filename => GLOBAL.files[filename]?.preparation)
+            .filter(Boolean)
+        if(preparations.length)
+            zipdata['preparation-manifest.json'] = JSON.stringify({
+                schema: 1, preparations: preparations,
+            }, null, 2)
         return zipdata;
     }
 
@@ -197,10 +215,18 @@ RootTrackingDownload = class extends BaseDownload {
         this.download_in_progress = true
         $button.addClass('loading disabled').attr('aria-busy', 'true')
         try {
+            const pair_names = new Set(file_pairs.flat())
             const result = await RootSecurity.request(
                 '/compile_tracking_results',
                 'POST',
-                {file_pairs: file_pairs},
+                {
+                    file_pairs: file_pairs,
+                    preparations: Object.fromEntries(
+                        Object.entries(GLOBAL.files)
+                            .filter(([name, file]) => pair_names.has(name) && !!file.preparation)
+                            .map(([name, file]) => [name, file.preparation]),
+                    ),
+                },
             )
             downloadURI('RootDetector-tracking-results.zip', url_for_image(result))
         } catch(error) {

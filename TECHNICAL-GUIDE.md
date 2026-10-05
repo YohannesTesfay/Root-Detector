@@ -38,6 +38,8 @@ The browser controller in `frontend/roots/pipeline.js` uploads sources, creates 
 
 ## Detection and Tracking Artifacts
 
+Opt-in preparation uses `POST /api/preparation/inspect` and `POST /api/preparation/apply` before ordinary image import. It holds at most one source in temporary cache, enforces 64 MiB encoded and 16 million decoded pixels, and accepts one-page 8-bit RGB/grayscale PNG, JPEG, or TIFF with default orientation. The result must be at least 1280 × 1280 pixels: the released model's patch stitcher fails on smaller images, so the preparation API rejects such crops before export. Pillow 7.1.2 loads the complete image before cropping, so this is **not** region decoding for arbitrarily large TIFFs. A separately downscaled server thumbnail is for display only; the applied lossless PNG is cropped from original decoded pixels without resampling. The source remains unchanged. Crop bounds are inserted before a filename date token, preventing auto-pairing of different numeric ROIs; identical coordinates still require visual confirmation of physical overlap. Manifests record original/output hashes, dimensions, page, mode, and rectangle and are included with prepared copies and same-session detection/tracking exports. Ordinary later-session PNG re-import does not automatically restore the sidecar manifest. Existing reviewed labels or exclusion masks must be cropped to the same bounds externally; prepared-image imports reject mismatched dimensions. Multi-page and higher-bit-depth support and a region-capable large-TIFF decoder remain follow-ups.
+
 Detection retains a soft root-probability array for tracking and separately creates the normal binary segmentation, skeleton, and statistics. Internal artifacts use the dependency-derived SHA-256 key:
 
 ```text
@@ -160,6 +162,9 @@ Soft segmentation and exclusion-mask caches are content-addressed. Their sidecar
 | --- | --- |
 | `GET /api/session` | Return the random per-launch request token and upload limits |
 | `POST /file_upload` | Store an uploaded file in the cache |
+| `POST /api/preparation/inspect` | Stage one bounded source and return metadata plus a display-only thumbnail |
+| `POST /api/preparation/apply` | Write a lossless PNG crop with its original-pixel ROI manifest |
+| `POST /api/preparation/<id>/discard` | Remove temporary source, thumbnail, and crop |
 | `POST /api/pipeline/runs` | Validate sources/pairs and start a run |
 | `GET /api/pipeline/runs/<id>` | Return progress, item states, errors, and results |
 | `POST /api/pipeline/runs/<id>/cancel` | Request cooperative cancellation at the next safe checkpoint |
