@@ -19,6 +19,8 @@ RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Dow
 
 A per-user installer is being prepared and is not yet a qualified release. Until its Windows acceptance tests pass, use the portable ZIP below.
 
+The installer candidate includes both CPU and NVIDIA GPU processing libraries. In **Settings**, enable GPU processing to use a compatible NVIDIA GPU, or leave it disabled for CPU processing. If the selected GPU cannot initialize, RootDetector reports the problem; choose CPU explicitly to continue. The installer still needs Windows CPU/GPU acceptance before release.
+
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
 2. Open the extracted folder and double-click **`StartRootDetector.bat`**.
 3. Keep the console window open. RootDetector starts its local service and opens the interface in your default browser.
@@ -28,9 +30,13 @@ New full Windows packages contain **only `StartRootDetector.bat`** as the launch
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
+Only use model files from a trusted source: model packages can contain executable code. Images and result archives are data and should be imported through the app, not copied into its models folder.
+
 ## Prepare Your Images
 
-If a scan needs a smaller region, choose **Files → Prepare / Crop Images** before loading it for analysis. Inspect the downscaled preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. The crop keeps pixel values and scale within the selected area; it does not resize or align scans. Download the prepared copies and their manifest, then use **Import prepared copies** in the same session to carry provenance into detection/tracking exports. Re-importing the saved PNGs later does not yet reattach the manifest automatically. Keep the untouched originals, and verify that the selected rectangles represent the same physical location across dates. Reviewed training annotations and exclusion masks must be cropped to the same bounds before import.
+If a scan needs a smaller region, choose **Files → Prepare / Crop Images** before analysis. Inspect the preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. Cropping preserves pixel values and scale; it does not resize or align scans. Keep the untouched originals and confirm that each date shows the same physical location.
+
+Use **Import prepared copies** immediately, or download the prepared ZIP and later choose **Files → Load Prepared Images**. Keep the manifest with the images: it records their original names, hashes, and crop bounds and accompanies result exports. When loading annotations or exclusion masks, matching original-size masks can be cropped to the same bounds after your explicit confirmation; already-cropped masks must match the prepared image dimensions. Cropping does not make an annotation a reviewed training label.
 
 The built-in preparation path currently supports single-page 8-bit RGB/grayscale PNG, JPEG, and TIFF sources up to 64 MiB and 16 million decoded pixels. The resulting crop must be at least 1280 × 1280 pixels for the released detection model; smaller crops cause its patch-stitching code to fail. Larger, multi-page, rotated, or higher-bit-depth scans need external preparation; this limit is separate from the normal upload limit. A larger upload setting alone does not make a large scan safe to crop in the app.
 

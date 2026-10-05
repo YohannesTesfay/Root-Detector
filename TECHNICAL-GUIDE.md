@@ -38,7 +38,9 @@ The browser controller in `frontend/roots/pipeline.js` uploads sources, creates 
 
 ## Detection and Tracking Artifacts
 
-Opt-in preparation uses `POST /api/preparation/inspect` and `POST /api/preparation/apply` before ordinary image import. It holds at most one source in temporary cache, enforces 64 MiB encoded and 16 million decoded pixels, and accepts one-page 8-bit RGB/grayscale PNG, JPEG, or TIFF with default orientation. The result must be at least 1280 × 1280 pixels: the released model's patch stitcher fails on smaller images, so the preparation API rejects such crops before export. Pillow 7.1.2 loads the complete image before cropping, so this is **not** region decoding for arbitrarily large TIFFs. A separately downscaled server thumbnail is for display only; the applied lossless PNG is cropped from original decoded pixels without resampling. The source remains unchanged. Crop bounds are inserted before a filename date token, preventing auto-pairing of different numeric ROIs; identical coordinates still require visual confirmation of physical overlap. Manifests record original/output hashes, dimensions, page, mode, and rectangle and are included with prepared copies and same-session detection/tracking exports. Ordinary later-session PNG re-import does not automatically restore the sidecar manifest. Existing reviewed labels or exclusion masks must be cropped to the same bounds externally; prepared-image imports reject mismatched dimensions. Multi-page and higher-bit-depth support and a region-capable large-TIFF decoder remain follow-ups.
+Opt-in preparation uses `POST /api/preparation/inspect` and `POST /api/preparation/apply` before ordinary image import. It stages one source, enforces 64 MiB encoded and 16 million decoded pixels, and accepts single-page 8-bit RGB/grayscale PNG, JPEG, or TIFF with default orientation. Crops must be at least 1280 × 1280 pixels for the released model's patch stitcher. Pillow loads the complete image: this is **not** region decoding for arbitrarily large TIFFs. The downscaled preview is display-only; lossless PNG crops retain original decoded pixels without resampling. Original files remain unchanged. Crop bounds precede the filename date token to prevent pairing different numeric ROIs; identical coordinates still require visual confirmation of physical overlap.
+
+`/api/preparation/import` restores a bounded prepared ZIP or loose PNG/manifest bundle after verifying hashes, dimensions, and names. Detection/tracking archives retain these manifests. `/api/preparation/companion` accepts a matching prepared-size annotation/exclusion mask, or crops an original-size mask only after explicit coordinate confirmation. Separate companion provenance records retain the source-mask hash, operation, and output hash; they never imply annotation review. `/api/preparation/validate` verifies restored records against cached bytes and can atomically reconnect exclusion masks to detection. Result archives include those companion files and records, allowing later-session reuse. Multi-page, higher-bit-depth, alignment, and region-capable large-TIFF decoding remain follow-ups.
 
 Detection retains a soft root-probability array for tracking and separately creates the normal binary segmentation, skeleton, and statistics. Internal artifacts use the dependency-derived SHA-256 key:
 
@@ -83,7 +85,13 @@ Do not edit generated `static/`. Root-specific changes that must be committed at
 
 The reference stack is Python 3.7 with PyTorch 1.10.1 and TorchVision 0.11.2. This legacy environment is not compatible with the host's current Python 3.14 installation, so Docker is the recommended local baseline.
 
-The installer preview uses a separate PyInstaller build with bundled CPU PyTorch libraries. Its `INSTALL-MODE.txt` marker activates `%LOCALAPPDATA%\RootDetector` for settings, downloaded models, logs, and working cache before backend imports. A per-user lock prevents a second installed copy from clearing the first copy's working cache; the installer's application mutex refuses upgrade/uninstall while this copy runs. Program files remain under `%LOCALAPPDATA%\Programs\RootDetector`; uninstall does not remove the user-data directory. The portable ZIP has no marker and retains its existing in-folder behavior. The preview currently requires Windows installation/upgrade/uninstall and GPU acceptance before release; do not present it as a tested GPU build.
+The installer candidate uses a separate PyInstaller build with bundled PyTorch 1.10.1/CUDA 11.3 libraries supporting both CPU and compatible NVIDIA GPUs. Install `requirements-runtime-windows.txt` after the normal requirements for that build. The build compares every packaged Torch DLL with the build environment and writes a runtime integrity manifest; startup verifies it before loading Torch. The portable ZIP retains automatic first-launch CPU/CUDA library selection, with pinned wheel SHA-256 verification, bounded streaming, staged replacement, and offline integrity checks. Moving a portable folder initialized with CPU libraries to a GPU machine requires fresh runtime provisioning; the installer already contains both capabilities. An unavailable requested GPU raises an actionable error instead of silently changing the run to CPU.
+
+The installer's `INSTALL-MODE.txt` marker activates `%LOCALAPPDATA%\RootDetector` for settings, downloaded models, logs, and working cache before backend imports. A per-user lock prevents a second installed copy from clearing the first copy's working cache; the installer's application mutex refuses upgrade/uninstall while this copy runs. Program files remain under `%LOCALAPPDATA%\Programs\RootDetector`; uninstall does not remove the user-data directory. Upgrades replace the packaged Torch DLL directory to avoid retaining obsolete libraries. The portable ZIP has no marker and retains its existing in-folder behavior. Windows CPU/GPU, installation, and upgrade acceptance must pass on the exact artifacts before release.
+
+Model files, including Torch packages and compatibility `.pkl` models, are executable trusted inputs. Keep automatic discovery confined to the configured model directory, use only reviewed model sources, and never place imported image/result data there. Downloaded pretrained models and runtime wheels are checksum-verified; locally trained models remain supported.
+
+Evaluation rejects masks with different shapes instead of broadcasting them. A metric with a zero denominator is `None` internally and `N/A` in CSV: IoU/F1 are undefined when both masks have no positive pixels, precision when there are no predicted positives, and recall when there are no annotated positives. One-sided empty masks have zero IoU/F1. Existing nonempty definitions and the treatment of red annotation pixels remain unchanged.
 
 `models/pretrained_models.txt` declares five downloads: WM and beech detection models, matching exclusion-mask models, and one tracking model. Each entry includes a SHA-256 checksum. Downloads stream to a temporary file, are verified, and are atomically installed. An existing corrupt model is replaced with a verified copy.
 
@@ -106,6 +114,8 @@ docker compose -f compose.core.yml run --rm test-smoke
 ```
 
 `test-fast` covers state transitions, retry, cancellation, training jobs, tracking matcher/provenance, request validation, download integrity, cache invalidation, and exports. `test-smoke` uses released models to check detection/tracking/export and matcher equivalence with the released package.
+
+Run every `tests/testcases_js/test_*.js` file with Node. Rendered import/detection/model-switch/tracking/export acceptance uses a separate pinned Playwright runner; see [tests/browser/README.md](tests/browser/README.md) for the disposable-server command. The old Selenium modules were replaced rather than silently skipped. `python -m pytest --collect-only -q tests/testcases` must collect without missing browser dependencies. Windows packaging workflows run all Python and Node regressions; the core workflow also runs the real browser acceptance.
 
 `node tests/testcases_js/test_upload_reliability_node.js` exercises browser-side error normalization and simulates a transport failure on image 71 of 86. It verifies the bounded retry and that the next attempt reuses the first 70 acknowledged uploads. `node tests/testcases_js/test_tracking_utils.js` verifies strict filename dates, consecutive temporal pairing, and rejection of same-day duplicates. The Windows build workflow also checks tracking export state, settings-load failure, pipeline upload isolation, and reviewed training labels before packaging.
 
@@ -170,6 +180,9 @@ Soft segmentation and exclusion-mask caches are content-addressed. Their sidecar
 | `POST /file_upload` | Store an uploaded file in the cache |
 | `POST /api/preparation/inspect` | Stage one bounded source and return metadata plus a display-only thumbnail |
 | `POST /api/preparation/apply` | Write a lossless PNG crop with its original-pixel ROI manifest |
+| `POST /api/preparation/import` | Validate and restore prepared PNG/manifest bundles |
+| `POST /api/preparation/companion` | Validate or explicitly crop a matching annotation/exclusion mask |
+| `POST /api/preparation/validate` | Verify preparation and companion provenance against cached files |
 | `POST /api/preparation/<id>/discard` | Remove temporary source, thumbnail, and crop |
 | `POST /api/pipeline/runs` | Validate sources/pairs and start a run |
 | `GET /api/pipeline/runs/<id>` | Return progress, item states, errors, and results |
@@ -216,7 +229,7 @@ The launcher:
 
 When `--prune-torchlibs` is used, the first launch downloads the required Windows PyTorch libraries. The application then downloads and verifies missing model packages, loads the configured models, starts Flask, and opens the default browser. Therefore the end-user launch pattern remains effectively the same; users should double-click the BAT launcher, not the source `main.py`.
 
-The legacy PyTorch-library downloader does not yet have the model downloader's checksum/atomic-install hardening. Signed installers, offline bundles, and modern dependency packaging remain part of the larger improvement plan.
+The PyTorch-library downloader verifies pinned wheel hashes, bounds downloads/extraction, stages replacement atomically, and verifies a local runtime manifest before reuse. Signed installers, completely offline model bundles, and Python/runtime modernization remain follow-ups.
 
 ## Windows Release Workflow
 

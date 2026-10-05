@@ -12,3 +12,4 @@ venv*
 .deno
 .playwright-cli/
 .local-notes/
+/settings.json

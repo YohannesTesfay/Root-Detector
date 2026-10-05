@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/windows-desktop-installer
+      - 'release/**'
 
 jobs:
   build:
@@ -21,16 +22,18 @@ jobs:
         run: |
           python -m pip install -r requirements.txt -c constraints-legacy.txt
           python -m pip install -r requirements-core-test.txt -c constraints-legacy.txt
+          python -m pip install --no-cache-dir -r requirements-runtime-windows.txt -c constraints-legacy.txt
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
-      - name: Installed-path and runtime tests
-        run: python -m pytest -q tests/testcases/test_desktop_paths.py tests/testcases/test_startup.py tests/testcases/test_preparation.py tests/testcases/test_windows_followup_templates.py
+      - name: Backend and released-model regressions
+        run: python -m pytest -q tests/testcases
       - name: Browser-side regression tests
+        shell: pwsh
         run: |
-          node tests/testcases_js/test_upload_reliability_node.js
-          node tests/testcases_js/test_pipeline_upload_isolation.js
-          node tests/testcases_js/test_tracking_utils.js
-          node tests/testcases_js/test_training_labels.js
+          Get-ChildItem tests/testcases_js/test_*.js | Sort-Object Name | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Browser regression failed: $($_.Name)" }
+          }
       - name: Build complete installed payload
         run: python build.py --installer-payload
       - name: Compile per-user installer
@@ -108,8 +111,13 @@ jobs:
             if (-not $applicationProcess.HasExited) { Stop-Process -Id $applicationProcess.Id -Force }
             $applicationProcess.WaitForExit()
           }
+          $obsoleteRuntimeFile = Join-Path $installed 'main\torch\lib\obsolete-runtime-test.dll'
+          'obsolete runtime test fixture' | Set-Content $obsoleteRuntimeFile
           $upgrade = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($upgrade.ExitCode -ne 0) { throw "Upgrade after shutdown failed: $($upgrade.ExitCode)" }
+          if (Test-Path $obsoleteRuntimeFile) { throw 'Upgrade retained obsolete runtime libraries.' }
+          & $application --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Upgraded runtime failed integrity/startup check.' }
           if (-not (Test-Path $modelPaths[0])) { throw 'Upgrade removed downloaded user models.' }
           $uninstaller = Get-ChildItem -Path $installed -Filter 'unins*.exe' | Select-Object -First 1
           if (-not $uninstaller) { throw 'Uninstaller is missing.' }

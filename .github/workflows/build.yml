@@ -2,11 +2,14 @@ name: Build Windows Binaries
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
 
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
       - uses: actions/checkout@v5
@@ -18,30 +21,23 @@ jobs:
           #cache: 'pip' # caching pip dependencies
 
       - name: Install requirements
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install -r requirements.txt -c constraints-legacy.txt
+          python -m pip install -r requirements-core-test.txt -c constraints-legacy.txt
 
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
 
-      - name: Test browser-side upload reliability
-        run: node tests/testcases_js/test_upload_reliability_node.js
+      - name: Backend and released-model regressions
+        run: python -m pytest -q tests/testcases
 
-      - name: Test pipeline upload isolation
-        run: node tests/testcases_js/test_pipeline_upload_isolation.js
-
-      - name: Test tracking filename pairing
-        run: node tests/testcases_js/test_tracking_utils.js
-
-      - name: Test tracking export state
-        run: node tests/testcases_js/test_tracking_export_state.js
-
-      - name: Test settings-load failure
-        run: node tests/testcases_js/test_settings_failure.js
-      - name: Test tracking result selection
-        run: node tests/testcases_js/test_tracking_download_selection.js
-
-      - name: Test reviewed training label selection
-        run: node tests/testcases_js/test_training_labels.js
+      - name: Browser-side regression tests
+        shell: pwsh
+        run: |
+          Get-ChildItem tests/testcases_js/test_*.js | Sort-Object Name | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Browser regression failed: $($_.Name)" }
+          }
 
       - name: Build
         run: python build.py --zip --prune-torchlibs
