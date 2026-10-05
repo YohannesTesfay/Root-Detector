@@ -390,13 +390,13 @@ RootPipeline = class {
             .toggleClass('disabled loading', run_disabled)
             .attr('aria-disabled', String(run_disabled))
             .attr('tabindex', run_disabled ? '-1' : '0')
-        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button, .process-all')
+        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button, #load-prepared-images-button, .process-all')
             .toggleClass('disabled', running)
             .prop('disabled', running)
             .attr('aria-disabled', String(running))
-        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button')
+        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button, #load-prepared-images-button')
             .attr('tabindex', running ? '-1' : '0')
-        $('#input_images, #input_folder, #input_masks, #preparation-input').prop('disabled', running)
+        $('#input_images, #input_folder, #input_masks, #preparation-input, #prepared-import-input').prop('disabled', running)
     }
 
     static pretty_state(value){

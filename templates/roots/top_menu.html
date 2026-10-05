@@ -24,13 +24,13 @@
     <i class="dropdown icon"></i>
     <div class="ui menu">
       <a href="#" class="ui icon item" id="load-input-images-button"
-              title="Choose one or more root images"
+              title="Choose root images, or prepared PNGs with their manifest / prepared-images ZIP; use Load Annotations for results ZIPs"
               onclick="if(this.classList.contains('disabled')) return false; document.getElementById('input_images').click(); return false;">
         <i class="images outline icon"></i>
         Load Input Images
       </a>
       <input type="file" id="input_images" style="display:none"
-             onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*" multiple>
+             onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*,.json,.zip" multiple>
 
       <a href="#" class="ui icon item" id="load-input-folder-button"
               title="Choose a folder containing root images"
@@ -40,6 +40,14 @@
       </a>
       <input type="file" id="input_folder" style="display:none"
              onchange="{{ app }}.FileInput.on_inputfolder_select(event)" webkitdirectory directory multiple>
+
+      <a href="#" class="ui icon item" id="load-prepared-images-button"
+         title="Restore prepared PNG copies and their crop provenance from a ZIP or PNGs plus preparation-manifest.json"
+         onclick="if(this.classList.contains('disabled')) return false; document.getElementById('prepared-import-input').click(); return false;">
+        <i class="archive icon"></i>Load Prepared Images
+      </a>
+      <input type="file" id="prepared-import-input" style="display:none"
+             onchange="{{ app }}.FileInput.on_preparedfiles_select(event)" accept=".zip,.png,.json" multiple>
 
       <a href="#" class="ui icon item" id="prepare-images-button"
          title="Crop copies of supported images before detection"

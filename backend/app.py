@@ -3,6 +3,7 @@ from base.backend.app import parser as base_parser
 from base.backend.paths import get_models_path
 
 import hmac
+import json
 import os
 import secrets
 import shutil
@@ -66,6 +67,9 @@ class App(BaseApp):
         self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
         self.route('/api/preparation/inspect', methods=['POST'])(self.inspect_preparation_source)
         self.route('/api/preparation/apply', methods=['POST'])(self.apply_preparation_crop)
+        self.route('/api/preparation/import', methods=['POST'])(self.import_prepared_images)
+        self.route('/api/preparation/validate', methods=['POST'])(self.validate_preparation_manifest)
+        self.route('/api/preparation/companion', methods=['POST'])(self.prepare_companion_mask)
         self.route('/api/preparation/<stage_id>/discard', methods=['POST'])(self.discard_preparation_stage)
         self.route('/process_root_tracking', methods=['POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>', methods=['POST'])(self.postprocess_detection)
@@ -307,6 +311,84 @@ class App(BaseApp):
             raise
         stage['output_path'] = output_path
         return flask.jsonify({'output': output_name, 'manifest': manifest})
+
+    def _require_preparation_idle(self):
+        if self.training_manager.active_run() is not None or any(
+            run.state not in backend.pipeline.TERMINAL_RUN_STATES
+            for run in self.pipeline_manager.runs.values()
+        ):
+            raise backend.security.ValidationError(
+                'Wait for the active analysis or training job before preparing images.',
+                'preparation_busy', 409,
+            )
+
+    def import_prepared_images(self):
+        self._require_preparation_idle()
+        with self.preparation_lock:
+            result = backend.preparation.restore_prepared_files(
+                flask.request.files.getlist('files'), self.cache_path,
+                self.max_upload_bytes,
+            )
+        return flask.jsonify(result)
+
+    def validate_preparation_manifest(self):
+        payload = flask.request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise backend.security.ValidationError('Invalid preparation record.', 'invalid_preparation_manifest')
+        path = backend.security.safe_resolve(
+            self.cache_path, payload.get('filename'), {'.png'}, must_exist=True,
+        )
+        manifest = backend.preparation.validate_manifest_for_output(
+            payload.get('manifest'), payload['filename'], path,
+        )
+        if 'companions' not in payload:
+            return flask.jsonify(manifest)
+        companions = payload['companions']
+        if not isinstance(companions, list) or len(companions) > 100:
+            raise backend.security.ValidationError('Invalid prepared mask list.', 'invalid_companion')
+        validated = [
+            backend.preparation.validate_companion_provenance(record, manifest, self.cache_path)
+            for record in companions
+        ]
+        if payload.get('restore_exclusion_masks') is True:
+            self._require_preparation_idle()
+            exclusions = [record for record in validated if record['kind'] == 'exclusion_mask']
+            if len(exclusions) > 1:
+                raise backend.security.ValidationError('Choose one exclusion mask per prepared image.', 'invalid_companion')
+            with self.preparation_lock:
+                for record in exclusions:
+                    backend.preparation.bind_exclusion_companion(record, manifest, self.cache_path)
+        return flask.jsonify({'manifest': manifest, 'companions': validated})
+
+    def prepare_companion_mask(self):
+        self._require_preparation_idle()
+        uploads = flask.request.files.getlist('files')
+        if len(uploads) != 1:
+            raise backend.security.ValidationError('Choose exactly one companion mask.', 'invalid_preparation_upload')
+        try:
+            manifest = json.loads(flask.request.form.get('manifest', ''))
+        except (TypeError, ValueError) as exc:
+            raise backend.security.ValidationError('Invalid preparation record.', 'invalid_preparation_manifest') from exc
+        prepared_path = backend.security.safe_resolve(
+            self.cache_path, flask.request.form.get('prepared_filename'), {'.png'}, must_exist=True,
+        )
+        output_name = 'prepare-companion-{}.png'.format(secrets.token_hex(12))
+        output_path = os.path.join(self.cache_path, output_name)
+        with self.preparation_lock:
+            try:
+                provenance = backend.preparation.transform_companion(
+                    uploads[0], manifest, prepared_path, output_path,
+                    confirmed=flask.request.form.get('confirmed') == 'true',
+                    kind=flask.request.form.get('kind', 'training_annotation'),
+                    max_file_bytes=min(self.max_upload_bytes, backend.preparation.MAX_SOURCE_BYTES),
+                )
+                if provenance['kind'] == 'exclusion_mask':
+                    backend.preparation.bind_exclusion_companion(provenance, manifest, self.cache_path)
+            except Exception:
+                if os.path.isfile(output_path):
+                    os.remove(output_path)
+                raise
+        return flask.jsonify({'output': output_name, 'provenance': provenance})
 
     def discard_preparation_stage(self, stage_id):
         with self.preparation_lock:
@@ -679,8 +761,17 @@ class App(BaseApp):
                 must_exist=True,
             )
             backend.preparation.validate_manifest_for_output(manifest, filename, path)
+        companions = request_data.get('companions', [])
+        if not isinstance(companions, list) or len(companions) > 100:
+            raise backend.security.ValidationError('Invalid prepared mask list.', 'invalid_companion')
+        by_id = {manifest['preparation_id']: manifest for manifest in preparations.values()}
+        for record in companions:
+            manifest = by_id.get(record.get('preparation_id')) if isinstance(record, dict) else None
+            if manifest is None:
+                raise backend.security.ValidationError('Prepared mask has no selected crop.', 'invalid_companion')
+            backend.preparation.validate_companion_provenance(record, manifest, self.cache_path)
         try:
-            return root_tracking.compile_results_into_zip(file_pairs, preparations=preparations)
+            return root_tracking.compile_results_into_zip(file_pairs, preparations=preparations, companions=companions)
         except ValueError as exc:
             raise backend.security.ValidationError(str(exc), 'invalid_tracking_result')
 
@@ -801,7 +892,10 @@ class App(BaseApp):
         ):
             raise RuntimeError('Training cannot start while analysis is running.')
         imagefiles, targetfiles, options = self._prepare_training_request()
-        return self.training_manager.create(imagefiles, targetfiles, options)
+        payload = flask.request.get_json(silent=True) or {}
+        return self.training_manager.create(
+            imagefiles, targetfiles, options, request_id=payload.get('request_id'),
+        )
 
     def create_training_run(self):
         try:

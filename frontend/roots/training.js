@@ -5,6 +5,11 @@ RootsTraining = class extends BaseTraining {
     static terminal_states = ['completed', 'cancelled', 'failed']
     static training_states = {}
     static imported_labels = new Map()
+    static start_pending = false
+    static cancel_requested = false
+    static upload_request = undefined
+    static active_options = undefined
+    static pending_submission = undefined
 
     static clear_imported_labels(){
         this.imported_labels = new Map()
@@ -47,7 +52,7 @@ RootsTraining = class extends BaseTraining {
     }
 
     static async on_start_training(){
-        if(this.active_run_id)
+        if(this.active_run_id || this.start_pending || this.pending_submission)
             return
 
         const filenames = this.get_selected_files()
@@ -59,35 +64,89 @@ RootsTraining = class extends BaseTraining {
             })
             return
         }
+        this.start_pending = true
+        this.cancel_requested = false
         this.training_states[options.training_type] = 'running'
         $('#training-new-modelname-field').hide()
         try {
             this.show_modal()
             await this.upload_training_data(filenames)
-            const run = await RootSecurity.request('/api/training/runs', 'POST', {
+            this.check_upload_cancellation()
+            const request_id = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                .map(value => value.toString(16).padStart(2, '0')).join('')
+            this.active_options = options
+            this.pending_submission = {
+                request_id: request_id,
                 filenames: filenames,
                 label_filenames: filenames.map(filename => this.imported_labels.get(filename).name),
                 options: options,
                 label_review: {source: 'user_reviewed', confirmed: true},
-            })
-            this.active_run_id = run.id
-            const result = await this.poll_until_finished(options)
-            await GLOBAL.App.Settings.load_settings()
-            this.update_model_info()
+            }
+            const result = await this.submit_or_reconnect_training(options)
+            await this.refresh_training_settings()
             return result
         } catch(error) {
-            console.error(error)
-            this.training_states[options.training_type] = 'failed'
-            const diagnostic = error?.responseJSON?.diagnostic_id
-            const message = error?.responseJSON?.message ?? error?.message ?? 'Training failed.'
-            this.fail_modal(message)
+            this.handle_training_error(error, options)
+        } finally {
+            this.start_pending = false
+            this.upload_request = undefined
+        }
+    }
+
+    static handle_training_error(error, options){
+        if(this.cancel_requested && !this.active_run_id && !this.pending_submission){
+            this.training_states[options.training_type] = 'cancelled'
+            this.interrupted_modal()
+            return
+        }
+        console.error(error)
+        // A lost poll response does not establish that the server-side job failed.
+        this.training_states[options.training_type] = this.pending_submission
+            ? 'unknown' : (this.active_run_id ? 'running' : 'failed')
+        const diagnostic = error?.responseJSON?.diagnostic_id
+        const detail = RootSecurity.error_message(error, 'Training failed.')
+        const message = this.pending_submission
+            ? `Training submission could not be confirmed. Use Retry to recover the same request${this.cancel_requested ? ' and cancel it' : ''}. ${detail}`
+            : (this.active_run_id
+                ? `Connection to training was interrupted. Use Retry to reconnect to the same run. ${detail}`
+                : detail)
+        this.fail_modal(message)
+        $('body').toast({
+            message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
+            class: 'error', displayTime: 0, closeIcon: true,
+        })
+    }
+
+    static async submit_or_reconnect_training(options){
+        if(this.pending_submission){
+            let run
+            try {
+                run = await RootSecurity.request('/api/training/runs', 'POST', this.pending_submission)
+            } catch(error) {
+                // Input rejection happens before job creation. Let the user
+                // correct those options; transport failures retain the identity.
+                if([400, 413, 415, 422].includes(Number(error?.status)))
+                    this.pending_submission = undefined
+                throw error
+            }
+            this.active_run_id = run.id
+            this.pending_submission = undefined
+        }
+        if(this.cancel_requested)
+            await RootSecurity.request(`/api/training/runs/${this.active_run_id}/cancel`, 'POST')
+        return this.poll_until_finished(options)
+    }
+
+    static async refresh_training_settings(){
+        try {
+            await GLOBAL.App.Settings.load_settings()
+            this.update_model_info()
+        } catch(error) {
+            // Settings refresh is independent of the confirmed training outcome.
             $('body').toast({
-                message: diagnostic ? `${message} Diagnostic ID: ${diagnostic}` : message,
-                class: 'error',
-                displayTime: 0,
-                closeIcon: true,
+                message: 'Training has finished, but model information could not be refreshed. Open Settings to reconnect.',
+                class: 'error', displayTime: 0, closeIcon: true,
             })
-            throw error
         }
     }
 
@@ -168,15 +227,43 @@ RootsTraining = class extends BaseTraining {
         $('#training-modal').modal({closable:true})
     }
 
-    static on_retry_training(){
+    static async on_retry_training(){
+        if(this.start_pending)
+            return
+        if(this.active_run_id || this.pending_submission){
+            const options = this.active_options ?? this.get_training_options()
+            this.start_pending = true
+            try {
+                this.show_modal()
+                const result = await this.submit_or_reconnect_training(options)
+                await this.refresh_training_settings()
+                return result
+            } catch(error) {
+                this.handle_training_error(error, options)
+            } finally {
+                this.start_pending = false
+            }
+            return
+        }
         $('#training-modal').modal('hide')
         return this.on_start_training()
     }
 
+    static check_upload_cancellation(){
+        if(this.cancel_requested)
+            throw new Error('Training upload was cancelled.')
+    }
+
     static async upload_training_data(filenames){
         for(const filename of filenames){
-            await RootsFileInput.ensure_uploaded(GLOBAL.files[filename])
-            await RootsFileInput.ensure_uploaded(this.imported_labels.get(filename))
+            for(const file of [GLOBAL.files[filename], this.imported_labels.get(filename)]){
+                this.check_upload_cancellation()
+                await RootsFileInput.ensure_uploaded(file, {
+                    on_request: request => { this.upload_request = request },
+                    is_cancelled: () => this.cancel_requested,
+                })
+                this.check_upload_cancellation()
+            }
         }
     }
 
@@ -188,7 +275,7 @@ RootsTraining = class extends BaseTraining {
         
         super.update_model_info(model_type)
         const state = this.training_states[model_type]
-        if(state == 'cancelled' || state == 'failed' || state == 'running'){
+        if(['cancelled', 'failed', 'running', 'unknown'].includes(state)){
             $('#training-new-modelname-field').hide()
             if(GLOBAL.settings.active_models[model_type] == '')
                 $('#training-model-info-label').text(
@@ -213,6 +300,8 @@ RootsTraining = class extends BaseTraining {
     }
 
     static async on_cancel_training(){
+        this.cancel_requested = true
+        this.upload_request?.abort?.()
         const $button = $('#training-modal #cancel-training-button')
             .prop('disabled', true)
             .attr('aria-disabled', 'true')
@@ -224,8 +313,8 @@ RootsTraining = class extends BaseTraining {
                     `/api/training/runs/${this.active_run_id}/cancel`,
                     'POST',
                 )
-            else
-                await RootSecurity.request('/stop_training', 'POST')
+            else if(this.pending_submission && !this.start_pending)
+                await this.on_retry_training()
         } catch(error) {
             $button
                 .prop('disabled', false)

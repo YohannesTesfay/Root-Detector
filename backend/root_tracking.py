@@ -160,17 +160,19 @@ def process(
     )
     run_id = uuid.uuid4().hex
     outputname = f'{filename0}.{os.path.basename(filename1)}.{run_id}'
-    device = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
+    from backend.device import resolve_device
+    device = resolve_device(settings)
     
-    if previous_data is None:  #FIXME: better condition?
+    if previous_data is None:
         seed_identity = None
         sampling_seed = None
         if sampling_mode == 'deterministic':
             sampling_seed, seed_identity = deterministic_sampling_seed(
                 filename0, filename1, seg0, seg1, settings
             )
-        img0    = torchvision.transforms.ToTensor()(PIL.Image.open(filename0))
-        img1    = torchvision.transforms.ToTensor()(PIL.Image.open(filename1))
+        with PIL.Image.open(filename0) as image0, PIL.Image.open(filename1) as image1:
+            img0 = torchvision.transforms.ToTensor()(image0.convert('RGB'))
+            img1 = torchvision.transforms.ToTensor()(image1.convert('RGB'))
         with GLOBALS.processing_lock:
             jobs.raise_if_cancelled(settings)
             def on_progress(value, phase):
@@ -243,6 +245,8 @@ def process(
             previous_map = previous_prefix + '.imap.npy'
             if os.path.isfile(previous_map):
                 imap = np.load(previous_map, allow_pickle=False).astype('float32')
+                if imap.shape != tuple(seg0.shape) + (2,) or not np.isfinite(imap).all():
+                    raise ValueError('Saved tracking alignment is damaged. Run tracking again.')
             else:
                 previous_points0 = np.asarray(previous_data['points0']).reshape(-1, 2)
                 previous_points1 = np.asarray(previous_data['points1']).reshape(-1, 2)
@@ -403,6 +407,8 @@ def validate_previous_tracking_data(
     sampling_mode:str,
 ) -> None:
     """Reject corrections imported from another pair, model, or sampling mode."""
+    if not isinstance(previous_data, dict):
+        raise ValueError('Saved tracking points must be an object. Run tracking again.')
     for key, path in (('filename0', filename0), ('filename1', filename1)):
         if key in previous_data and previous_data[key] != os.path.basename(path):
             raise ValueError('Saved tracking points belong to a different image pair. Run tracking again.')
@@ -467,6 +473,34 @@ def validate_previous_tracking_data(
                 'Saved tracking points do not match these images, segmentations, or models. '
                 'Run tracking again before correcting.'
             )
+
+    def coordinates(key, columns, bounds):
+        value = previous_data.get(key)
+        if not isinstance(value, (list, tuple, np.ndarray)):
+            raise ValueError('Saved {} are missing or invalid. Run tracking again.'.format(key))
+        try:
+            array = np.asarray(value, dtype='float64')
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError('Saved {} must be numeric coordinates.'.format(key)) from exc
+        if array.shape == (0,):
+            array = array.reshape(0, columns)
+        if (array.ndim != 2 or array.shape[1] != columns or len(array) > 100000
+                or not np.isfinite(array).all()):
+            raise ValueError('Saved {} must be finite coordinate rows.'.format(key))
+        if np.any(array < 0) or np.any(array >= np.asarray(bounds)):
+            raise ValueError('Saved {} lie outside the image. Run tracking again.'.format(key))
+        return array
+
+    points0 = coordinates('points0', 2, segmentation0.shape)
+    points1 = coordinates('points1', 2, segmentation1.shape)
+    if len(points0) != len(points1):
+        raise ValueError('Saved tracking point lists have different lengths. Run tracking again.')
+    # Correction strokes are drawn in the displayed, observation-2 XY grid.
+    height, width = segmentation1.shape
+    coordinates('corrections', 4, (width, height, width, height))
+    count = previous_data.get('n_matched_points')
+    if isinstance(count, bool) or not isinstance(count, (int, np.integer)) or count < 0:
+        raise ValueError('Saved automatic match count must be a nonnegative integer.')
 
 
 def validate_tracking_pair_shapes(
@@ -920,6 +954,7 @@ def combine_csv_statistics(
 def compile_results_into_zip(
     file_pairs:FilePairs,
     preparations:tp.Optional[tp.Dict[str, tp.Dict[str, tp.Any]]]=None,
+    companions:tp.Optional[tp.List[tp.Dict[str, tp.Any]]]=None,
 ) -> str:
     '''Create a zip file containing the processed tracking results.
        (Doing this here in Python because frontend passes out if too many files)'''
@@ -967,7 +1002,7 @@ def compile_results_into_zip(
         file_pairs, include_index=True
     )
     selection_json = json.dumps({
-        'pairs': selected_pairs, 'preparations': preparations or {},
+        'pairs': selected_pairs, 'preparations': preparations or {}, 'companions': companions or [],
     }, sort_keys=True, separators=(',', ':')).encode('utf-8')
     archive_id = hashlib.sha256(selection_json).hexdigest()[:24]
     resultpath = os.path.join(cache_path, 'tracking_results.{}.zip'.format(archive_id))
@@ -980,6 +1015,13 @@ def compile_results_into_zip(
     os.close(handle)
     try:
         with zipfile.ZipFile(temporary_path, 'w') as resultzip:
+            if companions:
+                resultzip.writestr('preparation-companions.json', json.dumps({
+                    'schema': 1, 'companions': companions,
+                }, indent=2, sort_keys=True))
+                for record in companions:
+                    resultzip.write(os.path.join(cache_path, record['output_name']),
+                                    'preparation-companions/' + record['output_name'])
             if preparations:
                 resultzip.writestr(
                     'preparation-manifest.json',

@@ -96,11 +96,12 @@ def test_tracking_pair_shapes_are_validated_before_matching():
         )
 
 
-def test_tracking_uses_released_observation0_mask_and_exports_provenance(tmp_path, monkeypatch):
+@pytest.mark.parametrize('image_mode', ['RGB', 'L', 'RGBA'])
+def test_tracking_uses_released_observation0_mask_and_exports_provenance(tmp_path, monkeypatch, image_mode):
     image0 = str(tmp_path / 'observation0.png')
     image1 = str(tmp_path / 'observation1.png')
-    PIL.Image.new('RGB', (2, 2)).save(image0)
-    PIL.Image.new('RGB', (2, 2)).save(image1)
+    PIL.Image.new(image_mode, (2, 2)).save(image0)
+    PIL.Image.new(image_mode, (2, 2)).save(image1)
 
     segmentation = np.ones((2, 2), dtype='float32')
     for image in (image0, image1):
@@ -119,16 +120,16 @@ def test_tracking_uses_released_observation0_mask_and_exports_provenance(tmp_pat
     monkeypatch.setattr(root_tracking, 'ensure_exclusionmask', ensure_exclusionmask)
     monkeypatch.setattr(root_tracking.paths, 'get_cache_path', lambda: str(tmp_path))
 
-    points = np.arange(32, dtype='float32').reshape(16, 2)
+    points = (np.arange(32, dtype='float32') % 2).reshape(16, 2)
     captured = []
+    def fake_match(_model, first, second, *_args, **kwargs):
+        assert first.shape == second.shape == (3, 2, 2)
+        captured.append(kwargs['sampling_seed'])
+        return {'points0': points, 'points1': points, 'matched_percentage': 1.0}
     monkeypatch.setattr(
         root_tracking.tracking_matcher,
         'match_images',
-        lambda *_args, **kwargs: captured.append(kwargs['sampling_seed']) or {
-            'points0': points,
-            'points1': points,
-            'matched_percentage': 1.0,
-        },
+        fake_match,
     )
 
     class MatchModel:
@@ -286,6 +287,8 @@ def test_saved_tracking_points_require_matching_pair_model_and_sampling(tmp_path
         'filename1': second.name,
         'tracking_model': 'track-a',
         'segmentation_model': 'detect-a',
+        'points0': [[0, 0]], 'points1': [[1, 1]],
+        'corrections': [], 'n_matched_points': 1,
     }
     def validate(data, mode):
         root_tracking.validate_previous_tracking_data(
@@ -293,6 +296,15 @@ def test_saved_tracking_points_require_matching_pair_model_and_sampling(tmp_path
         )
     # Older exports without matcher metadata remain correctable in original mode.
     validate(saved, 'legacy')
+    for changes, message in [
+        ({'points0': [[float('nan'), 0]]}, 'finite'),
+        ({'points1': [[2, 0]]}, 'outside'),
+        ({'points1': []}, 'different lengths'),
+        ({'corrections': [[0, 0, 0]]}, 'finite'),
+        ({'n_matched_points': -1}, 'nonnegative'),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            validate(dict(saved, **changes), 'legacy')
     with pytest.raises(ValueError, match='different image pair'):
         validate(dict(saved, filename1='another.png'), 'legacy')
     with pytest.raises(ValueError, match='different tracking model'):

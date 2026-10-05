@@ -129,7 +129,7 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
-    assert 'rootdetector-web-rc2-1' in security
+    assert 'rootdetector-web-app-rc1-1' in security
 
 
 def test_tracking_tab_explains_detection_only_runs():
@@ -161,7 +161,7 @@ def test_windows_workflow_uploads_only_the_full_portable_zip():
     assert 'actions/checkout@v5' in workflow
     assert 'actions/setup-python@v6' in workflow
     assert 'actions/upload-artifact@v6' in workflow
-    assert 'node tests/testcases_js/test_tracking_utils.js' in workflow
+    assert 'Get-ChildItem tests/testcases_js/test_*.js' in workflow
     assert 'path: builds/*_DigIT_RootDetector.zip' in workflow
     assert 'path: builds/*.zip' not in workflow
 

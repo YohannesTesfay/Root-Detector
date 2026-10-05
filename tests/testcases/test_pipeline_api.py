@@ -117,7 +117,7 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     session = client.get('/api/session', headers={'Host': 'localhost'})
     assert session.status_code == 200
     assert session.get_json()['token'] == app.session_token
-    assert session.get_json()['asset_schema'] == 'rootdetector-web-rc2-1'
+    assert session.get_json()['asset_schema'] == 'rootdetector-web-app-rc1-1'
     assert session.headers['X-Content-Type-Options'] == 'nosniff'
     assert session.headers['X-Frame-Options'] == 'DENY'
     assert "frame-ancestors 'none'" in session.headers['Content-Security-Policy']

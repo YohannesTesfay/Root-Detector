@@ -103,8 +103,13 @@ RootsSettings = class extends BaseSettings{
             $('#settings-gpu-available-box').show()
             $('#settings-gpu-name').text(data['available_gpu'])
         } else {
-            $('#settings-no-gpu-warning').show()                        //maybe just hide the whole gpu field?
-            $('#settings-gpu-available-box').hide()
+            $('#settings-no-gpu-warning')
+                .text(data.device_status?.warning ?? 'GPU not available. CPU processing is supported.')
+                .show()
+            // Keep the control accessible so a saved GPU preference can be
+            // explicitly changed to CPU after a driver/device becomes unavailable.
+            $('#settings-gpu-available-box').show()
+            $('#settings-gpu-name').text('Unavailable')
         }
         console.log(data.settings)
         $('#settings-gpu-enable').checkbox(!!data.settings['use_gpu']? 'check' : 'uncheck')

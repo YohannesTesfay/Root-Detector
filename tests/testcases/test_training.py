@@ -96,6 +96,45 @@ def test_training_adapts_released_model_that_returns_none(monkeypatch, tmp_path)
     assert result.state == 'completed'
 
 
+@pytest.mark.parametrize('training_type', ['detection', 'exclusion_mask'])
+def test_retraining_unsaved_model_invalidates_cached_predictions(training_type, monkeypatch, tmp_path):
+    import numpy as np
+    import PIL.Image
+    from backend import root_detection
+
+    monkeypatch.setattr(training, 'get_cache_path', lambda: str(tmp_path))
+    image = str(tmp_path / 'input.png')
+    PIL.Image.new('RGB', (8, 8)).save(image)
+    model = FakeModel('completed')
+    settings = FakeSettings(model)
+    settings.models[training_type] = model
+    settings.active_models[training_type] = 'saved-model'
+    settings.exmask_enabled = True
+    calls = []
+
+    def predict(*_args, **_kwargs):
+        calls.append(len(model.calls))
+        return np.ones((8, 8), dtype='float32') * (len(model.calls) % 2)
+
+    monkeypatch.setattr(root_detection, 'run_model', predict)
+    evaluate = (
+        lambda: root_detection.ensure_soft_segmentation(image, settings)[1]
+    ) if training_type == 'detection' else (
+        lambda: root_detection.maybe_compute_exclusionmask(image, settings)
+    )
+    training_options = options(training_type=training_type)
+    assert training.start_training([image], ['label.png'], training_options, settings).completed
+    first_identity = root_detection._model_identity(settings, training_type)
+    first = evaluate()
+    assert np.array_equal(evaluate(), first)
+    assert len(calls) == 1
+    assert training.start_training([image], ['label.png'], training_options, settings).completed
+    assert root_detection._model_identity(settings, training_type) != first_identity
+    second = evaluate()
+    assert len(calls) == 2
+    assert not np.array_equal(first, second)
+
+
 def test_training_does_not_treat_unconfirmed_legacy_none_as_success(monkeypatch, tmp_path):
     monkeypatch.setattr(training, 'get_cache_path', lambda: str(tmp_path))
 

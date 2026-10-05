@@ -179,7 +179,7 @@ RootPreparation = class {
                 $('#preparation-preview-wrap, #preparation-fields, #preparation-apply').hide()
                 $('#preparation-source-info').text(`${this.prepared.length} prepared copy/copies are ready.`)
                 $('#preparation-summary').text(
-                    'Download the prepared copies and manifest to retain them, then import them for analysis. '
+                    'Download the prepared copies and manifest to retain them; reopen that ZIP with Files → Load Input Images. '
                     + 'The original files have not been changed.'
                 )
                 $('#preparation-download, #preparation-import').show()

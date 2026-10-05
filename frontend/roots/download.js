@@ -6,6 +6,32 @@ async function download_root_zip(filename, zipdata){
     download_blob(filename, blob)
 }
 
+function prepared_companions_for_files(filenames){
+    const records = new Map()
+    for(const filename of filenames)
+        for(const record of GLOBAL.files[filename]?.prepared_companions ?? [])
+            records.set(record.output_name, record)
+    return [...records.values()]
+}
+
+function add_prepared_companions(zipdata, filenames){
+    const companions = prepared_companions_for_files(filenames)
+    if(!companions.length)
+        return
+    zipdata['preparation-companions.json'] = JSON.stringify({schema: 1, companions}, null, 2)
+    for(const record of companions){
+        const source = filenames.map(name => GLOBAL.files[name]).find(
+            file => file.preparation?.preparation_id == record.preparation_id,
+        )
+        zipdata[`preparation-companions/${record.output_name}`] = (async () => {
+            await RootSecurity.request('/api/preparation/validate', 'POST', {
+                filename: source.name, manifest: source.preparation, companions: [record],
+            })
+            return await fetch_as_blob(url_for_image(record.output_name))
+        })()
+    }
+}
+
 RootDetectionDownload = class extends BaseDownload{
     static async on_single_item_download_click(event){
         const filename = $(event.target).closest('[filename]').attr('filename')
@@ -62,6 +88,7 @@ RootDetectionDownload = class extends BaseDownload{
             zipdata['preparation-manifest.json'] = JSON.stringify({
                 schema: 1, preparations: [f.preparation],
             }, null, 2)
+        add_prepared_companions(zipdata, [filename])
         return zipdata;
     }
 
@@ -84,6 +111,7 @@ RootDetectionDownload = class extends BaseDownload{
             zipdata['preparation-manifest.json'] = JSON.stringify({
                 schema: 1, preparations: preparations,
             }, null, 2)
+        add_prepared_companions(zipdata, filenames)
         return zipdata;
     }
 
@@ -122,15 +150,20 @@ RootTrackingDownload = class extends BaseDownload {
         const $root = $(event.target).closest('[filename0][filename1][filename]')
         const filename = $root.attr('filename')
         const data = GLOBAL.files[$root.attr('filename0')]?.tracking_results?.[$root.attr('filename1')]
-        const zipdata = this.zipdata_for_file(filename)
-        if(!zipdata){
+        if(!this.is_exportable_result(data)){
             $('body').toast({message:'No tracking result is available for this pair.', class:'warning'})
             return
         }
         const $button = $(event.currentTarget ?? event.target)
         $button.addClass('loading disabled').attr('aria-busy', 'true')
         try {
-            await download_root_zip(`RootDetector-tracking-${data?.run_id ?? filename}.zip`, zipdata)
+            const pair = [$root.attr('filename0'), $root.attr('filename1')]
+            if(data.run_id)
+                pair.push(data.run_id)
+            const result = await RootSecurity.request(
+                '/compile_tracking_results', 'POST', this.selection_payload([pair]),
+            )
+            downloadURI(`RootDetector-tracking-${data.run_id ?? filename}.zip`, url_for_image(result))
         } catch(error) {
             $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
@@ -144,6 +177,17 @@ RootTrackingDownload = class extends BaseDownload {
             && result?.statistics && Array.isArray(result?.points0)
             && Array.isArray(result?.points1)
         )
+    }
+
+    static selection_payload(file_pairs){
+        const names = new Set(file_pairs.flatMap(pair => pair.slice(0, 2)))
+        return {
+            file_pairs,
+            companions: prepared_companions_for_files([...names]),
+            preparations: Object.fromEntries(Object.entries(GLOBAL.files)
+                .filter(([name, file]) => names.has(name) && !!file.preparation)
+                .map(([name, file]) => [name, file.preparation])),
+        }
     }
 
     //override
@@ -225,18 +269,10 @@ RootTrackingDownload = class extends BaseDownload {
         this.download_in_progress = true
         $button.addClass('loading disabled').attr('aria-busy', 'true')
         try {
-            const pair_names = new Set(file_pairs.flatMap(pair => pair.slice(0, 2)))
             const result = await RootSecurity.request(
                 '/compile_tracking_results',
                 'POST',
-                {
-                    file_pairs: file_pairs,
-                    preparations: Object.fromEntries(
-                        Object.entries(GLOBAL.files)
-                            .filter(([name, file]) => pair_names.has(name) && !!file.preparation)
-                            .map(([name, file]) => [name, file.preparation]),
-                    ),
-                },
+                this.selection_payload(file_pairs),
             )
             downloadURI('RootDetector-tracking-results.zip', url_for_image(result))
         } catch(error) {

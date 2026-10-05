@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import typing as tp
+import uuid
 import numpy as np
 
 import PIL.Image
@@ -23,7 +24,8 @@ _FILE_HASH_CACHE_LIMIT = 32
 
 def run_model(image_path:str, settings:tp.Any, modeltype:str, **kwargs) -> np.ndarray:
     basename   = os.path.basename(image_path)
-    device     = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
+    from backend.device import resolve_device
+    device = resolve_device(settings)
     jobs.raise_if_cancelled(settings)
     with backend.GLOBALS.processing_lock:
         def progress_callback(value):
@@ -99,6 +101,12 @@ def _sha256(path:str) -> str:
 def _model_identity(settings:tp.Any, modeltype:str='detection') -> dict:
     modelname = settings.active_models.get(modeltype, '')
     identity = {'name': modelname}
+    if not modelname:
+        revisions = getattr(settings, '_model_revisions', {})
+        if modeltype not in revisions:
+            mark_model_updated(settings, modeltype)
+        identity['unsaved_revision'] = settings._model_revisions[modeltype]
+        return identity
     for ending in ['.pt.zip', '.pt', '.pkl']:
         candidate = os.path.join(get_models_path(), modeltype, modelname + ending)
         if modelname and os.path.isfile(candidate):
@@ -108,6 +116,13 @@ def _model_identity(settings:tp.Any, modeltype:str='detection') -> dict:
             })
             break
     return identity
+
+
+def mark_model_updated(settings:tp.Any, modeltype:str) -> None:
+    """Give mutable, unsaved weights a new cache/provenance identity."""
+    revisions = dict(getattr(settings, '_model_revisions', {}))
+    revisions[modeltype] = uuid.uuid4().hex
+    settings._model_revisions = revisions
 
 
 def _cache_key(manifest:dict) -> str:

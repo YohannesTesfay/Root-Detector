@@ -1,6 +1,7 @@
 from base.backend.settings import Settings as BaseSettings
 import typing as tp
 import torch
+from backend.device import get_device_status
 
 class Settings(BaseSettings):
     exmask_enabled: bool
@@ -31,7 +32,8 @@ class Settings(BaseSettings):
 
     def get_settings_as_dict(self):
         s = super().get_settings_as_dict()
-        s['available_gpu'] = torch.cuda.get_device_name() if torch.cuda.is_available() else None
+        s['device_status'] = get_device_status(use_gpu=bool(getattr(self, 'use_gpu', False)))
+        s['available_gpu'] = s['device_status']['available_gpu']
         return s
 
 
