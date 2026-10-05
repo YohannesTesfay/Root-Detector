@@ -53,7 +53,9 @@ jobs:
           $output = 'builds/RootDetector-Windows-portable.zip'
           Copy-Item $archives[0].FullName $output
           $hash = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
-          "$hash  RootDetector-Windows-portable.zip" | Set-Content builds/RootDetector-Windows-portable.sha256
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'builds/RootDetector-Windows-portable.sha256'), "$hash  RootDetector-Windows-portable.zip`n", [System.Text.Encoding]::ASCII)
+          python -c "import pathlib; data=pathlib.Path('builds/RootDetector-Windows-portable.sha256').read_bytes(); assert data.endswith(b'\n') and b'\r' not in data"
+          if ($LASTEXITCODE -ne 0) { throw 'Portable checksum file must use LF line endings.' }
           python -c "import json,zipfile; z=zipfile.ZipFile('builds/RootDetector-Windows-portable.zip'); m=json.loads(z.read('release.json')); assert m==json.load(open('release.json'))"
           if ($LASTEXITCODE -ne 0) { throw 'Portable archive version differs from source.' }
 

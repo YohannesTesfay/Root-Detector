@@ -73,7 +73,9 @@ jobs:
         run: |
           $artifact = Get-Item builds/RootDetector-Windows-Setup.exe
           $hash = (Get-FileHash -Algorithm SHA256 $artifact).Hash.ToLowerInvariant()
-          "$hash  $($artifact.Name)" | Set-Content builds/RootDetector-Windows-Setup.sha256
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'builds/RootDetector-Windows-Setup.sha256'), "$hash  $($artifact.Name)`n", [System.Text.Encoding]::ASCII)
+          python -c "import pathlib; data=pathlib.Path('builds/RootDetector-Windows-Setup.sha256').read_bytes(); assert data.endswith(b'\n') and b'\r' not in data"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer checksum file must use LF line endings.' }
       - name: Silent install and uninstall smoke
         shell: pwsh
         run: |
