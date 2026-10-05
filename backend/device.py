@@ -9,11 +9,23 @@ class DeviceUnavailableError(RuntimeError):
 def get_device_status(use_gpu=False):
     """Report CUDA capability without letting driver errors break Settings."""
     cuda_runtime = getattr(torch.version, 'cuda', None)
+    cuda_built = bool(cuda_runtime)
+    # Portable builds can retain CPU Python version metadata after provisioning
+    # CUDA DLLs. Prefer the native capability flag over torch.version.cuda.
+    cuda_backend = getattr(getattr(torch, 'backends', None), 'cuda', None)
+    is_built = getattr(cuda_backend, 'is_built', None)
+    if callable(is_built):
+        try:
+            cuda_built = bool(is_built())
+        except Exception:
+            # Older/custom runtimes may lack the native flag; metadata remains
+            # useful for diagnostics while live device availability is checked below.
+            pass
     available_gpu = None
     reason = None
     try:
         if not torch.cuda.is_available():
-            reason = ('This PyTorch runtime has no CUDA support.' if not cuda_runtime
+            reason = ('This PyTorch runtime has no CUDA support.' if not cuda_built
                       else 'A compatible NVIDIA GPU and driver could not be initialized.')
         else:
             # Some driver problems appear only when CUDA performs lazy initialization.
@@ -30,6 +42,7 @@ def get_device_status(use_gpu=False):
         'effective_device': ('cuda' if available_gpu else None) if use_gpu else 'cpu',
         'available_gpu': available_gpu,
         'cuda_available': bool(available_gpu),
+        'cuda_built': cuda_built,
         'cuda_runtime': cuda_runtime,
         'warning': warning,
         'unavailable_reason': reason,

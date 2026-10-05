@@ -73,17 +73,20 @@ def log_exception(diagnostic_id, stage, item_id, exc, settings=None):
     )
 
 
-def _torch_details():
+def _torch_details(settings=None):
     try:
         import torch
         details = {
             'version': getattr(torch, '__version__', 'unknown'),
             'cuda_available': bool(torch.cuda.is_available()),
             'cuda_version': getattr(getattr(torch, 'version', None), 'cuda', None),
-            'effective_inference_device': (
-                'cuda' if torch.cuda.is_available() else 'cpu'
-            ),
         }
+        requested = None if settings is None else ('cuda' if getattr(settings, 'use_gpu', False) else 'cpu')
+        details['requested_device'] = requested
+        details['effective_inference_device'] = (
+            None if requested is None else
+            ('cuda' if details['cuda_available'] else None) if requested == 'cuda' else 'cpu'
+        )
         if details['cuda_available'] and details['cuda_version'] is None:
             details['runtime_note'] = (
                 'The portable build loads CUDA runtime libraries at first launch; '
@@ -139,7 +142,7 @@ def system_snapshot(settings=None):
         'platform': platform.platform(),
         'python': sys.version,
         'frozen': bool(getattr(sys, 'frozen', False)),
-        'torch': _torch_details(),
+        'torch': _torch_details(settings),
         'disk': disk,
         'settings': selected_settings,
         'privacy': (
