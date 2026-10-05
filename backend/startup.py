@@ -80,6 +80,17 @@ def ensure_torch() -> None:
         #only for windows
         return
 
+    if os.environ.get('ROOTDETECTOR_INSTALLED') == '1':
+        # The installer carries the complete runtime. Never try to mutate the
+        # installed program directory or load unverified DLLs from user data.
+        executable_root = os.path.dirname(os.path.dirname(sys.executable))
+        bundled_libs = os.path.join(executable_root, 'main', 'torch', 'lib')
+        if not os.path.isdir(bundled_libs) or not any(
+            name.lower().endswith('.dll') for name in os.listdir(bundled_libs)
+        ):
+            raise RuntimeError('The installed PyTorch runtime is incomplete; reinstall RootDetector.')
+        return
+
     #root             = path_to_main_module()
     root             = './'
     path_to_torchlib = os.path.join(root, 'main', 'torch', 'lib')
@@ -89,4 +100,3 @@ def ensure_torch() -> None:
 
     #not ok, first start, download torch
     download_and_extract_pytorch_libs( os.path.join(root, 'main') )
-
