@@ -70,6 +70,18 @@ def test_settings_actions_are_keyboard_focusable():
     assert 'overflow-y: auto' in styles
 
 
+def test_modal_close_icons_are_centered_in_their_buttons():
+    template = read('templates/roots/modals.html')
+    styles = read('frontend/roots/styles.css')
+
+    assert 'aria-label="Close About"' in template
+    assert 'aria-label="Close settings"' in template
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {' in styles
+    assert 'align-items: center;' in styles
+    assert 'justify-content: center;' in styles
+    assert 'padding: 0;' in styles
+
+
 def test_training_can_be_closed_or_retried_after_interruption():
     template = read('templates/roots/modals.html')
     training = read('frontend/roots/training.js')
