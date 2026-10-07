@@ -7,11 +7,13 @@ var RootTracking = new function() {
 
         const pairing_plan = plan_tracking_pairs(files)
         const table_rows = []
+        for(const file of Object.values(GLOBAL.files))
+            file.tracking_results = {}
         for(const [filename0, filename1] of pairing_plan.pairs){
             table_rows.push(
                 $('template#tracking-item').tmpl({filename0:filename0, filename1:filename1})
             )
-            GLOBAL.files[filename0].tracking_results = {[filename1]: {}};  //TODO: refactor
+            GLOBAL.files[filename0].tracking_results[filename1] = {}
         }
 
         $table.append(table_rows)
@@ -55,8 +57,8 @@ var RootTracking = new function() {
         segmentation0_file    = rename_file(await segmentation0_file, `${filename0}.segmentation.png`)
         segmentation1_file    = rename_file(await segmentation1_file, `${filename1}.segmentation.png`)
 
-        await upload_file_to_flask(segmentation0_file)
-        await upload_file_to_flask(segmentation1_file)
+        await RootSecurity.upload_file(segmentation0_file)
+        await RootSecurity.upload_file(segmentation1_file)
 
         const text = await tracking_results_file.text()
         const jsondata = JSON.parse(text)
@@ -121,18 +123,18 @@ var RootTracking = new function() {
     }
 
     var process_single = async function(filename0, filename1, upload_images=true, extra_data={}){
-        //TODO: clear
         var $root     = $(`[filename0="${filename0}"][filename1="${filename1}"]`)
         var $dimmer   = $root.find('.dimmer')
         
+        clear_tracking_data(filename0, filename1)
         $dimmer.dimmer({closable:false}).dimmer('show');
         $dimmer.find('.content.processing').show()
         $dimmer.find('.content.failed').hide()
 
         if(upload_images){
             try {    
-                await upload_file_to_flask(GLOBAL.files[filename0]);
-                await upload_file_to_flask(GLOBAL.files[filename1]);
+                await RootSecurity.upload_file(GLOBAL.files[filename0]);
+                await RootSecurity.upload_file(GLOBAL.files[filename1]);
             } catch (error) {
                 set_failed(filename0, filename1, error)
                 return;
@@ -165,12 +167,16 @@ var RootTracking = new function() {
         }
     }
 
-    /* TODO: states
-    unprocessed: dimmer off, view checkboxes/download disabled, global.data clear, growthmap cleared, processing button enabled
-    processing:  dimmer on,  view checkboxes/download disabled, ---              , ---,               processing button disabled
-    processed:   dimmer off, view checkboxes/download enabled,  global.data set  , growthmap set,     processing button enabled
-    failed: ?
-    */
+    var clear_tracking_data = function(filename0, filename1){
+        GLOBAL.files[filename0].tracking_results[filename1] = {}
+        const $root = $(`[filename0="${filename0}"][filename1="${filename1}"]`)
+        $root.find('img.right.overlay').removeAttr('src')
+        $root.find('polyline.matched-points').attr('points', '')
+        $root.find('.show-turnover-checkbox, .show-matched-points-checkbox').addClass('disabled')
+        $root.find('a.download').addClass('disabled')
+        $root.filter('.title').find('label').css('font-weight', 'normal')
+    }
+
     var set_tracking_data = function(filename0, filename1, data){
         console.log('Tracking results: ', data)
         GLOBAL.files[filename0].tracking_results[filename1] = data;
@@ -200,6 +206,7 @@ var RootTracking = new function() {
             data_or_error?.code == 'too_many_roots'
         )
         const no_matches     = (data_or_error?.success === false)
+        const review_available = no_matches && is_processed(filename0, filename1)
 
         $dimmer.find('.content.processing').hide()
         $dimmer.find('.content.failed').show()
@@ -207,13 +214,17 @@ var RootTracking = new function() {
         $dimmer.find('.no-matches-message').toggle(no_matches)
         $dimmer.dimmer({closable:true});
 
-        $root.find('a.download').addClass('disabled')
-        $root.filter('.title').find('label').css('font-weight', 'normal')
-
+        if(!review_available)
+            clear_tracking_data(filename0, filename1)
         if(too_many_roots)
             GLOBAL.files[filename0].tracking_results[filename1] = {
                 success: 'TOO_MANY_ROOTS',
                 code: 'too_many_roots',
+            };
+        else if(!no_matches)
+            GLOBAL.files[filename0].tracking_results[filename1] = {
+                success: false,
+                code: data_or_error?.code ?? 'tracking_failed',
             };
     }
 
@@ -395,6 +406,10 @@ var RootTracking = new function() {
             n_matched_points   : tracking_results.n_matched_points,
             tracking_model     : tracking_results.tracking_model,
             segmentation_model : tracking_results.segmentation_model,
+            tracking_matcher   : tracking_results.tracking_matcher,
+            run_id             : tracking_results.run_id,
+            run_profile        : tracking_results.run_profile,
+            match_device       : tracking_results.match_device,
         }
 
         process_single(filename0, filename1, false, post_data);
@@ -402,7 +417,7 @@ var RootTracking = new function() {
 
     var is_processed = function(filename0, filename1){
         var r = GLOBAL.files[filename0].tracking_results[filename1];
-        return r.growthmap != undefined;
+        return r?.growthmap != undefined;
     }
 
 

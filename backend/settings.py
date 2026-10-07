@@ -1,9 +1,12 @@
 from base.backend.settings import Settings as BaseSettings
 import typing as tp
 import torch
+from backend.device import get_device_status
 
 class Settings(BaseSettings):
     exmask_enabled: bool
+    tracking_exclusion_policy: str
+    tracking_sampling_mode: str
     use_gpu: bool
     too_many_roots: int
 
@@ -11,6 +14,8 @@ class Settings(BaseSettings):
     def get_defaults(cls):
         defaults = tp.cast(tp.Dict[str, tp.Any], super().get_defaults())
         defaults['exmask_enabled'] = False
+        defaults['tracking_exclusion_policy'] = 'first'
+        defaults['tracking_sampling_mode'] = 'legacy'
         defaults['use_gpu']        = False
         defaults['too_many_roots'] = 100000
         return defaults
@@ -27,7 +32,8 @@ class Settings(BaseSettings):
 
     def get_settings_as_dict(self):
         s = super().get_settings_as_dict()
-        s['available_gpu'] = torch.cuda.get_device_name() if torch.cuda.is_available() else None
+        s['device_status'] = get_device_status(use_gpu=bool(getattr(self, 'use_gpu', False)))
+        s['available_gpu'] = s['device_status']['available_gpu']
         return s
 
 

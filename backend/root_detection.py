@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import typing as tp
+import uuid
 import numpy as np
 
 import PIL.Image
@@ -23,7 +24,8 @@ _FILE_HASH_CACHE_LIMIT = 32
 
 def run_model(image_path:str, settings:tp.Any, modeltype:str, **kwargs) -> np.ndarray:
     basename   = os.path.basename(image_path)
-    device     = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
+    from backend.device import resolve_device
+    device = resolve_device(settings)
     jobs.raise_if_cancelled(settings)
     with backend.GLOBALS.processing_lock:
         def progress_callback(value):
@@ -99,6 +101,12 @@ def _sha256(path:str) -> str:
 def _model_identity(settings:tp.Any, modeltype:str='detection') -> dict:
     modelname = settings.active_models.get(modeltype, '')
     identity = {'name': modelname}
+    if not modelname:
+        revisions = getattr(settings, '_model_revisions', {})
+        if modeltype not in revisions:
+            mark_model_updated(settings, modeltype)
+        identity['unsaved_revision'] = settings._model_revisions[modeltype]
+        return identity
     for ending in ['.pt.zip', '.pt', '.pkl']:
         candidate = os.path.join(get_models_path(), modeltype, modelname + ending)
         if modelname and os.path.isfile(candidate):
@@ -108,6 +116,13 @@ def _model_identity(settings:tp.Any, modeltype:str='detection') -> dict:
             })
             break
     return identity
+
+
+def mark_model_updated(settings:tp.Any, modeltype:str) -> None:
+    """Give mutable, unsaved weights a new cache/provenance identity."""
+    revisions = dict(getattr(settings, '_model_revisions', {}))
+    revisions[modeltype] = uuid.uuid4().hex
+    settings._model_revisions = revisions
 
 
 def _cache_key(manifest:dict) -> str:
@@ -362,6 +377,8 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
     expected = exclusionmask_cache_manifest(image_path, settings)
     if expected is None:
         return None
+    with PIL.Image.open(image_path) as input_image:
+        input_shape = (input_image.height, input_image.width)
     cache_key = _cache_key(expected)
     paths = _artifact_cache_paths(image_path, 'exclusionmask', cache_key)
 
@@ -374,6 +391,7 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
             artifact = actual.get('artifact', {})
             artifact_valid = (
                 artifact.get('shape') == list(cached.shape)
+                and tuple(cached.shape) == input_shape
                 and artifact.get('dtype') == str(cached.dtype)
                 and artifact.get('array_sha256') == _sha256(paths['array'])
                 and artifact.get('preview_sha256') == _sha256(paths['preview'])
@@ -390,6 +408,11 @@ def maybe_compute_exclusionmask(image_path:str, settings:tp.Any) -> tp.Optional[
     else:
         mask = run_model(image_path, settings, 'exclusion_mask')
     mask = np.asarray(mask, dtype='float32').squeeze()
+    if mask.shape != input_shape:
+        raise ValueError(
+            'Exclusion mask dimensions {} do not match the input image {}. '
+            'Crop the mask with the same original-pixel rectangle.'.format(mask.shape, input_shape)
+        )
     _atomic_save_array(paths['array'], mask)
 
     preview_tmp = paths['preview'] + '.tmp.png'

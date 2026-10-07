@@ -33,24 +33,7 @@ services:
       - -c
       - >-
         mkdir -p /workspace/cache &&
-        python -m pytest -q
-        tests/testcases/test_cli.py
-        tests/testcases/test_evaluation.py
-        tests/testcases/test_model_downloads.py
-        tests/testcases/test_postprocessing.py
-        tests/testcases/test_pipeline.py
-        tests/testcases/test_pipeline_api.py
-        tests/testcases/test_security.py
-        tests/testcases/test_settings_persistence.py
-        tests/testcases/test_segmentation_cache.py
-        tests/testcases/test_startup.py
-        tests/testcases/test_training.py
-        tests/testcases/test_training_jobs.py
-        tests/testcases/test_training_options.py
-        tests/testcases/test_tracking_csv.py
-        tests/testcases/test_tracking_masks.py
-        tests/testcases/test_tracking_matcher.py
-        tests/testcases/test_windows_followup_templates.py
+        python -m pytest -q -m 'not real_model' tests/testcases
 
   model-fetch:
     <<: *rootdetector-core

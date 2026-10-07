@@ -2,11 +2,14 @@ name: Build Windows Binaries
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
 
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
       - uses: actions/checkout@v5
@@ -18,29 +21,49 @@ jobs:
           #cache: 'pip' # caching pip dependencies
 
       - name: Install requirements
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install -r requirements.txt -c constraints-legacy.txt
+          python -m pip install -r requirements-core-test.txt -c constraints-legacy.txt
 
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
 
-      - name: Test browser-side upload reliability
-        run: node tests/testcases_js/test_upload_reliability_node.js
+      - name: Backend and released-model regressions
+        run: python -m pytest -q tests/testcases
 
-      - name: Test pipeline upload isolation
-        run: node tests/testcases_js/test_pipeline_upload_isolation.js
+      - name: Acceptance harness regressions
+        run: python -m unittest discover -s tests/acceptance -p "test_*.py" -v
 
-      - name: Test tracking filename pairing
-        run: node tests/testcases_js/test_tracking_utils.js
-
-      - name: Test reviewed training label selection
-        run: node tests/testcases_js/test_training_labels.js
+      - name: Browser-side regression tests
+        shell: pwsh
+        run: |
+          Get-ChildItem tests/testcases_js/test_*.js | Sort-Object Name | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Browser regression failed: $($_.Name)" }
+          }
 
       - name: Build
         run: python build.py --zip --prune-torchlibs
+
+      - name: Name portable download and record checksum
+        shell: pwsh
+        run: |
+          $archives = @(Get-ChildItem builds/*_DigIT_RootDetector.zip)
+          if ($archives.Count -ne 1) { throw 'Expected one complete portable archive.' }
+          $output = 'builds/RootDetector-Windows-portable.zip'
+          Copy-Item $archives[0].FullName $output
+          $hash = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'builds/RootDetector-Windows-portable.sha256'), "$hash  RootDetector-Windows-portable.zip`n", [System.Text.Encoding]::ASCII)
+          python -c "import pathlib; data=pathlib.Path('builds/RootDetector-Windows-portable.sha256').read_bytes(); assert data.endswith(b'\n') and b'\r' not in data"
+          if ($LASTEXITCODE -ne 0) { throw 'Portable checksum file must use LF line endings.' }
+          python -c "import json,zipfile; z=zipfile.ZipFile('builds/RootDetector-Windows-portable.zip'); m=json.loads(z.read('release.json')); assert m==json.load(open('release.json'))"
+          if ($LASTEXITCODE -ne 0) { throw 'Portable archive version differs from source.' }
 
       - name: Archive binaries
         uses: actions/upload-artifact@v6
         with:
           name: RootDetector-Windows-portable
-          path: builds/*_DigIT_RootDetector.zip
+          path: |
+            builds/RootDetector-Windows-portable.zip
+            builds/RootDetector-Windows-portable.sha256
           if-no-files-found: error

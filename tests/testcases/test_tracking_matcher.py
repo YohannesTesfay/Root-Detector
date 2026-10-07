@@ -65,6 +65,40 @@ def test_descriptor_matching_is_deterministic_and_reports_each_batch():
     assert progress[-1][1] == 'matching batch 3 of 3'
 
 
+def test_seeded_sampling_repeats_without_changing_global_random_state():
+    candidates = points(800)
+    before = np.random.get_state()
+    first = tracking_matcher.sample_points_mixed(
+        candidates, 512, 120, rng=np.random.RandomState(123)
+    )
+    second = tracking_matcher.sample_points_mixed(
+        candidates, 512, 120, rng=np.random.RandomState(123)
+    )
+    different = tracking_matcher.sample_points_mixed(
+        candidates, 512, 120, rng=np.random.RandomState(124)
+    )
+    np.testing.assert_array_equal(first, second)
+    assert not np.array_equal(first, different)
+    after = np.random.get_state()
+    assert before[0] == after[0]
+    np.testing.assert_array_equal(before[1], after[1])
+    assert before[2:] == after[2:]
+
+
+def test_seeded_descriptor_matching_repeats_after_global_rng_changes():
+    args = (descriptors(30), descriptors(30, offset=4), points(30), points(30) + 2)
+    first = tracking_matcher.match_descriptors(
+        *args, n=12, sampling_seed=9182, ratio_threshold=0, cyclic_threshold=1000
+    )
+    np.random.permutation(30)
+    second = tracking_matcher.match_descriptors(
+        *args, n=12, sampling_seed=9182, ratio_threshold=0, cyclic_threshold=1000
+    )
+    for key in ['points0', 'points1', 'scores', 'ratios']:
+        np.testing.assert_array_equal(first[key], second[key])
+    assert tracking_matcher.provenance(sampling_seed=9182)['version'] == 2
+
+
 def test_descriptor_matching_cancels_before_the_next_batch():
     cancel_event = threading.Event()
     completed_batches = []
@@ -100,4 +134,26 @@ def test_descriptor_matching_validates_batch_size():
             points(2),
             n=2,
             step=0,
+        )
+
+
+def test_tracking_rejects_dimensions_that_overflow_point_coordinates():
+    class Model:
+        def compute_descriptors_at_points(self, *_args, **_kwargs):
+            raise AssertionError('oversize inputs must fail before descriptor extraction')
+
+    image = np.zeros((32769, 1, 3), dtype='uint8')
+    segmentation = np.zeros((32769, 1), dtype='uint8')
+    with pytest.raises(ValueError, match='32768 pixels'):
+        tracking_matcher.match_images(Model(), image, image, segmentation, segmentation)
+
+
+def test_descriptor_matching_rejects_coordinate_overflow():
+    with pytest.raises(ValueError, match='16-bit image range'):
+        tracking_matcher.match_descriptors(
+            descriptors(2),
+            descriptors(2),
+            np.asarray([[0, 0], [32768, 0]]),
+            np.asarray([[0, 0], [1, 0]]),
+            n=2,
         )

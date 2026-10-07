@@ -1,5 +1,7 @@
 import types
 import typing as tp
+import os
+from pathlib import Path
 
 import pytest
 
@@ -94,6 +96,45 @@ def test_training_adapts_released_model_that_returns_none(monkeypatch, tmp_path)
         FakeSettings(model),
     )
     assert result.state == 'completed'
+
+
+@pytest.mark.parametrize('training_type', ['detection', 'exclusion_mask'])
+def test_retraining_unsaved_model_invalidates_cached_predictions(training_type, monkeypatch, tmp_path):
+    import numpy as np
+    import PIL.Image
+    from backend import root_detection
+
+    monkeypatch.setattr(training, 'get_cache_path', lambda: str(tmp_path))
+    image = str(tmp_path / 'input.png')
+    PIL.Image.new('RGB', (8, 8)).save(image)
+    model = FakeModel('completed')
+    settings = FakeSettings(model)
+    settings.models[training_type] = model
+    settings.active_models[training_type] = 'saved-model'
+    settings.exmask_enabled = True
+    calls = []
+
+    def predict(*_args, **_kwargs):
+        calls.append(len(model.calls))
+        return np.ones((8, 8), dtype='float32') * (len(model.calls) % 2)
+
+    monkeypatch.setattr(root_detection, 'run_model', predict)
+    evaluate = (
+        lambda: root_detection.ensure_soft_segmentation(image, settings)[1]
+    ) if training_type == 'detection' else (
+        lambda: root_detection.maybe_compute_exclusionmask(image, settings)
+    )
+    training_options = options(training_type=training_type)
+    assert training.start_training([image], ['label.png'], training_options, settings).completed
+    first_identity = root_detection._model_identity(settings, training_type)
+    first = evaluate()
+    assert np.array_equal(evaluate(), first)
+    assert len(calls) == 1
+    assert training.start_training([image], ['label.png'], training_options, settings).completed
+    assert root_detection._model_identity(settings, training_type) != first_identity
+    second = evaluate()
+    assert len(calls) == 2
+    assert not np.array_equal(first, second)
 
 
 def test_training_does_not_treat_unconfirmed_legacy_none_as_success(monkeypatch, tmp_path):
@@ -238,6 +279,56 @@ def test_save_model_requires_completed_training(tmp_path, monkeypatch):
     })
     assert response.status_code == 409
     assert response.get_json()['code'] == 'training_not_completed'
+
+
+@pytest.mark.parametrize('scenario', ['plain', 'suffix', 'percent', 'escape', 'failure'])
+def test_save_model_uses_exact_final_path_and_preserves_previous_file(tmp_path, monkeypatch, scenario):
+    class SavingModel(FakeModel):
+        def save(self, destination):
+            assert isinstance(destination, Path)
+            destination.write_bytes(b'new model')
+            if scenario == 'failure':
+                raise RuntimeError('test writer failed')
+
+    class WebSettings(FakeSettings):
+        exmask_enabled = False
+        too_many_roots = 100000
+
+        def get_settings_as_dict(self):
+            return {'settings': {}, 'available_models': {}}
+
+    monkeypatch.setenv('ROOT_PATH', str(tmp_path))
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', lambda: WebSettings(SavingModel()))
+    app = App()
+    app.testing = True
+    app.training_results['detection'] = training.TrainingResult('completed')
+    stem = 'model-%Y' if scenario == 'percent' else 'new-model'
+    folder = tmp_path / 'models' / 'detection'
+    folder.mkdir(parents=True, exist_ok=True)
+    destination = folder / (stem + '.pt.zip')
+    outside = tmp_path / 'outside-model.pt.zip'
+    outside.write_bytes(b'original outside')
+    if scenario == 'escape':
+        os.symlink(str(outside), str(destination))
+    elif scenario == 'failure':
+        destination.write_bytes(b'previous valid model')
+    payload = {'newname': stem + ('.pt.zip' if scenario == 'suffix' else ''), 'options': options()}
+    headers = {'Host': 'localhost', 'Origin': 'http://localhost', 'X-RootDetector-Token': app.session_token}
+    client = app.test_client()
+    if scenario == 'failure':
+        assert client.post('/save_model', json=payload, headers=headers).status_code == 500
+        assert destination.read_bytes() == b'previous valid model'
+    else:
+        response = client.post('/save_model', json=payload, headers=headers)
+        assert response.status_code == (400 if scenario == 'escape' else 200)
+        if scenario != 'escape':
+            assert destination.read_bytes() == b'new model'
+            assert response.get_json()['saved'] == stem
+    assert outside.read_bytes() == b'original outside'
+    assert not list(folder.glob('.model-save-*'))
 
 
 def test_training_job_api_reports_progress_and_cooperative_cancellation(tmp_path, monkeypatch):

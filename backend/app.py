@@ -3,12 +3,15 @@ from base.backend.app import parser as base_parser
 from base.backend.paths import get_models_path
 
 import hmac
+import json
 import os
 import secrets
 import shutil
 import signal
 import tempfile
+import threading
 import urllib.parse
+from pathlib import Path
 import flask
 from werkzeug.exceptions import HTTPException
 
@@ -17,9 +20,11 @@ import backend.jobs
 import backend.training
 import backend.training_jobs
 import backend.pipeline
+import backend.preparation
 import backend.security
 import backend.settings
 import backend.diagnostics
+import backend.release
 from . import root_detection
 from . import root_tracking
 
@@ -28,6 +33,7 @@ from . import root_tracking
 class App(BaseApp):
     def __init__(self, *args, **kw):
         self.session_token = secrets.token_urlsafe(32)
+        self.max_upload_bytes = backend.security.configured_max_upload_bytes()
         backend.diagnostics.configure_logging()
         # Packaged Windows releases contain the manifest but fetch the large
         # verified model files on first launch. Source/Docker users can prefetch
@@ -39,10 +45,12 @@ class App(BaseApp):
             return
 
         self.config.update(
-            MAX_CONTENT_LENGTH=backend.security.MAX_UPLOAD_BYTES,
+            MAX_CONTENT_LENGTH=self.max_upload_bytes + backend.security.UPLOAD_FORM_OVERHEAD_BYTES,
             MAX_FORM_MEMORY_SIZE=1024 * 1024,
             MAX_FORM_PARTS=backend.security.MAX_UPLOAD_FILES,
         )
+        self.preparation_stages = {}
+        self.preparation_lock = threading.RLock()
         self.pipeline_manager = backend.pipeline.PipelineManager(
             self.settings,
             cache_path=self.cache_path,
@@ -57,8 +65,16 @@ class App(BaseApp):
         self.view_functions['images'] = self.images
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
+        self.route('/api/version', methods=['GET'])(self.get_version)
+        self.route('/api/updates/check', methods=['POST'])(self.check_updates)
         self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
         self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
+        self.route('/api/preparation/inspect', methods=['POST'])(self.inspect_preparation_source)
+        self.route('/api/preparation/apply', methods=['POST'])(self.apply_preparation_crop)
+        self.route('/api/preparation/import', methods=['POST'])(self.import_prepared_images)
+        self.route('/api/preparation/validate', methods=['POST'])(self.validate_preparation_manifest)
+        self.route('/api/preparation/companion', methods=['POST'])(self.prepare_companion_mask)
+        self.route('/api/preparation/<stage_id>/discard', methods=['POST'])(self.discard_preparation_stage)
         self.route('/process_root_tracking', methods=['POST'])(self.process_root_tracking)
         self.route('/postprocess_detection/<filename>', methods=['POST'])(self.postprocess_detection)
         self.route('/compile_tracking_results', methods=['POST'])(self.compile_tracking_results)
@@ -154,7 +170,9 @@ class App(BaseApp):
     def handle_request_too_large(self, _error):
         return self.json_error(
             'upload_too_large',
-            'The request exceeds RootDetector\'s 256 MiB upload limit.',
+            'The request exceeds RootDetector\'s {} file limit plus multipart overhead.'.format(
+                backend.security.upload_limit_label(self.max_upload_bytes)
+            ),
             413,
         )
 
@@ -183,11 +201,220 @@ class App(BaseApp):
             'token': self.session_token,
             'asset_schema': backend.security.ASSET_SCHEMA_VERSION,
             'limits': {
-                'max_upload_bytes': backend.security.MAX_UPLOAD_BYTES,
+                'max_upload_bytes': self.max_upload_bytes,
                 'max_upload_files': backend.security.MAX_UPLOAD_FILES,
                 'max_image_pixels': backend.security.MAX_IMAGE_PIXELS,
+                'preparation_source_bytes': min(self.max_upload_bytes, backend.preparation.MAX_SOURCE_BYTES),
+                'preparation_source_pixels': backend.preparation.MAX_SOURCE_PIXELS,
+                'preparation_min_analysis_dimension': backend.preparation.MIN_ANALYSIS_DIMENSION,
             },
         })
+
+    def get_version(self):
+        return flask.jsonify(backend.release.package_info())
+
+    def check_updates(self):
+        return flask.jsonify(backend.release.find_update(
+            backend.release.package_info()
+        ))
+
+    def inspect_preparation_source(self):
+        with self.preparation_lock:
+            return self._inspect_preparation_source_locked()
+
+    @staticmethod
+    def _validate_preparation_id(value):
+        if not isinstance(value, str) or len(value) != 24 or any(
+            character not in '0123456789abcdef' for character in value
+        ):
+            raise backend.security.ValidationError('Invalid preparation identifier.', 'invalid_preparation_id')
+        return value
+
+    def _inspect_preparation_source_locked(self):
+        if self.preparation_stages:
+            raise backend.security.ValidationError(
+                'Finish or discard the current image before preparing another.',
+                'preparation_busy',
+                409,
+            )
+        request_bytes = flask.request.content_length
+        preparation_bytes = min(self.max_upload_bytes, backend.preparation.MAX_SOURCE_BYTES)
+        if request_bytes is None or request_bytes > (
+            preparation_bytes + backend.security.UPLOAD_FORM_OVERHEAD_BYTES
+        ):
+            raise backend.security.ValidationError(
+                'Image preparation accepts a request up to {} MiB plus form overhead. Prepare larger scans externally.'.format(
+                    preparation_bytes // (1024 * 1024)
+                ),
+                'preparation_source_too_large',
+                413,
+            )
+        files = flask.request.files.getlist('files')
+        if len(files) != 1:
+            raise backend.security.ValidationError('Select exactly one image for preparation.', 'invalid_preparation_upload')
+        name = backend.security.validate_filename(
+            files[0].filename,
+            backend.security.SUPPORTED_IMAGE_EXTENSIONS,
+        )
+        stage_id = secrets.token_hex(12)
+        source_path = os.path.join(self.cache_path, 'prepare-source-' + stage_id)
+        preview_name = 'prepare-preview-' + stage_id + '.png'
+        preview_path = os.path.join(self.cache_path, preview_name)
+        try:
+            files[0].save(source_path)
+            if os.path.getsize(source_path) > preparation_bytes:
+                raise backend.security.ValidationError(
+                    'The preparation source exceeds the {} MiB file limit.'.format(
+                        preparation_bytes // (1024 * 1024)
+                    ),
+                    'preparation_source_too_large',
+                    413,
+                )
+            metadata = backend.preparation.inspect_source(source_path, name, preview_path)
+            self.preparation_stages[stage_id] = {
+                'source_path': source_path,
+                'preview_path': preview_path,
+                'output_path': None,
+                'metadata': metadata,
+            }
+            return flask.jsonify({
+                'id': stage_id,
+                'preview': preview_name,
+                'limits': {
+                    'max_source_bytes': preparation_bytes,
+                    'max_source_pixels': backend.preparation.MAX_SOURCE_PIXELS,
+                },
+                **metadata,
+            })
+        except Exception:
+            for path in (source_path, preview_path):
+                if os.path.isfile(path):
+                    os.remove(path)
+            raise
+
+    def apply_preparation_crop(self):
+        with self.preparation_lock:
+            return self._apply_preparation_crop_locked()
+
+    def _apply_preparation_crop_locked(self):
+        payload = flask.request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise backend.security.ValidationError('Crop request must be an object.', 'invalid_crop')
+        stage_id = self._validate_preparation_id(payload.get('id'))
+        stage = self.preparation_stages.get(stage_id)
+        if stage is None:
+            raise backend.security.ValidationError('The preparation source is no longer available.', 'preparation_not_found', 404)
+        output_name = 'prepare-output-{}.png'.format(stage_id)
+        output_path = os.path.join(self.cache_path, output_name)
+        handle, temporary_output = tempfile.mkstemp(prefix='.preparation-output-', dir=self.cache_path)
+        os.close(handle)
+        try:
+            manifest = backend.preparation.apply_crop(
+                stage['source_path'],
+                stage['metadata'],
+                payload.get('rectangle'),
+                temporary_output,
+                min_analysis_dimension=backend.preparation.MIN_ANALYSIS_DIMENSION,
+            )
+            os.replace(temporary_output, output_path)
+        except Exception:
+            if os.path.isfile(temporary_output):
+                os.remove(temporary_output)
+            raise
+        stage['output_path'] = output_path
+        return flask.jsonify({'output': output_name, 'manifest': manifest})
+
+    def _require_preparation_idle(self):
+        if self.training_manager.active_run() is not None or any(
+            run.state not in backend.pipeline.TERMINAL_RUN_STATES
+            for run in self.pipeline_manager.runs.values()
+        ):
+            raise backend.security.ValidationError(
+                'Wait for the active analysis or training job before preparing images.',
+                'preparation_busy', 409,
+            )
+
+    def import_prepared_images(self):
+        self._require_preparation_idle()
+        with self.preparation_lock:
+            result = backend.preparation.restore_prepared_files(
+                flask.request.files.getlist('files'), self.cache_path,
+                self.max_upload_bytes,
+            )
+        return flask.jsonify(result)
+
+    def validate_preparation_manifest(self):
+        payload = flask.request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            raise backend.security.ValidationError('Invalid preparation record.', 'invalid_preparation_manifest')
+        path = backend.security.safe_resolve(
+            self.cache_path, payload.get('filename'), {'.png'}, must_exist=True,
+        )
+        manifest = backend.preparation.validate_manifest_for_output(
+            payload.get('manifest'), payload['filename'], path,
+        )
+        if 'companions' not in payload:
+            return flask.jsonify(manifest)
+        companions = payload['companions']
+        if not isinstance(companions, list) or len(companions) > 100:
+            raise backend.security.ValidationError('Invalid prepared mask list.', 'invalid_companion')
+        validated = [
+            backend.preparation.validate_companion_provenance(record, manifest, self.cache_path)
+            for record in companions
+        ]
+        if payload.get('restore_exclusion_masks') is True:
+            self._require_preparation_idle()
+            exclusions = [record for record in validated if record['kind'] == 'exclusion_mask']
+            if len(exclusions) > 1:
+                raise backend.security.ValidationError('Choose one exclusion mask per prepared image.', 'invalid_companion')
+            with self.preparation_lock:
+                for record in exclusions:
+                    backend.preparation.bind_exclusion_companion(record, manifest, self.cache_path)
+        return flask.jsonify({'manifest': manifest, 'companions': validated})
+
+    def prepare_companion_mask(self):
+        self._require_preparation_idle()
+        uploads = flask.request.files.getlist('files')
+        if len(uploads) != 1:
+            raise backend.security.ValidationError('Choose exactly one companion mask.', 'invalid_preparation_upload')
+        try:
+            manifest = json.loads(flask.request.form.get('manifest', ''))
+        except (TypeError, ValueError) as exc:
+            raise backend.security.ValidationError('Invalid preparation record.', 'invalid_preparation_manifest') from exc
+        prepared_path = backend.security.safe_resolve(
+            self.cache_path, flask.request.form.get('prepared_filename'), {'.png'}, must_exist=True,
+        )
+        output_name = 'prepare-companion-{}.png'.format(secrets.token_hex(12))
+        output_path = os.path.join(self.cache_path, output_name)
+        with self.preparation_lock:
+            try:
+                provenance = backend.preparation.transform_companion(
+                    uploads[0], manifest, prepared_path, output_path,
+                    confirmed=flask.request.form.get('confirmed') == 'true',
+                    kind=flask.request.form.get('kind', 'training_annotation'),
+                    max_file_bytes=min(self.max_upload_bytes, backend.preparation.MAX_SOURCE_BYTES),
+                )
+                if provenance['kind'] == 'exclusion_mask':
+                    backend.preparation.bind_exclusion_companion(provenance, manifest, self.cache_path)
+            except Exception:
+                if os.path.isfile(output_path):
+                    os.remove(output_path)
+                raise
+        return flask.jsonify({'output': output_name, 'provenance': provenance})
+
+    def discard_preparation_stage(self, stage_id):
+        with self.preparation_lock:
+            return self._discard_preparation_stage_locked(stage_id)
+
+    def _discard_preparation_stage_locked(self, stage_id):
+        self._validate_preparation_id(stage_id)
+        stage = self.preparation_stages.pop(stage_id, None)
+        if stage is None:
+            raise backend.security.ValidationError('The preparation source is no longer available.', 'preparation_not_found', 404)
+        for path in (stage['source_path'], stage['preview_path'], stage['output_path']):
+            if path and os.path.isfile(path):
+                os.remove(path)
+        return flask.jsonify({'discarded': True})
 
     def download_diagnostics(self):
         archive = backend.diagnostics.build_diagnostics_archive(self.settings)
@@ -276,7 +503,10 @@ class App(BaseApp):
                 os.close(handle)
                 temporary_paths.append(temporary)
                 storage.save(temporary)
-                metadata = backend.security.validate_image_file(temporary)
+                metadata = backend.security.validate_image_file(
+                    temporary,
+                    max_upload_bytes=self.max_upload_bytes,
+                )
                 if os.path.exists(destination) and not backend.security.files_are_identical(temporary, destination):
                     raise backend.security.ValidationError(
                         'A different file named {} is already loaded. Clear the current project or rename the file.'.format(name),
@@ -326,6 +556,8 @@ class App(BaseApp):
         allowed_settings = {
             'active_models',
             'exmask_enabled',
+            'tracking_exclusion_policy',
+            'tracking_sampling_mode',
             'use_gpu',
             'too_many_roots',
         }
@@ -357,6 +589,24 @@ class App(BaseApp):
             if modelname != '':
                 backend.security.validate_filename(modelname)
 
+        if 'tracking_exclusion_policy' in request_data:
+            try:
+                root_tracking.validate_exclusion_mask_policy(
+                    request_data['tracking_exclusion_policy']
+                )
+            except ValueError as exc:
+                raise backend.security.ValidationError(
+                    str(exc), 'invalid_tracking_exclusion_policy'
+                )
+        if 'tracking_sampling_mode' in request_data:
+            try:
+                root_tracking.validate_tracking_sampling_mode(
+                    request_data['tracking_sampling_mode']
+                )
+            except ValueError as exc:
+                raise backend.security.ValidationError(
+                    str(exc), 'invalid_tracking_sampling_mode'
+                )
         for boolean_name in ['exmask_enabled', 'use_gpu']:
             if boolean_name in request_data and not isinstance(request_data[boolean_name], bool):
                 raise backend.security.ValidationError(
@@ -407,8 +657,10 @@ class App(BaseApp):
                 409,
                 retryable=True,
             )
-        shutil.rmtree(self.cache_path, ignore_errors=True)
-        os.makedirs(self.cache_path)
+        with self.preparation_lock:
+            shutil.rmtree(self.cache_path, ignore_errors=True)
+            os.makedirs(self.cache_path)
+            self.preparation_stages.clear()
         return flask.jsonify({'cleared': True})
 
     def shutdown(self):
@@ -455,7 +707,10 @@ class App(BaseApp):
             must_exist=True,
         )
         previous_data = data if 'points0' in data else None
-        result = root_tracking.process(fname0, fname1, self.settings, previous_data)
+        try:
+            result = root_tracking.process(fname0, fname1, self.settings, previous_data)
+        except ValueError as exc:
+            raise backend.security.ValidationError(str(exc), 'invalid_tracking_pair')
         
         if isinstance(result, root_tracking.TooManyRootsError):
             return flask.jsonify({
@@ -477,24 +732,60 @@ class App(BaseApp):
             'tracking_model'     : result['tracking_model'],
             'segmentation_model' : result['segmentation_model'],
             'tracking_matcher'     : result['tracking_matcher'],
+            'run_id'             : result['run_id'],
+            'run_profile'        : result['run_profile'],
+            'match_device'       : result['match_device'],
             'exclusion_mask_policy': result['exclusion_mask_policy'],
             'exclusion_masks'      : result['exclusion_masks'],
             'statistics'         : result['statistics'],
         })
     
     def compile_tracking_results(self):
-        file_pairs = flask.request.get_json(force=True)['file_pairs']
+        request_data = flask.request.get_json(force=True)
+        if not isinstance(request_data, dict) or not isinstance(request_data.get('file_pairs'), list):
+            raise backend.security.ValidationError('Tracking pairs must be a list.', 'invalid_tracking_pair')
+        file_pairs = request_data['file_pairs']
+        pair_filenames = set()
         for pair in file_pairs:
-            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            if not isinstance(pair, (list, tuple)) or len(pair) not in {2, 3}:
                 raise backend.security.ValidationError('Invalid tracking pair.', 'invalid_tracking_pair')
-            for filename in pair:
+            for filename in pair[:2]:
                 backend.security.safe_resolve(
                     self.cache_path,
                     filename,
                     backend.security.SUPPORTED_IMAGE_EXTENSIONS,
                     must_exist=True,
                 )
-        return root_tracking.compile_results_into_zip(file_pairs)
+                pair_filenames.add(filename)
+            if len(pair) == 3:
+                try:
+                    root_tracking.validate_tracking_run_id(pair[2])
+                except ValueError as exc:
+                    raise backend.security.ValidationError(str(exc), 'invalid_tracking_result')
+        preparations = request_data.get('preparations', {})
+        if not isinstance(preparations, dict) or not set(preparations).issubset(pair_filenames):
+            raise backend.security.ValidationError('Unexpected preparation record.', 'invalid_preparation_manifest')
+        for filename, manifest in preparations.items():
+            path = backend.security.safe_resolve(
+                self.cache_path,
+                filename,
+                backend.security.SUPPORTED_IMAGE_EXTENSIONS,
+                must_exist=True,
+            )
+            backend.preparation.validate_manifest_for_output(manifest, filename, path)
+        companions = request_data.get('companions', [])
+        if not isinstance(companions, list) or len(companions) > 100:
+            raise backend.security.ValidationError('Invalid prepared mask list.', 'invalid_companion')
+        by_id = {manifest['preparation_id']: manifest for manifest in preparations.values()}
+        for record in companions:
+            manifest = by_id.get(record.get('preparation_id')) if isinstance(record, dict) else None
+            if manifest is None:
+                raise backend.security.ValidationError('Prepared mask has no selected crop.', 'invalid_companion')
+            backend.preparation.validate_companion_provenance(record, manifest, self.cache_path)
+        try:
+            return root_tracking.compile_results_into_zip(file_pairs, preparations=preparations, companions=companions)
+        except ValueError as exc:
+            raise backend.security.ValidationError(str(exc), 'invalid_tracking_result')
 
     def create_pipeline_run(self):
         request_data = flask.request.get_json(force=True) or {}
@@ -613,7 +904,10 @@ class App(BaseApp):
         ):
             raise RuntimeError('Training cannot start while analysis is running.')
         imagefiles, targetfiles, options = self._prepare_training_request()
-        return self.training_manager.create(imagefiles, targetfiles, options)
+        payload = flask.request.get_json(silent=True) or {}
+        return self.training_manager.create(
+            imagefiles, targetfiles, options, request_id=payload.get('request_id'),
+        )
 
     def create_training_run(self):
         try:
@@ -658,6 +952,8 @@ class App(BaseApp):
     def save_model(self):
         request_data = flask.request.get_json(force=True) or {}
         newname = backend.security.validate_filename(request_data.get('newname'))
+        if newname.endswith('.pt.zip'):
+            newname = backend.security.validate_filename(newname[:-7])
         options = request_data.get('options') or {}
         modeltype = options.get('training_type', 'detection')
         if modeltype not in {'detection', 'exclusion_mask'} or modeltype not in self.settings.models:
@@ -671,8 +967,19 @@ class App(BaseApp):
             )
         model_folder = os.path.join(get_models_path(), modeltype)
         os.makedirs(model_folder, exist_ok=True)
-        path = backend.security.safe_resolve(model_folder, newname)
-        self.settings.models[modeltype].save(path)
+        path = backend.security.safe_resolve(model_folder, newname + '.pt.zip', {'.zip'})
+        handle, staged_path = tempfile.mkstemp(prefix='.model-save-', suffix='.pt.zip', dir=model_folder)
+        os.close(handle)
+        try:
+            # Released save() treats strings as strftime templates and appends
+            # a suffix. Path preserves the exact destination validated here.
+            self.settings.models[modeltype].save(Path(staged_path))
+            if not os.path.getsize(staged_path):
+                raise RuntimeError('The model writer did not produce a model package.')
+            os.replace(staged_path, path)
+        finally:
+            if os.path.isfile(staged_path):
+                os.remove(staged_path)
         self.settings.active_models[modeltype] = newname
         return flask.jsonify({'saved': newname, 'model_type': modeltype})
 

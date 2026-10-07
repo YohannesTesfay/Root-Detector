@@ -15,7 +15,11 @@ RootDetector helps researchers and students analyze minirhizotron root images. I
 
 ## Install and Start on Windows
 
-RootDetector is distributed to ordinary users as a **Windows-binaries ZIP**. Download the full ZIP from the project's Releases page; do not choose GitHub's automatically generated “Source code” archives.
+Download a Windows package from the [RootDetector Releases page](https://github.com/YohannesTesfay/Root-Detector/releases), not GitHub's automatically generated “Source code” archives. The complete portable package is named **RootDetector-Windows-portable.zip**. A per-user installer, **RootDetector-Windows-Setup.exe**, will be offered after its acceptance tests pass.
+
+A per-user installer is being prepared and is not yet a qualified release. Until its Windows acceptance tests pass, use the portable ZIP below.
+
+The installer candidate includes both CPU and NVIDIA GPU processing libraries. In **Settings**, enable GPU processing to use a compatible NVIDIA GPU, or leave it disabled for CPU processing. If the selected GPU cannot initialize, RootDetector reports the problem; choose CPU explicitly to continue. The installer still needs Windows CPU/GPU acceptance before release.
 
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
 2. Open the extracted folder and double-click **`StartRootDetector.bat`**.
@@ -26,7 +30,17 @@ New full Windows packages contain **only `StartRootDetector.bat`** as the launch
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
+To check for a newer version, open **About → Check for updates**. RootDetector checks published GitHub releases only when you click; it displays a link to the release. Export any results you need and close RootDetector before installing a newer version. A newer per-user installer keeps saved settings and models in `%LOCALAPPDATA%\RootDetector`. For a portable ZIP, extract the new package into a separate folder and retain the old folder until you have transferred any local settings or models you need. The app does not install updates by itself.
+
+Only use model files from a trusted source: model packages can contain executable code. Images and result archives are data and should be imported through the app, not copied into its models folder.
+
 ## Prepare Your Images
+
+If a scan needs a smaller region, choose **Files → Prepare / Crop Images** before analysis. Inspect the preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. Cropping preserves pixel values and scale; it does not resize or align scans. Keep the untouched originals and confirm that each date shows the same physical location.
+
+Use **Import prepared copies** immediately, or download the prepared ZIP and later choose **Files → Load Prepared Images**. Keep the manifest with the images: it records their original names, hashes, and crop bounds and accompanies result exports. When loading annotations or exclusion masks, matching original-size masks can be cropped to the same bounds after your explicit confirmation; already-cropped masks must match the prepared image dimensions. Cropping does not make an annotation a reviewed training label.
+
+The built-in preparation path currently supports single-page 8-bit RGB/grayscale PNG, JPEG, and TIFF sources up to 64 MiB and 16 million decoded pixels. The resulting crop must be at least 1280 × 1280 pixels for the released detection model; smaller crops cause its patch-stitching code to fail. Larger, multi-page, rotated, or higher-bit-depth scans need external preparation; this limit is separate from the normal upload limit. A larger upload setting alone does not make a large scan safe to crop in the app.
 
 Tracking depends on filenames that identify both the sample and observation date. Keep the sample portion identical and include a supported date separated by underscores:
 
@@ -42,7 +56,7 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 1. Select **Files → Load Input Images** or **Load Input Folder**.
 2. Confirm that all images appear in the Detection tab.
 3. Open the Tracking tab and check the proposed image pairs.
-4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, or change the root threshold.
+4. Open **Settings** if you need to choose the WM or beech model, enable an exclusion-mask model, change the root threshold, or select tracking point sampling.
 5. Select **Run Analysis** once.
 6. Wait for the progress window to reach 100%. Detection runs for every image, followed by tracking for every valid pair.
 
@@ -59,9 +73,9 @@ The Detection tab provides root segmentation and skeleton overlays. The Tracking
 - Pink/red: root decay.
 - Red mask: excluded material such as tape.
 
-Use **Download All** in the relevant tab to save results before closing the application. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
+Use **Download All** in the relevant tab to save `RootDetector-detection-results.zip` or `RootDetector-tracking-results.zip` before closing the application. The archives keep their existing per-image folders and statistics files. A failed tracking rerun is not exported as if it were successful; a pair marked for review remains available for inspection and export. The working cache and run history are temporary and are cleared when a new image set is loaded or the application restarts.
 
-Tracking uses the released point-sampling behavior, so repeating the same pair can produce different turnover counts. Review tracking overlays before scientific interpretation, and retain the source images, selected models, settings, and exported results for each run.
+For repeat tests of a tracking pair, choose **Settings → Tracking point sampling → Seeded sampling** before analysis. The default **Original sampling** preserves earlier behavior and may produce different turnover counts on repeated runs. Seeded sampling repeats point selection for identical images, segmentations, models, and settings, but does not guarantee identical results across CPU and GPU. Also in Settings, the default exclusion-mask policy uses the first observation; optional policies use the second, either, or both observations. **Either** and **Both** require a mask for each observation if one is present. These choices can change turnover counts, so identify them in comparisons and visually and ecologically review results. Download each variant before changing settings: the app displays only the latest result for a pair. Tracking ZIPs have distinct names and record the selected result ID, policy, and matcher provenance.
 
 ## Train a Model (Optional)
 
@@ -72,6 +86,7 @@ Training is separate from ordinary analysis. You do not need to review or label 
 - **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.
 - **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **StartRootDetector.bat** again. Existing verified downloads are reused.
 - **An image is rejected:** use PNG, JPEG, TIFF, or TIF and ensure the file is not damaged.
+- **An image exceeds the upload limit:** the default is 256 MiB per file. Ask a maintainer to adjust the local limit after checking available memory and the image's dimensions; the [Technical Guide](TECHNICAL-GUIDE.md) explains how.
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.
 - **Tracking says “too many roots”:** this safety limit prevents excessive memory use. Use a suitable lower-root pair for tracking; raise the threshold only for a deliberate expert run on adequately resourced hardware.
 - **Tracking requires review:** too few reliable automatic matches were found. Inspect or correct the pair manually.
@@ -79,7 +94,7 @@ Training is separate from ordinary analysis. You do not need to review or label 
 
 ## Data and Privacy
 
-Image processing happens on the local computer. RootDetector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files.
+Image processing happens on the local computer. RootDetector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files, and contacts GitHub Releases if you choose **Check for updates**.
 
 ## Further Documentation
 

@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import subprocess
 
 import PIL.Image
 import pytest
@@ -15,6 +17,8 @@ from backend import security
     'folder\\image.png',
     'bad\x00name.png',
     'bad\nname.png',
+    'linked.',
+    'linked ',
 ])
 def test_validate_filename_rejects_paths_and_control_characters(value):
     with pytest.raises(security.ValidationError):
@@ -30,6 +34,97 @@ def test_safe_resolve_rejects_symlink_escape(tmp_path):
 
     with pytest.raises(security.ValidationError, match='outside'):
         security.safe_resolve(str(cache), 'linked.png')
+
+
+def test_safe_resolve_allows_existing_and_new_ordinary_files(tmp_path):
+    existing = tmp_path / 'existing.png'
+    existing.write_bytes(b'inside')
+    assert Path(security.safe_resolve(str(tmp_path), 'existing.png', must_exist=True)) == existing.resolve()
+    assert Path(security.safe_resolve(str(tmp_path), 'new.png')) == tmp_path.resolve() / 'new.png'
+    with pytest.raises(security.ValidationError) as error:
+        security.safe_resolve(str(tmp_path), 'new.png', must_exist=True)
+    assert error.value.code == 'file_not_found'
+    assert error.value.status == 404
+
+
+def test_safe_resolve_accepts_internal_symlink_and_aliased_base(tmp_path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    target = cache / 'inside.png'
+    target.write_bytes(b'inside')
+    os.symlink(str(target), str(cache / 'linked.png'))
+    alias = tmp_path / 'alias'
+    os.symlink(str(cache), str(alias), target_is_directory=True)
+    assert Path(security.safe_resolve(str(alias), 'linked.png', must_exist=True)) == target.resolve()
+    assert Path(security.safe_resolve(str(alias), 'new.png')) == cache.resolve() / 'new.png'
+
+
+def test_safe_resolve_rejects_dangling_external_symlink(tmp_path):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    os.symlink(str(tmp_path / 'missing-outside.png'), str(cache / 'linked.png'))
+    with pytest.raises(security.ValidationError) as error:
+        security.safe_resolve(str(cache), 'linked.png')
+    assert error.value.code == 'unsafe_path'
+
+
+@pytest.mark.parametrize('alias', ['linked.', 'linked ', 'linked. '])
+def test_safe_resolve_rejects_windows_normalized_dangling_link_alias(tmp_path, alias):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    os.symlink(str(tmp_path / 'missing-outside'), str(cache / 'linked'))
+    with pytest.raises(security.ValidationError) as error:
+        security.safe_resolve(str(cache), alias)
+    assert error.value.code == 'invalid_filename'
+
+
+def test_safe_resolve_rejects_symlink_loop(tmp_path):
+    os.symlink(str(tmp_path / 'loop.png'), str(tmp_path / 'loop.png'))
+    with pytest.raises(security.ValidationError) as error:
+        security.safe_resolve(str(tmp_path), 'loop.png')
+    assert error.value.code == 'unsafe_path'
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows junction behavior requires Windows.')
+@pytest.mark.parametrize('dangling', [False, True])
+def test_safe_resolve_rejects_windows_junction_escape(tmp_path, dangling):
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    junction = cache / 'linked'
+    subprocess.check_call(['cmd', '/c', 'mklink', '/J', str(junction), str(outside)])
+    try:
+        if dangling:
+            outside.rmdir()
+        with pytest.raises(security.ValidationError) as error:
+            security.safe_resolve(str(cache), 'linked')
+        assert error.value.code == 'unsafe_path'
+    finally:
+        # Python 3.7 shutil.rmtree can follow junctions; remove only the junction.
+        os.rmdir(str(junction))
+
+
+def test_upload_limit_defaults_and_accepts_bounded_override(monkeypatch):
+    monkeypatch.delenv('ROOTDETECTOR_MAX_UPLOAD_MIB', raising=False)
+    assert security.configured_max_upload_bytes() == 256 * 1024 * 1024
+
+    monkeypatch.setenv('ROOTDETECTOR_MAX_UPLOAD_MIB', '512')
+    assert security.configured_max_upload_bytes() == 512 * 1024 * 1024
+
+    for value in ('0', '-1', '4097', 'no-limit', '1.5'):
+        monkeypatch.setenv('ROOTDETECTOR_MAX_UPLOAD_MIB', value)
+        with pytest.raises(ValueError, match='ROOTDETECTOR_MAX_UPLOAD_MIB'):
+            security.configured_max_upload_bytes()
+
+
+def test_file_limit_uses_configured_value_before_decoding(tmp_path):
+    image_path = tmp_path / 'oversize.png'
+    image_path.write_bytes(b'x' * 1025)
+    with pytest.raises(security.ValidationError, match='file limit') as error:
+        security.validate_image_file(str(image_path), max_upload_bytes=1024)
+    assert error.value.code == 'upload_too_large'
+    assert error.value.status == 413
 
 
 def test_validate_image_checks_encoding_and_pixel_limit(tmp_path, monkeypatch):

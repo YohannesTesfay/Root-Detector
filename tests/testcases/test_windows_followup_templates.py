@@ -8,8 +8,10 @@ def read(relative_path):
     return (ROOT / relative_path).read_text(encoding='utf-8')
 
 
-def test_file_import_controls_are_native_buttons():
+def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     template = read('templates/roots/top_menu.html')
+    pipeline = read('frontend/roots/pipeline.js')
+    app = read('frontend/roots/app.js')
 
     for control_id in [
         'load-input-images-button',
@@ -18,8 +20,41 @@ def test_file_import_controls_are_native_buttons():
         'load-exclude-masks-button',
     ]:
         assert 'id="{}"'.format(control_id) in template
-    assert template.count('type="button"') >= 6
+    assert template.count('<a href="#" class="ui') >= 6
+    assert "if(this.classList.contains('disabled')) return false" in template
     assert 'aria-disabled="true"' in template
+    assert "attr('tabindex', run_disabled ? '-1' : '0')" in pipeline
+    assert "keydown.rootdetector-menu" in app
+    assert 'event.target !== event.currentTarget' in app
+
+
+def test_optional_preparation_uses_original_pixel_bounds_and_separate_preview():
+    menu = read('templates/roots/top_menu.html')
+    modal = read('templates/roots/modals.html')
+    scripts = read('templates/roots/scripts.html')
+    preparation = read('frontend/roots/preparation.js')
+
+    assert 'id="prepare-images-button"' in menu
+    assert 'roots/preparation.js' in scripts
+    assert 'id="preparation-preview"' in modal
+    assert 'original pixels' in modal
+    assert 'id="crop-left"' in modal and 'id="crop-width"' in modal
+    assert 'RootSecurity.request(\'/api/preparation/apply\'' in preparation
+    assert 'file.preparation = result.manifest' in preparation
+    assert 'RootDetector-prepared-images.zip' in preparation
+
+
+def test_narrow_top_menu_keeps_run_analysis_visible():
+    styles = read('frontend/roots/styles.css')
+    template = read('templates/roots/top_menu.html')
+
+    assert 'class="ui container menu page-wide"' in template
+    assert 'id="pipeline-run-button"' in template
+    assert '@media (max-width: 480px)' in styles
+    assert '.ui.menu.page-wide {' in styles
+    assert 'flex-wrap: wrap;' in styles
+    assert '.ui.menu.page-wide > #pipeline-run-button {' in styles
+    assert 'flex: 1 0 100%;' in styles
 
 
 def test_settings_actions_are_keyboard_focusable():
@@ -33,6 +68,18 @@ def test_settings_actions_are_keyboard_focusable():
     assert '#settings-dialog > .content' in styles
     assert 'max-height: calc(100vh - 11rem)' in styles
     assert 'overflow-y: auto' in styles
+
+
+def test_modal_close_icons_are_centered_in_their_buttons():
+    template = read('templates/roots/modals.html')
+    styles = read('frontend/roots/styles.css')
+
+    assert 'aria-label="Close About"' in template
+    assert 'aria-label="Close settings"' in template
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {' in styles
+    assert 'align-items: center;' in styles
+    assert 'justify-content: center;' in styles
+    assert 'padding: 0;' in styles
 
 
 def test_training_can_be_closed_or_retried_after_interruption():
@@ -94,7 +141,7 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
-    assert 'rootdetector-web-rc2-1' in security
+    assert 'rootdetector-web-app-rc1-1' in security
 
 
 def test_tracking_tab_explains_detection_only_runs():
@@ -126,8 +173,9 @@ def test_windows_workflow_uploads_only_the_full_portable_zip():
     assert 'actions/checkout@v5' in workflow
     assert 'actions/setup-python@v6' in workflow
     assert 'actions/upload-artifact@v6' in workflow
-    assert 'node tests/testcases_js/test_tracking_utils.js' in workflow
-    assert 'path: builds/*_DigIT_RootDetector.zip' in workflow
+    assert 'Get-ChildItem tests/testcases_js/test_*.js' in workflow
+    assert 'builds/RootDetector-Windows-portable.zip' in workflow
+    assert 'builds/RootDetector-Windows-portable.sha256' in workflow
     assert 'path: builds/*.zip' not in workflow
 
 

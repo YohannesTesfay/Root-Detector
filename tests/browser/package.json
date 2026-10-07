@@ -1,0 +1,12 @@
+{
+    "name": "rootdetector-browser-acceptance",
+    "private": true,
+    "scripts": {
+        "test": "node acceptance.cjs",
+        "test:preparation": "node preparation.cjs",
+        "install-browser": "playwright install chromium"
+    },
+    "devDependencies": {
+        "playwright": "1.61.0"
+    }
+}

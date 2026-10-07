@@ -22,6 +22,20 @@
     white-space: normal;
 }
 
+#updates-dialog > .close.button,
+#settings-dialog > .close.button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+#updates-dialog > .close.button > .icon,
+#settings-dialog > .close.button > .icon {
+    margin: 0;
+}
+
 #settings-dialog > .close.button {
     top: 0.7rem;
     right: 0.7rem;
@@ -39,4 +53,67 @@
     box-sizing: border-box;
     max-height: calc(100vh - 11rem);
     overflow-y: auto;
+}
+
+#preparation-dialog {
+    max-width: calc(100vw - 1.5rem);
+}
+
+#preparation-dialog #preparation-preview-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    margin: 0 auto 1rem;
+}
+
+#preparation-dialog #preparation-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 38vh;
+    object-fit: contain;
+}
+
+#preparation-dialog #preparation-selection {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #2185d0;
+    background: rgba(33, 133, 208, 0.18);
+    pointer-events: none;
+}
+
+#preparation-dialog > .content {
+    box-sizing: border-box;
+    max-height: calc(100vh - 11rem);
+    overflow-y: auto;
+}
+
+#preparation-dialog .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#preparation-dialog .ui.form .four.fields {
+    flex-wrap: wrap;
+}
+
+#preparation-dialog .ui.form .four.fields > .field {
+    min-width: 7rem;
+}
+
+@media (max-width: 480px) {
+    .ui.menu.page-wide {
+        flex-wrap: wrap;
+    }
+
+    .ui.menu.page-wide > #pipeline-run-button {
+        flex: 1 0 100%;
+        justify-content: center;
+        border-top: 1px solid rgba(34, 36, 38, 0.15);
+    }
+
+    .ui.menu.page-wide > #pipeline-run-button::before {
+        display: none;
+    }
 }

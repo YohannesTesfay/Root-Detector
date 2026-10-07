@@ -4,9 +4,18 @@ RootsSettings = class extends BaseSettings{
 
     static settings_keydown_handler = undefined
 
-    static on_settings(){
-        super.on_settings()
+    static async on_settings(){
+        try {
+            await this.load_settings()
+        } catch(error) {
+            $('body').toast({
+                message:`Could not load settings: ${RootSecurity.error_message(error)}`,
+                class:'error',
+            })
+            return
+        }
         const $dialog = $('#settings-dialog')
+        $dialog.modal({onApprove: _ => this.on_save_settings()}).modal('show')
         const dialog = $dialog[0]
         if(this.settings_keydown_handler)
             dialog.removeEventListener('keydown', this.settings_keydown_handler, true)
@@ -51,6 +60,10 @@ RootsSettings = class extends BaseSettings{
             .checkbox({onChange: _ => this.on_exmask_checkbox()})
             .checkbox(settings.exmask_enabled? 'check' : 'uncheck');
         $('#settings-too-many-roots-input')[0].value = settings.too_many_roots;
+        $('#settings-tracking-exclusion-policy')
+            .dropdown('set selected', settings.tracking_exclusion_policy ?? 'first');
+        $('#settings-tracking-sampling-mode')
+            .dropdown('set selected', settings.tracking_sampling_mode ?? 'legacy');
         if(models['exclusion_mask'])
             this.update_model_selection_dropdown(
                 models['exclusion_mask'], settings.active_models['exclusion_mask'], $("#settings-exclusionmask-model")
@@ -72,6 +85,10 @@ RootsSettings = class extends BaseSettings{
             = $('#settings-gpu-enable').checkbox('is checked')
         GLOBAL.settings.too_many_roots
             = Number($("#settings-too-many-roots-input")[0].value);
+        GLOBAL.settings.tracking_exclusion_policy
+            = $('#settings-tracking-exclusion-policy').dropdown('get value');
+        GLOBAL.settings.tracking_sampling_mode
+            = $('#settings-tracking-sampling-mode').dropdown('get value');
     }
 
     static on_exmask_checkbox(){
@@ -86,8 +103,13 @@ RootsSettings = class extends BaseSettings{
             $('#settings-gpu-available-box').show()
             $('#settings-gpu-name').text(data['available_gpu'])
         } else {
-            $('#settings-no-gpu-warning').show()                        //maybe just hide the whole gpu field?
-            $('#settings-gpu-available-box').hide()
+            $('#settings-no-gpu-warning')
+                .text(data.device_status?.warning ?? 'GPU not available. CPU processing is supported.')
+                .show()
+            // Keep the control accessible so a saved GPU preference can be
+            // explicitly changed to CPU after a driver/device becomes unavailable.
+            $('#settings-gpu-available-box').show()
+            $('#settings-gpu-name').text('Unavailable')
         }
         console.log(data.settings)
         $('#settings-gpu-enable').checkbox(!!data.settings['use_gpu']? 'check' : 'uncheck')
