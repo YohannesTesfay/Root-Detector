@@ -41,6 +41,12 @@
     overflow-y: auto;
 }
 
+#file-import-menu.keyboard-open > .menu {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
 @media (max-width: 480px) {
     .ui.menu.page-wide {
         flex-wrap: wrap;

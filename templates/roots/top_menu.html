@@ -16,9 +16,8 @@
     <img class="logo" src="logo.svg" alt="RootDetector">
   </div>
 
-  <div class="ui simple dropdown item" role="button" tabindex="0"
-       aria-haspopup="menu" aria-label="Open file import menu"
-       onkeydown="if(event.target === this && (event.key === 'Enter' || event.key === ' ')){ event.preventDefault(); $(this).dropdown('show'); }">
+  <div class="ui simple dropdown item" id="file-import-menu" role="button" tabindex="0"
+       aria-haspopup="menu" aria-expanded="false" aria-label="Open file import menu">
     <i class="file icon"></i>
     <span class="text">Files</span>
     <i class="dropdown icon"></i>
