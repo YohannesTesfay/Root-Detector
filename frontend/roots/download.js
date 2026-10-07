@@ -61,6 +61,21 @@ RootDetectionDownload = class extends BaseDownload{
 
 
 RootTrackingDownload = class extends BaseDownload {
+    static async on_single_item_download_click(event){
+        const $root = $(event.target).closest('[filename0][filename1][filename]')
+        const filename = $root.attr('filename')
+        const filename0 = $root.attr('filename0')
+        const filename1 = $root.attr('filename1')
+        const data = GLOBAL.files[filename0]?.tracking_results?.[filename1]
+        const zipdata = this.zipdata_for_file(filename)
+        if(!zipdata){
+            $('body').toast({message:'Tracking result download failed.', class:'error'})
+            return
+        }
+        const suffix = data?.run_id ?? filename
+        download_zip(`RootDetector-tracking-${suffix}.zip`, zipdata)
+    }
+
     //override
     static zipdata_for_file(filename){
         var $root     = $(`[filename0][filename1][filename="${filename}"]`)
@@ -86,6 +101,9 @@ RootTrackingDownload = class extends BaseDownload {
             tracking_model     : tracking_data.tracking_model,
             segmentation_model : tracking_data.segmentation_model,
             tracking_matcher   : tracking_data.tracking_matcher,
+            run_id             : tracking_data.run_id,
+            run_profile        : tracking_data.run_profile,
+            match_device       : tracking_data.match_device,
             exclusion_mask_policy : tracking_data.exclusion_mask_policy,
             exclusion_masks       : tracking_data.exclusion_masks,
         }
@@ -96,6 +114,8 @@ RootTrackingDownload = class extends BaseDownload {
             exclusion_mask_coordinate_system: 'observation1',
             exclusion_mask_policy: tracking_data.exclusion_mask_policy,
             tracking_matcher: tracking_data.tracking_matcher,
+            run_id: tracking_data.run_id,
+            run_profile: tracking_data.run_profile,
             migration_warning: 'Tracking CSV files exported by RootDetector before schema 2 may have background, mask, same, decay, and growth values under incorrect headers. Re-export those analyses before comparing or aggregating them.',
         }, null, 2)
         return zipdata;
@@ -111,8 +131,12 @@ RootTrackingDownload = class extends BaseDownload {
                 continue;
             
             for(const filename1 of Object.keys(tracking_results)){
-                if(Object.keys(tracking_results[filename1]).length > 0){
-                    file_pairs.push([filename0, filename1])
+                const selected = tracking_results[filename1]
+                if(selected?.growthmap || selected?.code == 'too_many_roots'){
+                    const run_id = selected.run_id
+                    file_pairs.push(run_id
+                        ? [filename0, filename1, run_id]
+                        : [filename0, filename1])
                 }
             }
         }
@@ -122,7 +146,7 @@ RootTrackingDownload = class extends BaseDownload {
             'POST',
             {file_pairs: file_pairs},
         )
-        downloadURI('tracking_results.zip', url_for_image(result))
+        downloadURI(result, url_for_image(result))
     }
 
 
