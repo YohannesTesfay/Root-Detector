@@ -22,6 +22,7 @@ RootDetectorApp = class extends BaseApp {
             if(path == 'training')
                 this.Training.refresh_tab()
         }})
+        $('#file-import-menu').dropdown({action: 'hide'})
         $(document).on('keydown.rootdetector-buttons', '[role="button"]', event => {
             if(event.target !== event.currentTarget || (event.key != 'Enter' && event.key != ' '))
                 return

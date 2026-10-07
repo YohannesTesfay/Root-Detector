@@ -29,6 +29,7 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert 'event.target !== event.currentTarget' in app
     assert 'id="file-import-menu"' in template
     assert 'aria-expanded="false"' in template
+    assert "$('#file-import-menu').dropdown({action: 'hide'})" in app
     assert "addClass('keyboard-open')" in app
     assert "focusout.rootdetector-files-menu" in app
     assert "keydown.rootdetector-files-menu" in app
