@@ -1,4 +1,7 @@
 import subprocess
+import sys
+
+import pytest
 
 import backend.startup as startup
 
@@ -44,3 +47,19 @@ def test_nvidia_detection_falls_back_to_cpu_when_probes_fail(monkeypatch):
 
     assert startup.is_nvidia_gpu_present() is False
     assert startup.guess_torch_url() == startup.WHEEL_URLS['torch==1.10.1+cpu']
+
+
+def test_installed_runtime_requires_bundled_libraries(tmp_path, monkeypatch):
+    executable = tmp_path / 'program' / 'main' / 'main.exe'
+    executable.parent.mkdir(parents=True)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr(sys, 'argv', [str(executable)])
+    monkeypatch.setattr(sys, 'executable', str(executable))
+    monkeypatch.setenv('ROOTDETECTOR_INSTALLED', '1')
+    with pytest.raises(RuntimeError, match='runtime is incomplete'):
+        startup.ensure_torch()
+
+    libraries = executable.parent / 'torch' / 'lib'
+    libraries.mkdir(parents=True)
+    (libraries / 'torch_cpu.dll').write_bytes(b'placeholder')
+    startup.ensure_torch()

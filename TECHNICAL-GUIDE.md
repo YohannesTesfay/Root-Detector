@@ -67,12 +67,15 @@ Tracking exports include cached segmentations, a growth map, matched-point/model
 | `docker/core/` | Reproducible Python 3.7 CPU test/application image |
 | `build.py` | PyInstaller release builder |
 | `.github/workflows/build.yml` | Manually dispatched Windows binary build |
+| `.github/workflows/build-installer.yml` | Manually dispatched, unqualified per-user installer preview |
 
 Do not edit generated `static/`. Root-specific changes that must be committed atomically belong in this repository rather than as an uncommitted change inside `base/`.
 
 ## Runtime and Model Distribution
 
 The reference stack is Python 3.7 with PyTorch 1.10.1 and TorchVision 0.11.2. This legacy environment is not compatible with the host's current Python 3.14 installation, so Docker is the recommended local baseline.
+
+The installer preview uses a separate PyInstaller build with bundled CPU PyTorch libraries. Its `INSTALL-MODE.txt` marker activates `%LOCALAPPDATA%\RootDetector` for settings, downloaded models, logs, and working cache before backend imports. A per-user lock prevents a second installed copy from clearing the first copy's working cache; the installer's application mutex refuses upgrade/uninstall while this copy runs. Program files remain under `%LOCALAPPDATA%\Programs\RootDetector`; uninstall does not remove the user-data directory. The portable ZIP has no marker and retains its existing in-folder behavior. The preview currently requires Windows installation/upgrade/uninstall and GPU acceptance before release; do not present it as a tested GPU build.
 
 `models/pretrained_models.txt` declares five downloads: WM and beech detection models, matching exclusion-mask models, and one tracking model. Each entry includes a SHA-256 checksum. Downloads stream to a temporary file, are verified, and are atomically installed. An existing corrupt model is replaced with a verified copy.
 
