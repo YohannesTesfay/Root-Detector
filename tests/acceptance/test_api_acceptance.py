@@ -1,7 +1,9 @@
 """Model-free tests for the packaged acceptance harness; no running app required."""
 import argparse
+import contextlib
 import copy
 import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -194,6 +196,46 @@ class AcceptanceTests(unittest.TestCase):
             result['exclusion_masks']['combined_pixels'] = 1
             with self.assertRaises(AssertionError):
                 runner.verify_run(run, 'deterministic', 'first')
+
+    def test_masked_profile_checks_selected_observations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self.runner(directory)
+            runner.paths = [Path('a'), Path('b')]
+            runner.pairs = [['a', 'b']]
+            result = {'run_profile': {'sampling_mode': 'legacy', 'exclusion_mask_policy': 'union'},
+                      'match_device': 'cpu', 'tracking_matcher': {},
+                      'exclusion_masks': {'observation0_present': True,
+                                          'observation1_present': True,
+                                          'observation0_pixels': 4,
+                                          'observation1_pixels': 5, 'combined_pixels': 8}}
+            run = {'state': 'completed', 'images': {'a': {'state': 'completed'}, 'b': {'state': 'completed'}},
+                   'pairs': [{'id': 'pair', 'filename0': 'a', 'filename1': 'b',
+                              'state': 'completed', 'result': result}]}
+            self.assertEqual(runner.verify_run(run, 'legacy', 'union', masks=True), 0)
+            result['exclusion_masks']['observation1_present'] = False
+            with self.assertRaises(AssertionError):
+                runner.verify_run(run, 'legacy', 'union', masks=True)
+
+    def test_masked_case_requires_one_png_per_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            images = [folder / name for name in ('tube_10.04.24_a.tif', 'tube_20.04.24_b.tif')]
+            mask = folder / 'mask.png'
+            for path in images + [mask]:
+                path.write_bytes(b'test fixture')
+            base = ['--allow-clear', '--device', 'cpu', '--cases', 'masks',
+                    '--images'] + [str(path) for path in images] + [
+                        '--output', str(folder / 'evidence')]
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    api.parse_args(base)
+                with self.assertRaises(SystemExit):
+                    api.parse_args(base + ['--exclusion-masks', str(mask)])
+            args, selected, pairs = api.parse_args(
+                base + ['--exclusion-masks', str(mask), str(mask)])
+            self.assertEqual(len(args.exclusion_masks), 2)
+            self.assertEqual(selected, images)
+            self.assertEqual(len(pairs), 1)
 
 
 if __name__ == '__main__':

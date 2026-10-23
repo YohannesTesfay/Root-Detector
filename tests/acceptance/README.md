@@ -53,6 +53,16 @@ tests plumbing, **not model quality**. The smoke model is deliberately retained;
 its name is recorded for later manual cleanup. Original settings are restored
 only after job termination is confirmed. Cache contents are not restored.
 
+To exercise actual exclusion-mask processing, add `masks` to `--cases` and
+`--exclusion-masks MASK1.png MASK2.png` in the same order as `--images`.
+Supply one nonempty, same-size PNG for every image; use disposable synthetic
+masks if no reviewed masks exist, and label that evidence as mechanical only.
+The runner uploads each as the image's `.exclusionmask.png` companion, enables
+exclusion, and runs all eight Original/Seeded policy combinations. It checks
+which observation masks were used and, for Seeded matches, the First/Second/
+Either/Both set identities. Run this after the no-mask cases; the uploaded masks
+and result cache are not restored automatically.
+
 ## Evidence and limits
 
 - `summary.json`: distinct success, failure, timeout, unconfirmed, review-required,
@@ -64,16 +74,17 @@ only after job termination is confirmed. Cache contents are not restored.
 - Seeded point arrays, seed identity, statistics, and device must match exactly
   across repeats. Original variability is reported descriptively. Detection
   caches may be reused; this is not a cold-start/restart reproducibility test.
-- The eight-option matrix deliberately disables exclusion masks: it checks option
-  propagation and zero-exclusion behavior, **not** genuine mask-policy correctness.
+- The default eight-option matrix deliberately disables exclusion masks; only
+  the optional `masks` case exercises nonempty exclusion effects. Neither case
+  establishes ecological correctness without expert review.
 - Cancellation uses a known active job only. A run finishing first is recorded as
   not exercised. Lost pipeline creation responses are not retried blindly: inspect
   the dedicated app before further use if the report says unconfirmed.
 - Session tokens are not saved. Diagnostics may contain workstation paths and
   filenames: review evidence before sharing it publicly.
 
-Separate release checks still cover genuine exclusion masks, human ecological
-review, GUI/display scaling, launcher/installer lifecycle, cold starts, sleep,
+Separate release checks still cover human ecological review, GUI/display scaling,
+launcher/installer lifecycle, cold starts, sleep,
 and prolonged resource use. This harness does not certify those areas.
 
 The installer CI additionally runs `installer_lifecycle.py` against its disposable

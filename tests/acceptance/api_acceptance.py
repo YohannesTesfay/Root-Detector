@@ -166,7 +166,7 @@ class Acceptance:
         self.summary = {'started_utc': dt.datetime.now(dt.timezone.utc).isoformat(),
                         'device': args.device, 'cases': [], 'status': 'running',
                         'scope': 'Mechanical package/API acceptance; not ecological or scientific validity.',
-                        'mask_scope': 'No exclusion masks: all eight options exercised without exclusion effects.',
+                        'mask_scope': 'The default matrix has no masks; the optional masks case uses supplied nonempty companion masks.',
                         'repeat_scope': 'Same process/device/models; detection caches may be reused.'}
 
     def save(self, name, value):
@@ -187,9 +187,9 @@ class Acceptance:
             self.save(tag + '-runtime.json', snapshot)
             return archive.read('BUILD-INFO.txt').decode('utf-8') if 'BUILD-INFO.txt' in archive.namelist() else ''
 
-    def settings(self, mode, policy, detection_model=None):
+    def settings(self, mode, policy, detection_model=None, masks=False):
         selected = copy.deepcopy(self.original_settings)
-        selected.update(use_gpu=self.args.device == 'cuda', exmask_enabled=False,
+        selected.update(use_gpu=self.args.device == 'cuda', exmask_enabled=masks,
                         tracking_sampling_mode=mode, tracking_exclusion_policy=policy)
         if detection_model or self.args.detection_model:
             selected['active_models']['detection'] = detection_model or self.args.detection_model
@@ -240,7 +240,7 @@ class Acceptance:
             time.sleep(self.args.poll_interval)
         raise TimeoutError('{} exceeded {} seconds; last state saved.'.format(tag, self.args.run_timeout))
 
-    def verify_run(self, run, mode, policy):
+    def verify_run(self, run, mode, policy, masks=False):
         if run['state'] not in {'completed', 'completed_with_errors'}:
             raise AssertionError('Pipeline did not finish: ' + run['state'])
         if set(run['images']) != {path.name for path in self.paths}:
@@ -260,8 +260,19 @@ class Acceptance:
                 raise AssertionError('Tracking profile does not match the chosen options.')
             if result['match_device'] != self.args.device:
                 raise AssertionError('Tracking used a different device than requested.')
-            masks = result['exclusion_masks']
-            if masks['observation0_present'] or masks['observation1_present'] or masks['combined_pixels']:
+            mask_info = result['exclusion_masks']
+            if masks:
+                expected = (policy in {'first', 'union', 'intersection'},
+                            policy in {'second', 'union', 'intersection'})
+                actual = (mask_info['observation0_present'], mask_info['observation1_present'])
+                if actual != expected:
+                    raise AssertionError('The selected exclusion policy used the wrong observations.')
+                for index, present in enumerate(expected):
+                    if present and mask_info['observation{}_pixels'.format(index)] <= 0:
+                        raise AssertionError('The supplied observation {} mask is empty.'.format(index))
+                if policy != 'intersection' and mask_info['combined_pixels'] <= 0:
+                    raise AssertionError('The selected policy produced an empty combined mask.')
+            elif mask_info['observation0_present'] or mask_info['observation1_present'] or mask_info['combined_pixels']:
                 raise AssertionError('No-mask acceptance unexpectedly used an exclusion mask.')
             if mode == 'deterministic' and (result['tracking_matcher'].get('seed') is None
                     or not result['tracking_matcher'].get('seed_identity')):
@@ -286,14 +297,14 @@ class Acceptance:
                         filename = item['result'][kind]
                         archive.writestr(name + '/' + filename, self.client.request('/images/' + urllib.parse.quote(filename, safe=''), binary=True))
 
-    def pipeline(self, tag, mode='legacy', policy='first', detection_model=None):
-        self.save(tag + '-settings.json', self.settings(mode, policy, detection_model))
+    def pipeline(self, tag, mode='legacy', policy='first', detection_model=None, masks=False):
+        self.save(tag + '-settings.json', self.settings(mode, policy, detection_model, masks=masks))
         run = self.create_run('pipeline', {
             'filenames': [path.name for path in self.paths], 'file_pairs': self.pairs,
         })
         self.save(tag + '-created.json', run)
         result = self.poll('pipeline', run['id'], tag)
-        review = self.verify_run(result, mode, policy)
+        review = self.verify_run(result, mode, policy, masks=masks)
         expected_model = detection_model or self.args.detection_model or self.original_settings['active_models']['detection']
         for pair in result['pairs']:
             output = pair['result']
@@ -304,6 +315,39 @@ class Acceptance:
         self.diagnostics(tag)
         self.record(tag, 'passed_with_review_required' if review else 'passed', review_required_pairs=review)
         return result
+
+    def masked_matrix(self):
+        paths = [Path(path) for path in self.args.exclusion_masks]
+        self.save('mask-sources.json', [
+            {'path': str(mask.resolve()), 'image': image.name, 'bytes': mask.stat().st_size,
+             'sha256': digest_file(mask)}
+            for image, mask in zip(self.paths, paths)
+        ])
+        for image, mask in zip(self.paths, paths):
+            self.client.upload(mask, image.stem + '.exclusionmask.png')
+        for mode in ('legacy', 'deterministic'):
+            results = {}
+            for policy in ('first', 'second', 'union', 'intersection'):
+                run = self.pipeline('masks-{}-{}'.format(mode, policy), mode, policy, masks=True)
+                results[policy] = [pair['result'] for pair in run['pairs']]
+            for index, pair in enumerate(self.pairs):
+                counts = {policy: results[policy][index]['exclusion_masks']['combined_pixels']
+                          for policy in results}
+                if mode == 'deterministic':
+                    if (counts['union'] + counts['intersection'] != counts['first'] + counts['second']
+                            or counts['union'] < max(counts['first'], counts['second'])
+                            or counts['intersection'] > min(counts['first'], counts['second'])):
+                        raise AssertionError('Exclusion-mask set identities failed for pair {}.'.format(pair))
+                    first = results['first'][index]
+                    for policy in ('second', 'union', 'intersection'):
+                        other = results[policy][index]
+                        if (first['tracking_matcher']['seed_identity'] != other['tracking_matcher']['seed_identity']
+                                or first['points0'] != other['points0'] or first['points1'] != other['points1']):
+                            raise AssertionError('Changing only the mask policy changed seeded match points.')
+                self.save('masks-{}-pair-{:02d}-counts.json'.format(mode, index),
+                          {'pair': pair, 'combined_pixels': counts})
+        self.record('nonempty-mask-matrix', 'passed',
+                    meaning='Mechanical policy and set-identity check; not ecological validity.')
 
     def cancellation(self):
         self.settings('legacy', 'first')
@@ -419,7 +463,8 @@ class Acceptance:
                 self.save('training-sources.json', [{'path': str(Path(path).resolve()), 'sha256': digest_file(path)}
                           for path in [self.args.training_image, self.args.training_label]])
             maximum = session.get('limits', {}).get('max_upload_bytes')
-            if maximum and any(path.stat().st_size > maximum for path in self.paths):
+            upload_paths = self.paths + [Path(path) for path in (self.args.exclusion_masks or [])]
+            if maximum and any(path.stat().st_size > maximum for path in upload_paths):
                 raise ValueError('A fixture exceeds the configured upload limit.')
             self.client.request('/clear_cache', 'POST')
             for index, path in enumerate(self.paths):
@@ -447,6 +492,10 @@ class Acceptance:
                 self.cancellation()
             if 'training' in self.args.cases:
                 self.training()
+            # Custom companions persist in the dedicated cache even when model
+            # exclusion is later disabled, so run this last.
+            if 'masks' in self.args.cases:
+                self.masked_matrix()
             self.summary['status'] = 'software_cases_passed'
         except (Exception, KeyboardInterrupt) as exc:
             self.summary['status'] = 'failed'
@@ -469,7 +518,8 @@ def parse_args(argv=None):
     parser.add_argument('--allow-clear', action='store_true', help='Confirm this dedicated app cache may be cleared.')
     parser.add_argument('--device', choices=('cpu', 'cuda'), required=True)
     parser.add_argument('--repeats', type=int, default=10)
-    parser.add_argument('--cases', nargs='+', choices=('repeats', 'matrix', 'cancel', 'training'), default=['repeats', 'matrix', 'cancel'])
+    parser.add_argument('--cases', nargs='+', choices=('repeats', 'matrix', 'masks', 'cancel', 'training'), default=['repeats', 'matrix', 'cancel'])
+    parser.add_argument('--exclusion-masks', nargs='+', help='One nonempty PNG mask per image, in --images order; required for --cases masks.')
     parser.add_argument('--detection-model')
     parser.add_argument('--build-info', help='Optional exact package BUILD-INFO.txt path on this machine.')
     parser.add_argument('--expected-commit', help='Expected package Git commit, checked against BUILD-INFO.')
@@ -486,6 +536,8 @@ def parse_args(argv=None):
         parser.error('Repeat count and timeout/interval values must be positive.')
     if 'training' in args.cases and not (args.training_image and args.training_label and args.confirm_reviewed_label):
         parser.error('Training needs --training-image, --training-label, and --confirm-reviewed-label.')
+    if 'masks' in args.cases and not args.exclusion_masks:
+        parser.error('Masked policy acceptance needs --exclusion-masks in --images order.')
     if bool(args.training_image) != bool(args.training_label):
         parser.error('Supply both training image and label.')
     if args.expected_commit and not re.fullmatch(r'[0-9a-fA-F]{7,40}', args.expected_commit):
@@ -497,6 +549,12 @@ def parse_args(argv=None):
         parser.error('Provide original PNG, JPEG, or TIFF image files.')
     if len({path.name.casefold() for path in paths}) != len(paths):
         parser.error('Source filenames must be unique, ignoring case.')
+    if args.exclusion_masks:
+        if len(args.exclusion_masks) != len(paths):
+            parser.error('Provide exactly one exclusion mask per input image.')
+        if any(not Path(mask).is_file() or Path(mask).suffix.lower() != '.png'
+               for mask in args.exclusion_masks):
+            parser.error('Exclusion masks must be existing PNG files.')
     for name in ('training_image', 'training_label', 'build_info'):
         value = getattr(args, name)
         if value and not Path(value).is_file():
