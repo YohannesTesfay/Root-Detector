@@ -419,9 +419,9 @@ RootsFileInput = class extends BaseFileInput{
             form.append('prepared_filename', inputfile.name)
             form.append('manifest', JSON.stringify(inputfile.preparation))
             form.append('confirmed', confirmed ? 'true' : 'false')
-            // The crop endpoint has no detection-result kind. Restore uses its
-            // pixel-preserving transform without retaining training provenance.
-            form.append('kind', description == 'exclusion mask' ? 'exclusion_mask' : 'training_annotation')
+            const kind = description == 'exclusion mask' ? 'exclusion_mask'
+                : description == 'detection result' ? 'detection_result' : 'training_annotation'
+            form.append('kind', kind)
             return $.ajax({
                 url: '/api/preparation/companion', method: 'POST', data: form,
                 processData: false, contentType: false,
@@ -449,11 +449,12 @@ RootsFileInput = class extends BaseFileInput{
         )
         // Keep the validated original-coordinate history when re-importing its exact mask.
         const provenance = previous ?? result.provenance
-        transformed.preparation_companion = provenance
-        if(record_companion)
+        if(record_companion){
+            transformed.preparation_companion = provenance
             inputfile.prepared_companions = (inputfile.prepared_companions ?? [])
                 .filter(previous => previous.kind != result.provenance.kind)
                 .concat([provenance])
+        }
         return transformed
     }
 

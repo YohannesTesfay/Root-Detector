@@ -374,9 +374,9 @@ def restore_prepared_files(uploaded_files, cache_path, max_file_bytes=MAX_SOURCE
 
 
 def transform_companion(upload, manifest, prepared_path, output_path, confirmed=False, kind='training_annotation', max_file_bytes=MAX_SOURCE_BYTES):
-    """Copy/crop a mask without resampling; return separate companion provenance."""
-    if kind not in ('training_annotation', 'exclusion_mask'):
-        raise security.ValidationError('Choose a training annotation or exclusion mask.', 'invalid_companion')
+    """Copy/crop a matching result or mask without resampling; return provenance."""
+    if kind not in ('training_annotation', 'exclusion_mask', 'detection_result'):
+        raise security.ValidationError('Choose a detection result, training annotation, or exclusion mask.', 'invalid_companion')
     if not isinstance(manifest, dict):
         raise security.ValidationError('Prepared image record is required.', 'invalid_preparation_manifest')
     validate_manifest_for_output(manifest, manifest.get('output_name'), prepared_path)
@@ -429,7 +429,7 @@ def validate_companion_provenance(record, manifest, cache_path):
     """Validate an export sidecar against the actual retained transformed mask."""
     if not isinstance(record, dict) or record.get('schema') != 1:
         raise security.ValidationError('Invalid prepared mask record.', 'invalid_companion')
-    if record.get('kind') not in ('training_annotation', 'exclusion_mask'):
+    if record.get('kind') not in ('training_annotation', 'exclusion_mask', 'detection_result'):
         raise security.ValidationError('Invalid prepared mask kind.', 'invalid_companion')
     if record.get('preparation_id') != manifest.get('preparation_id') or record.get('rectangle') != manifest.get('rectangle'):
         raise security.ValidationError('Prepared mask belongs to a different crop.', 'invalid_companion')

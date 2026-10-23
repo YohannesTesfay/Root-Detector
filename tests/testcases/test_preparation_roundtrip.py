@@ -110,6 +110,18 @@ def test_companion_requires_confirmation_or_exact_prepared_dimensions(tmp_path):
     assert not list(tmp_path.glob('.prepare-mask-*'))
 
 
+def test_prepared_detection_result_keeps_distinct_provenance_kind(tmp_path):
+    original, crop, record = fixture(tmp_path)
+    destination = tmp_path / 'detection-result.png'
+    provenance = preparation.transform_companion(
+        upload(original.name, original.read_bytes()), record, str(crop),
+        str(destination), confirmed=True, kind='detection_result',
+    )
+    assert provenance['kind'] == 'detection_result'
+    assert provenance['operation'] == 'pixel_preserving_crop'
+    assert destination.is_file()
+
+
 def test_companion_rejects_stale_prepared_identity_and_high_bit_mask(tmp_path):
     _original, crop, record = fixture(tmp_path)
     high = io.BytesIO()
