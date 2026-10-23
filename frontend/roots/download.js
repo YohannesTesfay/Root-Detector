@@ -1,6 +1,51 @@
-
+async function download_root_zip(filename, zipdata){
+    const zip = new JSZip()
+    for(const [name, value] of Object.entries(zipdata))
+        zip.file(name, await value, {binary:true})
+    const blob = await zip.generateAsync({type:'blob'})
+    download_blob(filename, blob)
+}
 
 RootDetectionDownload = class extends BaseDownload{
+    static async on_single_item_download_click(event){
+        const filename = $(event.target).closest('[filename]').attr('filename')
+        const zipdata = this.zipdata_for_file(filename)
+        if(!zipdata){
+            $('body').toast({message:'No detection result is available for this image.', class:'error'})
+            return
+        }
+        const $button = $(event.currentTarget ?? event.target)
+        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        try {
+            await download_root_zip(`${filename}.detection-results.zip`, zipdata)
+        } catch(error) {
+            $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
+        } finally {
+            $button.removeClass('loading disabled').removeAttr('aria-busy')
+        }
+    }
+
+    static async on_download_all(event){
+        if(this.download_in_progress)
+            return
+        const zipdata = this.zipdata_for_files(Object.keys(GLOBAL.files))
+        if(!Object.keys(zipdata).length){
+            $('body').toast({message:'No detection results are available to download.', class:'warning'})
+            return
+        }
+        const $button = $(event?.currentTarget ?? event?.target ?? '#detection-download-all')
+        this.download_in_progress = true
+        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        try {
+            await download_root_zip('RootDetector-detection-results.zip', zipdata)
+        } catch(error) {
+            $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
+        } finally {
+            this.download_in_progress = false
+            $button.removeClass('loading disabled').removeAttr('aria-busy')
+        }
+    }
+
     //override
     static zipdata_for_file(filename){
         var f                           = GLOBAL.files[filename];
@@ -61,6 +106,33 @@ RootDetectionDownload = class extends BaseDownload{
 
 
 RootTrackingDownload = class extends BaseDownload {
+    static async on_single_item_download_click(event){
+        const $root = $(event.target).closest('[filename]')
+        const filename = $root.attr('filename')
+        const zipdata = this.zipdata_for_file(filename)
+        if(!zipdata){
+            $('body').toast({message:'No tracking result is available for this pair.', class:'warning'})
+            return
+        }
+        const $button = $(event.currentTarget ?? event.target)
+        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        try {
+            await download_root_zip(`${filename}.tracking-results.zip`, zipdata)
+        } catch(error) {
+            $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
+        } finally {
+            $button.removeClass('loading disabled').removeAttr('aria-busy')
+        }
+    }
+
+    static is_exportable_result(result){
+        return !!(
+            result?.growthmap && result?.segmentation0 && result?.segmentation1
+            && result?.statistics && Array.isArray(result?.points0)
+            && Array.isArray(result?.points1)
+        )
+    }
+
     //override
     static zipdata_for_file(filename){
         var $root     = $(`[filename0][filename1][filename="${filename}"]`)
@@ -70,7 +142,7 @@ RootTrackingDownload = class extends BaseDownload {
         var filename0     = $root.attr('filename0')
         var filename1     = $root.attr('filename1')
         var tracking_data = GLOBAL.files[filename0].tracking_results[filename1];
-        if(tracking_data==undefined)
+        if(!this.is_exportable_result(tracking_data))
             return;
 
         var zipdata  = {};
@@ -102,7 +174,8 @@ RootTrackingDownload = class extends BaseDownload {
     }
 
     static async on_download_all(event) {
-        //TODO: show spinner/progress
+        if(this.download_in_progress)
+            return
         const filenames  = Object.keys(GLOBAL.files)
         const file_pairs = []
         for(const filename0 of filenames) {
@@ -111,18 +184,31 @@ RootTrackingDownload = class extends BaseDownload {
                 continue;
             
             for(const filename1 of Object.keys(tracking_results)){
-                if(Object.keys(tracking_results[filename1]).length > 0){
+                if(this.is_exportable_result(tracking_results[filename1])){
                     file_pairs.push([filename0, filename1])
                 }
             }
         }
-
-        const result = await RootSecurity.request(
-            '/compile_tracking_results',
-            'POST',
-            {file_pairs: file_pairs},
-        )
-        downloadURI('tracking_results.zip', url_for_image(result))
+        if(!file_pairs.length){
+            $('body').toast({message:'No tracking results are available to download.', class:'warning'})
+            return
+        }
+        const $button = $(event?.currentTarget ?? event?.target ?? '#tracking-download-all')
+        this.download_in_progress = true
+        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        try {
+            const result = await RootSecurity.request(
+                '/compile_tracking_results',
+                'POST',
+                {file_pairs: file_pairs},
+            )
+            downloadURI('RootDetector-tracking-results.zip', url_for_image(result))
+        } catch(error) {
+            $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
+        } finally {
+            this.download_in_progress = false
+            $button.removeClass('loading disabled').removeAttr('aria-busy')
+        }
     }
 
 

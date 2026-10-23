@@ -82,7 +82,7 @@ if args.prune_torchlibs:
     shutil.rmtree(build_dir+'/main/torch/lib')
 
 
-#zip full + zip as update + TODO: upload
+# Build both archives locally; the workflow publishes only the full portable ZIP.
 if args.zip:
     shutil.rmtree(build_dir+'/cache', ignore_errors=True)
 
