@@ -5,6 +5,8 @@ RootPreparation = class {
     static index = 0
     static stage = undefined
     static bounds_template = undefined
+    static pending_sources = []
+    static inspection_failed = false
     static busy = false
     static max_prepared_batch_bytes = 256 * 1024 * 1024
 
@@ -16,9 +18,69 @@ RootPreparation = class {
 
     static set_busy(busy){
         this.busy = busy
-        $('#preparation-dialog .actions button').prop('disabled', busy)
+        $('#preparation-dialog .actions button, #preparation-recovery button').prop('disabled', busy)
         if(!busy && this.stage)
             this.update_bounds()
+    }
+
+    static has_session(){
+        return !!(this.sources.length || this.stage || this.prepared.length)
+    }
+
+    static show_recovery(){
+        const replacement = this.pending_sources.length > 0
+        $('#preparation-recovery-text').text(replacement
+            ? `A preparation batch is already open. Resume it, or discard it and start the ${this.pending_sources.length} newly selected image(s). Undownloaded prepared copies will be lost if discarded.`
+            : this.inspection_failed
+                ? 'The current image could not be inspected. Retry it, or discard this preparation batch.'
+                : 'This preparation batch is still available. Resume it or discard it. Download any prepared copies before discarding.')
+        $('#preparation-resume').text(this.inspection_failed && !this.stage
+            ? 'Retry current image' : 'Resume current batch')
+        $('#preparation-discard').text(replacement
+            ? 'Discard and prepare selected images' : 'Discard current batch')
+        $('#preparation-recovery').show()
+        $('#preparation-dialog').modal({closable: false}).modal('show')
+    }
+
+    static clear_session(){
+        this.stage = undefined
+        this.sources = []
+        this.prepared = []
+        this.pending_sources = []
+        this.index = 0
+        this.bounds_template = undefined
+        this.inspection_failed = false
+        $('#preparation-preview-wrap, #preparation-fields, #preparation-apply, #preparation-download, #preparation-import, #preparation-recovery, #preparation-error').hide()
+        $('#preparation-preview').removeAttr('src')
+        $('#preparation-source-info, #preparation-summary').text('')
+    }
+
+    static async discard_current_stage(){
+        if(!this.stage)
+            return
+        const stage_id = this.stage.id
+        try {
+            await RootSecurity.request(`/api/preparation/${encodeURIComponent(stage_id)}/discard`, 'POST')
+        } catch(error) {
+            // A lost response or server restart can leave a stage ID in the
+            // browser after the server has already removed it.
+            if(error?.responseJSON?.code != 'preparation_not_found')
+                throw error
+        }
+        this.stage = undefined
+    }
+
+    static async start_files(files){
+        this.sources = files
+        this.prepared = []
+        this.pending_sources = []
+        this.index = 0
+        this.stage = undefined
+        this.bounds_template = undefined
+        this.inspection_failed = false
+        $('#preparation-error, #preparation-recovery, #preparation-download, #preparation-import').hide()
+        $('#preparation-dialog').modal({closable: false}).modal('show')
+        await this.inspect_current()
     }
 
     static show_selection_error(message){
@@ -30,29 +92,64 @@ RootPreparation = class {
         event.target.value = ''
         if(!files.length)
             return
-        if(this.busy || this.stage || this.sources.length){
-            this.show_selection_error('Finish or close the current image preparation first.')
+        if(this.busy){
+            this.show_selection_error('Image preparation is still finishing. Try again shortly.')
             return
         }
         if(files.length > 20){
+            if(this.has_session()) this.show_recovery()
             this.show_selection_error('Prepare at most 20 images in one batch.')
             return
         }
         const max_bytes = Number(RootSecurity.limits?.preparation_source_bytes ?? 64 * 1024 * 1024)
         const oversize = files.find(file => file.size > max_bytes)
         if(oversize){
+            if(this.has_session()) this.show_recovery()
             const mib = Math.floor(max_bytes / (1024 * 1024))
             this.show_selection_error(`${oversize.name} exceeds the ${mib} MiB preparation limit. Prepare it externally.`)
             return
         }
-        this.sources = files
-        this.prepared = []
-        this.index = 0
-        this.bounds_template = undefined
-        $('#preparation-error').hide()
-        $('#preparation-download, #preparation-import').hide()
-        $('#preparation-dialog').modal({closable: false}).modal('show')
-        await this.inspect_current()
+        if(this.has_session()){
+            this.pending_sources = files
+            this.show_recovery()
+            return
+        }
+        await this.start_files(files)
+    }
+
+    static async resume(){
+        if(this.busy)
+            return
+        this.pending_sources = []
+        $('#preparation-recovery').hide()
+        if(!this.stage && this.index < this.sources.length)
+            await this.inspect_current()
+    }
+
+    static async discard_session(start_pending=false){
+        if(this.busy)
+            return
+        if(this.prepared.length && !window.confirm(
+            'Discard prepared copies that have not been downloaded or imported?'
+        ))
+            return
+        const replacement = start_pending ? this.pending_sources.slice() : []
+        this.set_busy(true)
+        try {
+            await this.discard_current_stage()
+        } catch(error) {
+            // Keep the stage identifier so Close/Discard can retry server cleanup.
+            this.show_error(error)
+            this.show_recovery()
+            this.set_busy(false)
+            return
+        }
+        this.clear_session()
+        this.set_busy(false)
+        if(replacement.length)
+            await this.start_files(replacement)
+        else
+            $('#preparation-dialog').modal('hide')
     }
 
     static async inspect_current(){
@@ -60,6 +157,7 @@ RootPreparation = class {
         if(!file)
             return
         this.set_busy(true)
+        this.inspection_failed = false
         $('#preparation-source-info').text(`Inspecting ${this.index + 1} of ${this.sources.length}: ${file.name}...`)
         $('#preparation-preview-wrap').hide()
         $('#preparation-preview').removeAttr('src')
@@ -84,7 +182,9 @@ RootPreparation = class {
             $('#preparation-fields, #preparation-apply').show()
             this.update_bounds()
         } catch(error) {
+            this.inspection_failed = true
             this.show_error(error)
+            this.show_recovery()
         } finally {
             this.set_busy(false)
         }
@@ -166,12 +266,13 @@ RootPreparation = class {
             const file = new File([blob], result.manifest.output_name, {type: 'image/png'})
             if(this.prepared.some(previous => previous.name == file.name))
                 throw new Error(`Two prepared copies would be named ${file.name}. Use distinct source names or regions.`)
+            // Only commit a copy to the browser batch once its server stage is
+            // released. A failed discard can then be retried without a duplicate.
+            await this.discard_current_stage()
             file.preparation = result.manifest
             this.prepared.push(file)
             $('#preparation-download, #preparation-import').show()
             this.bounds_template = $('#crop-reuse-bounds').is(':checked') ? bounds : undefined
-            await RootSecurity.request(`/api/preparation/${encodeURIComponent(this.stage.id)}/discard`, 'POST')
-            this.stage = undefined
             this.index += 1
             if(this.index < this.sources.length){
                 await this.inspect_current()
@@ -219,46 +320,26 @@ RootPreparation = class {
         this.set_busy(true)
         try {
             if(this.stage){
-                await RootSecurity.request(`/api/preparation/${encodeURIComponent(this.stage.id)}/discard`, 'POST')
-                this.stage = undefined
+                await this.discard_current_stage()
             }
             // The shared file importer opens its own progress modal. Wait for
             // this dialog to close first so Fomantic does not leave that modal
             // active behind the preparation dialog.
-            await new Promise(resolve => {
-                $('#preparation-dialog')
-                    .modal('setting', 'onHidden', resolve)
-                    .modal('hide')
-            })
+            const dialog = $('#preparation-dialog')
+            if(dialog.is(':visible'))
+                await new Promise(resolve => dialog.modal('setting', 'onHidden', resolve).modal('hide'))
             await RootsFileInput.set_input_files(this.prepared)
-            this.sources = []
-            this.prepared = []
-            this.bounds_template = undefined
+            this.clear_session()
         } catch(error) {
             $('#preparation-dialog').modal('show')
             this.show_error(error)
+            this.show_recovery()
         } finally {
             this.set_busy(false)
         }
     }
 
     static async cancel(){
-        if(this.busy)
-            return
-        if(this.prepared.length && !window.confirm('Discard prepared copies that have not been downloaded or imported?'))
-            return
-        if(this.stage){
-            try {
-                await RootSecurity.request(`/api/preparation/${encodeURIComponent(this.stage.id)}/discard`, 'POST')
-            } catch(error) {
-                this.show_error(error)
-                return
-            }
-        }
-        this.stage = undefined
-        this.sources = []
-        this.prepared = []
-        this.bounds_template = undefined
-        $('#preparation-dialog').modal('hide')
+        await this.discard_session(false)
     }
 }

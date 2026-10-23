@@ -61,6 +61,14 @@ async function run() {
         const exclusion = rgbPNG(1400, 1400, x => x < 100 ? [255, 255, 255] : [0, 0, 0]);
         await page.locator('#preparation-input').setInputFiles({name: sourceName, mimeType: 'image/png', buffer: source});
         await page.locator('#preparation-fields').waitFor({state: 'visible'});
+        await page.evaluate(() => $('#preparation-dialog').modal('hide'));
+        await page.locator('#preparation-dialog').waitFor({state: 'hidden'});
+        await page.locator('#preparation-input').setInputFiles({name: 'Replacement.png', mimeType: 'image/png', buffer: source});
+        await page.locator('#preparation-recovery').waitFor({state: 'visible'});
+        assert.equal(await page.evaluate(() => RootPreparation.sources[0].name), sourceName);
+        await page.locator('#preparation-resume').click();
+        await page.locator('#preparation-recovery').waitFor({state: 'hidden'});
+        await page.locator('#preparation-dialog').waitFor({state: 'visible'});
         for (const [key, value] of Object.entries({left: 10, top: 20, width: 1280, height: 1280})) {
             await page.locator(`#crop-${key}`).fill(String(value));
         }
@@ -71,6 +79,10 @@ async function run() {
         const preparedDownload = await pendingPrepared;
         const preparedPath = path.join(artifacts, 'RootDetector-prepared-images.zip');
         await preparedDownload.saveAs(preparedPath);
+        await page.locator('#preparation-input').setInputFiles({name: 'Replacement.png', mimeType: 'image/png', buffer: source});
+        await page.locator('#preparation-recovery').waitFor({state: 'visible'});
+        await page.locator('#preparation-discard').click();
+        await page.locator('#preparation-source-info').filter({hasText: 'Replacement.png'}).waitFor({state: 'visible'});
         await page.locator('#preparation-dialog .actions button').filter({hasText: /Close|Cancel/}).click();
         await page.locator('#preparation-dialog').waitFor({state: 'hidden'});
         await page.locator('#prepared-import-input').setInputFiles(preparedPath);

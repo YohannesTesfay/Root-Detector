@@ -198,6 +198,11 @@
     </div>
     <p id="preparation-summary" aria-live="polite"></p>
     <div class="ui negative message" id="preparation-error" role="alert" style="display:none"></div>
+    <div class="ui warning message" id="preparation-recovery" role="status" aria-live="polite" style="display:none">
+      <p id="preparation-recovery-text"></p>
+      <button type="button" class="ui button" id="preparation-resume" onclick="RootPreparation.resume()">Resume current batch</button>
+      <button type="button" class="ui button" id="preparation-discard" onclick="RootPreparation.discard_session(true)">Discard current batch</button>
+    </div>
   </div>
   <div class="actions">
     <button type="button" class="ui button" onclick="RootPreparation.cancel()">Close</button>
