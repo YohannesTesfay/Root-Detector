@@ -39,7 +39,15 @@ RootPreparation = class {
         $('#preparation-discard').text(replacement
             ? 'Discard and prepare selected images' : 'Discard current batch')
         $('#preparation-recovery').show()
-        $('#preparation-dialog').modal({closable: false}).modal('show')
+        const dialog = $('#preparation-dialog')
+        // Another modal can hide the shared dimmer while this dialog still
+        // carries Fomantic's `active` state. Reset that stale instance before
+        // reopening; merely calling show leaves the entire dimmer invisible.
+        if(dialog.closest('.dimmer').hasClass('hidden')){
+            dialog.modal('destroy')
+            dialog.removeClass('active visible hidden')
+        }
+        dialog.modal({closable: false}).modal('show')
     }
 
     static clear_session(){

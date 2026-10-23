@@ -215,10 +215,12 @@ RootsFileInput = class extends BaseFileInput{
             value: 0,
             showActivity: false,
         })
+        let matched = 0
         try {
             for(const [filename, results] of Object.entries(result_files)){
                 const unzipped_results = await Promise.all(results.map(maybe_unzip))
-                await this.load_result(filename, unzipped_results, {as_training_labels})
+                if(await this.load_result(filename, unzipped_results, {as_training_labels}))
+                    matched += 1
                 $modal.find('.progress').progress('increment')
             }
         } finally {
@@ -226,7 +228,7 @@ RootsFileInput = class extends BaseFileInput{
             await sleep(500)
             $modal.find('.progress').progress('reset')
         }
-        return Object.keys(result_files).length
+        return matched
     }
 
     static async collect_results_from_zipfile(file){
@@ -386,7 +388,7 @@ RootsFileInput = class extends BaseFileInput{
                     message: `Imported a training label for ${filename}. The existing detection overlay was not replaced. Review the label before confirming training.`,
                     class: 'info', displayTime: 8000,
                 })
-                return
+                return true
             }
             const resultfile = new File(
                 //consistent file name
@@ -402,7 +404,9 @@ RootsFileInput = class extends BaseFileInput{
             await App.Detection.set_results(filename, result)
             if(as_training_labels)
                 RootsTraining.register_imported_label(filename, training_label)
+            return true
         }
+        return false
     }
 
     static async validate_prepared_companion(inputfile, file, description, {record_companion=true}={}){

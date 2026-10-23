@@ -61,7 +61,9 @@ async function run() {
         const exclusion = rgbPNG(1400, 1400, x => x < 100 ? [255, 255, 255] : [0, 0, 0]);
         await page.locator('#preparation-input').setInputFiles({name: sourceName, mimeType: 'image/png', buffer: source});
         await page.locator('#preparation-fields').waitFor({state: 'visible'});
-        await page.evaluate(() => $('#preparation-dialog').modal('hide'));
+        await page.evaluate(() => new Promise(resolve => {
+            $('#preparation-dialog').modal('setting', 'onHidden', resolve).modal('hide');
+        }));
         await page.locator('#preparation-dialog').waitFor({state: 'hidden'});
         await page.locator('#preparation-input').setInputFiles({name: 'Replacement.png', mimeType: 'image/png', buffer: source});
         await page.locator('#preparation-recovery').waitFor({state: 'visible'});

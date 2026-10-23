@@ -6,12 +6,14 @@ const {File} = require('node:buffer')
 
 const repository = path.resolve(__dirname, '../..')
 const elements = new Map()
+let dimmer_hidden = false
 function element(selector){
     if(!elements.has(selector))
         elements.set(selector, {visible: selector == '#preparation-dialog', text: '', value: ''})
     const state = elements.get(selector)
     return {
         modal(...args){
+            if(args[0] == 'destroy') state.destroyed = (state.destroyed ?? 0) + 1
             if(args[0] == 'show') state.visible = true
             if(args[0] == 'hide'){
                 state.visible = false
@@ -21,6 +23,8 @@ function element(selector){
             return this
         },
         is(query){ return query == ':visible' ? state.visible : false },
+        closest(){ return {hasClass: name => name == 'hidden' && dimmer_hidden} },
+        removeClass(){ return this },
         show(){ state.visible = true; return this },
         hide(){ state.visible = false; return this },
         toggle(visible){ state.visible = visible; return this },
@@ -69,7 +73,10 @@ async function main(){
     await select('first.png')
     const firstStage = RootPreparation.stage.id
     element('#preparation-dialog').modal('hide') // Simulate another UI path hiding the modal.
+    dimmer_hidden = true
     await select('second.png')
+    assert.equal(elements.get('#preparation-dialog').destroyed, 1, 'A hidden Fomantic dimmer needs its stale modal instance reset.')
+    dimmer_hidden = false
     assert.equal(element('#preparation-dialog').is(':visible'), true)
     assert.equal(element('#preparation-recovery').is(':visible'), true)
     assert.equal(RootPreparation.sources[0].name, 'first.png')

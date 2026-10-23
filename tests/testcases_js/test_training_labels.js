@@ -72,6 +72,7 @@ async function test_restored_prediction_is_not_a_training_label(){
     await RootsFileInput.load_result('first.tif', [{name: 'first.tif.segmentation.png'}])
     assert.strictEqual(GLOBAL.files['first.tif'].results.segmentation, 'restored-prediction')
     assert.deepStrictEqual(RootsTraining.get_selected_files(), [])
+    assert.strictEqual(await RootsFileInput.load_result('other.tif', [{name: 'other.png'}]), false)
 
     let shown_error
     RootsFileInput.show_file_error = error => { shown_error = error.message }
