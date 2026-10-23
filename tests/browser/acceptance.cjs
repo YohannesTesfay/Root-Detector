@@ -44,11 +44,12 @@ async function run() {
         // Import existing predictions through the actual file input and re-export.
         await page.locator('#input_images').setInputFiles([path.join(assets, earlier), path.join(assets, later)]);
         await page.waitForFunction(() => Object.keys(GLOBAL.files).length === 2);
-        await page.locator('#annotations-input').setInputFiles(path.join(assets, later + '.results.zip'));
+        await page.locator('#results-input').setInputFiles(path.join(assets, later + '.results.zip'));
         await waitDetection(page, later);
+        assert.equal(await page.evaluate(() => RootsTraining.imported_labels.size), 0, 'Restored predictions must not become training labels.');
         const imported = await downloadDetection(page, later);
         await assertDetectionArchive(page, imported, later);
-        await page.locator('#annotations-input').setInputFiles(path.join(assets, earlier.replace(/\.tiff$/, '.png')));
+        await page.locator('#results-input').setInputFiles(path.join(assets, earlier.replace(/\.tiff$/, '.png')));
         await waitDetection(page, earlier);
         console.log('PASS imported ZIP/plain PNG masks and detection re-export');
 

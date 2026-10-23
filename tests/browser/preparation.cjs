@@ -110,8 +110,9 @@ async function run() {
         // A fresh image set proves provenance and mask coordinates survive export/import.
         await page.locator('#prepared-import-input').setInputFiles(preparedPath);
         await page.waitForFunction(() => Object.values(GLOBAL.files).length === 1 && !Object.values(GLOBAL.files)[0].results);
-        await page.locator('#annotations-input').setInputFiles(resultPath);
-        await page.waitForFunction(() => RootsTraining.imported_labels.size === 1);
+        await page.locator('#results-input').setInputFiles(resultPath);
+        await page.waitForFunction(() => Object.values(GLOBAL.files)[0].results && Object.values(GLOBAL.files)[0].prepared_companions?.some(record => record.kind === 'training_annotation'));
+        assert.equal(await page.evaluate(() => RootsTraining.imported_labels.size), 0, 'Restored detection results must not become training labels.');
         const reopened = await page.evaluate(() => Object.values(GLOBAL.files)[0].prepared_companions.find(record => record.kind === 'training_annotation'));
         assert.equal(reopened.operation, companion.operation);
         assert.equal(reopened.source_mask_sha256, companion.source_mask_sha256);

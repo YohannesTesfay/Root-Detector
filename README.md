@@ -79,7 +79,7 @@ For repeat tests of a tracking pair, choose **Settings → Tracking point sampli
 
 ## Train a Model (Optional)
 
-Training is separate from ordinary analysis. You do not need to review or label every image you analyze. For training, prepare a smaller, representative set of original images with matching masks that a person has independently checked and corrected where needed. Load the originals, then choose **Files → Load Annotations** for those masks. The Training tab asks you to confirm their review before **Start Training** becomes available. Automatically produced detection masks—including masks in a results ZIP—are predictions, not verified training labels. Keep different tubes/sites and dates out of the evaluation set so you can test the new model on genuinely unseen images.
+Training is separate from ordinary analysis. You do not need to review or label every image you analyze. For training, prepare a smaller, representative set of original images with matching PNG masks that a person has independently checked and corrected where needed. Load the originals, open **Training → Import Reviewed Labels**, and select those masks. Confirm their review in the Training tab before **Start Training** becomes available. Automatically produced detection masks—including masks in a results ZIP—are predictions, not verified training labels. To reopen an earlier prediction for inspection, use **Files → Restore Detection Results**; this does not add a training label. Keep different tubes/sites and dates out of the evaluation set so you can test the new model on genuinely unseen images.
 
 ## Common Problems
 

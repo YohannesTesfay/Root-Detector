@@ -290,7 +290,7 @@ RootsTraining = class extends BaseTraining {
         const n = this.get_selected_files().length;
         $('#training-number-of-files-info-label').text(n)
         $('#training-label-file-list').text(
-            n ? this.get_selected_files().join(', ') : 'No annotations imported yet.'
+            n ? this.get_selected_files().join(', ') : 'No reviewed labels imported yet.'
         )
         $('#training-number-of-files-info-message').removeClass('hidden')
         const confirmed = $('#training-reviewed-labels-checkbox').is(':checked')

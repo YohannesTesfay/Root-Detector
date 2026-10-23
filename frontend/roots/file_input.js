@@ -81,7 +81,31 @@ RootsFileInput = class extends BaseFileInput{
 
     static async on_annotations_select(event){
         try {
-            await this.load_result_files(event.target.files)
+            const files = Array.from(event.target.files)
+            if(!files.length)
+                return
+            if(!Object.keys(GLOBAL.files).length)
+                throw new Error('Load the matching original images before importing reviewed labels.')
+            if(files.some(file => !file.name.toLowerCase().endsWith('.png')))
+                throw new Error('Import reviewed PNG masks here, not a detection-results ZIP. Use Files → Restore Detection Results for prior predictions.')
+            if(!await this.load_result_files(files, {as_training_labels: true}))
+                throw new Error('No reviewed masks matched the loaded images. Check the mask filenames.')
+        } catch(error) {
+            this.show_file_error(error)
+        } finally {
+            event.target.value = ''
+        }
+    }
+
+    static async on_results_select(event){
+        try {
+            const files = Array.from(event.target.files)
+            if(!files.length)
+                return
+            if(!Object.keys(GLOBAL.files).length)
+                throw new Error('Load the matching original images before restoring detection results.')
+            if(!await this.load_result_files(files))
+                throw new Error('No results matched the loaded images. Check the filenames in the results ZIP.')
         } catch(error) {
             this.show_file_error(error)
         } finally {
@@ -179,10 +203,10 @@ RootsFileInput = class extends BaseFileInput{
         await this.set_input_files(restored)
     }
 
-    static async load_result_files(files){
+    static async load_result_files(files, {as_training_labels=false}={}){
         const result_files = await this.collect_result_files(files)
         if(Object.keys(result_files).length == 0)
-            return
+            return 0
 
         const $modal = $('#loading-files-modal')
         $modal.modal({closable: false, inverted: true, duration: 0}).modal('show')
@@ -194,7 +218,7 @@ RootsFileInput = class extends BaseFileInput{
         try {
             for(const [filename, results] of Object.entries(result_files)){
                 const unzipped_results = await Promise.all(results.map(maybe_unzip))
-                await this.load_result(filename, unzipped_results)
+                await this.load_result(filename, unzipped_results, {as_training_labels})
                 $modal.find('.progress').progress('increment')
             }
         } finally {
@@ -202,6 +226,7 @@ RootsFileInput = class extends BaseFileInput{
             await sleep(500)
             $modal.find('.progress').progress('reset')
         }
+        return Object.keys(result_files).length
     }
 
     static async collect_results_from_zipfile(file){
@@ -337,20 +362,25 @@ RootsFileInput = class extends BaseFileInput{
     }
 
     //override
-    static async load_result(filename, resultfiles){
+    static async load_result(filename, resultfiles, {as_training_labels=false}={}){
         const inputfile = GLOBAL.files[filename]
         if(inputfile != undefined){
-            const companion = await this.validate_prepared_companion(inputfile, resultfiles[0], 'training annotation')
-            const training_label = new File(
-                [companion],
-                `training-label-${Date.now()}-${Math.random().toString(36).slice(2)}.png`,
-                {type:'image/png'},
+            const companion = await this.validate_prepared_companion(
+                inputfile, resultfiles[0], as_training_labels ? 'training annotation' : 'detection result',
+                {record_companion: as_training_labels},
             )
-            if(companion.preparation_companion)
-                training_label.preparation_companion = companion.preparation_companion
-            // A prior prediction may already own the conventional result name
-            // in the cache. Keep a separately named training label either way.
-            if(inputfile.results){
+            let training_label
+            if(as_training_labels){
+                training_label = new File(
+                    [companion],
+                    `training-label-${Date.now()}-${Math.random().toString(36).slice(2)}.png`,
+                    {type:'image/png'},
+                )
+                if(companion.preparation_companion)
+                    training_label.preparation_companion = companion.preparation_companion
+            }
+            // Keep an existing detection overlay when adding a training label.
+            if(as_training_labels && inputfile.results){
                 RootsTraining.register_imported_label(filename, training_label)
                 $('body').toast({
                     message: `Imported a training label for ${filename}. The existing detection overlay was not replaced. Review the label before confirming training.`,
@@ -370,11 +400,12 @@ RootsFileInput = class extends BaseFileInput{
                 'POST',
             )
             await App.Detection.set_results(filename, result)
-            RootsTraining.register_imported_label(filename, training_label)
+            if(as_training_labels)
+                RootsTraining.register_imported_label(filename, training_label)
         }
     }
 
-    static async validate_prepared_companion(inputfile, file, description){
+    static async validate_prepared_companion(inputfile, file, description, {record_companion=true}={}){
         if(!inputfile.preparation)
             return file
         await this.ensure_uploaded(inputfile)
@@ -384,7 +415,9 @@ RootsFileInput = class extends BaseFileInput{
             form.append('prepared_filename', inputfile.name)
             form.append('manifest', JSON.stringify(inputfile.preparation))
             form.append('confirmed', confirmed ? 'true' : 'false')
-            form.append('kind', description == 'training annotation' ? 'training_annotation' : 'exclusion_mask')
+            // The crop endpoint has no detection-result kind. Restore uses its
+            // pixel-preserving transform without retaining training provenance.
+            form.append('kind', description == 'exclusion mask' ? 'exclusion_mask' : 'training_annotation')
             return $.ajax({
                 url: '/api/preparation/companion', method: 'POST', data: form,
                 processData: false, contentType: false,
@@ -413,9 +446,10 @@ RootsFileInput = class extends BaseFileInput{
         // Keep the validated original-coordinate history when re-importing its exact mask.
         const provenance = previous ?? result.provenance
         transformed.preparation_companion = provenance
-        inputfile.prepared_companions = (inputfile.prepared_companions ?? [])
-            .filter(previous => previous.kind != result.provenance.kind)
-            .concat([provenance])
+        if(record_companion)
+            inputfile.prepared_companions = (inputfile.prepared_companions ?? [])
+                .filter(previous => previous.kind != result.provenance.kind)
+                .concat([provenance])
         return transformed
     }
 

@@ -57,12 +57,44 @@ async function test_import_does_not_replace_existing_detection(){
         {filename: 'file_input.js'},
     )
     const previous = GLOBAL.files['first.tif'].results
-    await RootsFileInput.load_result('first.tif', [{name: 'reviewed.png'}])
+    await RootsFileInput.load_result('first.tif', [{name: 'reviewed.png'}], {as_training_labels: true})
     assert.strictEqual(GLOBAL.files['first.tif'].results, previous)
     assert.match(RootsTraining.imported_labels.get('first.tif').name, /^training-label-.*\.png$/)
 }
 
+async function test_restored_prediction_is_not_a_training_label(){
+    RootsTraining.clear_imported_labels()
+    global.RootSecurity = {request: async () => ({segmentation: 'restored-prediction'})}
+    RootsFileInput.ensure_uploaded = async () => ({})
+    global.App = {Detection: {set_results: async (filename, result) => {
+        GLOBAL.files[filename].results = result
+    }}}
+    await RootsFileInput.load_result('first.tif', [{name: 'first.tif.segmentation.png'}])
+    assert.strictEqual(GLOBAL.files['first.tif'].results.segmentation, 'restored-prediction')
+    assert.deepStrictEqual(RootsTraining.get_selected_files(), [])
+
+    let shown_error
+    RootsFileInput.show_file_error = error => { shown_error = error.message }
+    await RootsFileInput.on_annotations_select({target: {
+        files: [{name: 'RootDetector-detection-results.zip'}], value: 'selected',
+    }})
+    assert.match(shown_error, /not a detection-results ZIP/)
+    assert.deepStrictEqual(RootsTraining.get_selected_files(), [])
+
+    const original_loader = RootsFileInput.load_result_files
+    const modes = []
+    RootsFileInput.load_result_files = async (_files, options={}) => {
+        modes.push(options.as_training_labels ?? false)
+        return 1
+    }
+    await RootsFileInput.on_results_select({target: {files: [{name: 'results.zip'}], value: 'selected'}})
+    await RootsFileInput.on_annotations_select({target: {files: [{name: 'reviewed.png'}], value: 'selected'}})
+    assert.deepStrictEqual(modes, [false, true])
+    RootsFileInput.load_result_files = original_loader
+}
+
 test_reviewed_labels_only()
     .then(test_import_does_not_replace_existing_detection)
+    .then(test_restored_prediction_is_not_a_training_label)
     .then(() => console.log('Reviewed training label tests passed.'))
     .catch(error => { console.error(error); process.exitCode = 1 })

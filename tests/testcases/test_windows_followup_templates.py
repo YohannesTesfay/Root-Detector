@@ -17,7 +17,7 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     for control_id in [
         'load-input-images-button',
         'load-input-folder-button',
-        'load-annotations-button',
+        'load-results-button',
         'load-exclude-masks-button',
     ]:
         assert 'id="{}"'.format(control_id) in template
@@ -28,6 +28,15 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert "keydown.rootdetector-menu" in app
     assert 'event.target !== event.currentTarget' in app
     assert 'id="file-import-menu"' in template
+    assert 'id="results-input"' in template
+    assert 'id="load-annotations-button"' not in template
+    training_tab = read('templates/roots/training_tab.html')
+    assert 'id="load-annotations-button"' in training_tab
+    assert 'id="annotations-input"' in training_tab
+    assert 'Import Reviewed Labels' in training_tab
+    assert 'Restore Detection Results' in template
+    assert 'Load images → Run Analysis' in template
+    assert 'no second upload is needed' in template
     assert 'aria-expanded="false"' in template
     assert "$('#file-import-menu').dropdown({action: 'hide'})" in app
     assert "addClass('keyboard-open')" in app
