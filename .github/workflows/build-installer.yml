@@ -59,8 +59,12 @@ jobs:
       - name: Verify single-window package
         shell: pwsh
         run: |
+          $env:ROOTDETECTOR_CHECK_LOG = Join-Path $env:RUNNER_TEMP 'rootdetector-desktop-check.txt'
           & builds/RootDetector-Windows-installer-payload/RootDetector.exe --check-package
-          if ($LASTEXITCODE -ne 0) { throw 'Desktop host cannot find its backend or WebView dependencies.' }
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $env:ROOTDETECTOR_CHECK_LOG) { Get-Content $env:ROOTDETECTOR_CHECK_LOG }
+            throw 'Desktop host cannot find its backend or WebView dependencies.'
+          }
       - name: Compile per-user installer
         shell: pwsh
         run: |

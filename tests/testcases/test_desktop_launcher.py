@@ -1,5 +1,8 @@
 """Model-free checks for the separate Windows window host."""
 
+import sys
+import types
+
 import desktop_main
 
 
@@ -85,3 +88,11 @@ def test_startup_close_warns_before_stopping_download(tmp_path):
     host.window = Window(confirm=False)
     assert host.on_closing() is False
     assert 'model downloads' in host.window.prompts[0][1]
+
+
+def test_package_check_reports_missing_backend(tmp_path, monkeypatch):
+    diagnostic = tmp_path / 'check.txt'
+    monkeypatch.setenv('ROOTDETECTOR_CHECK_LOG', str(diagnostic))
+    monkeypatch.setitem(sys.modules, 'webview', types.ModuleType('webview'))
+    assert desktop_main.check_package(tmp_path) == 1
+    assert 'main.exe' in diagnostic.read_text(encoding='utf-8')

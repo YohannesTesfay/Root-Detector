@@ -51,8 +51,12 @@ jobs:
         run: |
           $hosts = @(Get-ChildItem builds/*_DigIT_RootDetector/RootDetector.exe)
           if ($hosts.Count -ne 1) { throw 'Expected exactly one desktop host.' }
+          $env:ROOTDETECTOR_CHECK_LOG = Join-Path $env:RUNNER_TEMP 'rootdetector-desktop-check.txt'
           & $hosts[0].FullName --check-package
-          if ($LASTEXITCODE -ne 0) { throw 'Desktop host cannot find its backend or WebView dependencies.' }
+          if ($LASTEXITCODE -ne 0) {
+            if (Test-Path $env:ROOTDETECTOR_CHECK_LOG) { Get-Content $env:ROOTDETECTOR_CHECK_LOG }
+            throw 'Desktop host cannot find its backend or WebView dependencies.'
+          }
 
       - name: Name portable download and record checksum
         shell: pwsh

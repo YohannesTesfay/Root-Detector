@@ -200,11 +200,24 @@ def show_native_error(message):
         print(message, file=sys.stderr)
 
 
+def check_package(root):
+    try:
+        import webview  # Verify frozen window dependencies without opening a GUI.
+        if not backend_path(root).is_file():
+            raise FileNotFoundError('Missing {}'.format(backend_path(root)))
+        return 0
+    except Exception:
+        diagnostic_path = os.environ.get('ROOTDETECTOR_CHECK_LOG')
+        if diagnostic_path:
+            with open(diagnostic_path, 'w', encoding='utf-8') as output:
+                traceback.print_exc(file=output)
+        return 1
+
+
 def main():
     root = package_root()
     if sys.argv[1:] == ['--check-package']:
-        import webview  # Verify the frozen window dependencies without opening a GUI.
-        return 0 if backend_path(root).is_file() and webview else 1
+        return check_package(root)
     host = DesktopHost(root)
     try:
         import webview
