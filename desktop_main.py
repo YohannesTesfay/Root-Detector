@@ -249,4 +249,8 @@ def main():
 
 
 if __name__ == '__main__':
+    diagnostic_path = os.environ.get('ROOTDETECTOR_CHECK_LOG')
+    if diagnostic_path:
+        with open(diagnostic_path, 'w', encoding='utf-8') as output:
+            output.write('RootDetector desktop entry; argv={!r}\n'.format(sys.argv[1:]))
     raise SystemExit(main())
