@@ -28,6 +28,8 @@ The installer candidate includes both CPU and NVIDIA GPU processing libraries. I
 
 New full Windows packages contain `RootDetector.exe` plus **only `StartRootDetector.bat`** as a browser fallback; they do not contain `main.bat`. Older 2023 downloads used `main.bat`; those existing downloads are unchanged. GitHub's “Source code” ZIP is not a ready-to-run Windows package.
 
+When you download Detection or Tracking results from the application window, choose where to save the ZIP in the Windows Save dialog. The browser fallback uses your browser's usual download behavior.
+
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
 To check for a newer version, open **About → Check for updates**. RootDetector checks published GitHub releases only when you click; it displays a link to the release. Export any results you need and close RootDetector before installing a newer version. A newer per-user installer keeps saved settings and models in `%LOCALAPPDATA%\RootDetector`. For a portable ZIP, extract the new package into a separate folder and retain the old folder until you have transferred any local settings or models you need. The app does not install updates by itself.

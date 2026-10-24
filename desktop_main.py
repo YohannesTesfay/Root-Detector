@@ -222,6 +222,12 @@ def check_package(root):
         return 1
 
 
+def configure_webview(webview):
+    # pywebview disables downloads by default. Detection/tracking exports use
+    # blob or generated links, so the desktop host must permit Save dialogs.
+    webview.settings['ALLOW_DOWNLOADS'] = True
+
+
 def main():
     root = package_root()
     if sys.argv[1:] == ['--check-package']:
@@ -229,6 +235,7 @@ def main():
     host = DesktopHost(root)
     try:
         import webview
+        configure_webview(webview)
         host.window = webview.create_window(
             'RootDetector',
             html=status_page('Starting RootDetector', 'Preparing the local analysis process. First launch may take several minutes.'),

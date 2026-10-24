@@ -107,3 +107,9 @@ def test_package_check_reports_missing_backend(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'webview', types.ModuleType('webview'))
     assert desktop_main.check_package(tmp_path) == 1
     assert 'main.exe' in diagnostic.read_text(encoding='utf-8')
+
+
+def test_desktop_window_enables_result_downloads():
+    webview = types.SimpleNamespace(settings={'ALLOW_DOWNLOADS': False})
+    desktop_main.configure_webview(webview)
+    assert webview.settings['ALLOW_DOWNLOADS'] is True
