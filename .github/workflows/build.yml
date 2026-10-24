@@ -24,6 +24,7 @@ jobs:
         run: |
           python -m pip install -r requirements.txt -c constraints-legacy.txt
           python -m pip install -r requirements-core-test.txt -c constraints-legacy.txt
+          python -m pip install -r requirements-desktop-windows.txt -c constraints-legacy.txt
 
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
@@ -44,6 +45,14 @@ jobs:
 
       - name: Build
         run: python build.py --zip --prune-torchlibs
+
+      - name: Verify single-window package
+        shell: pwsh
+        run: |
+          $hosts = @(Get-ChildItem builds/*_DigIT_RootDetector/RootDetector.exe)
+          if ($hosts.Count -ne 1) { throw 'Expected exactly one desktop host.' }
+          & $hosts[0].FullName --check-package
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop host cannot find its backend or WebView dependencies.' }
 
       - name: Name portable download and record checksum
         shell: pwsh

@@ -22,11 +22,11 @@ A per-user installer is being prepared and is not yet a qualified release. Until
 The installer candidate includes both CPU and NVIDIA GPU processing libraries. In **Settings**, enable GPU processing to use a compatible NVIDIA GPU, or leave it disabled for CPU processing. If the selected GPU cannot initialize, RootDetector reports the problem; choose CPU explicitly to continue. The installer still needs Windows CPU/GPU acceptance before release.
 
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
-2. Open the extracted folder and double-click **`StartRootDetector.bat`**.
-3. Keep the console window open. RootDetector starts its local service and opens the interface in your default browser.
+2. Open the extracted folder and double-click **`RootDetector.exe`**. It opens one application window without a command prompt; analysis still runs locally on your computer.
+3. If the window cannot open, install the Microsoft WebView2 Runtime or double-click **`StartRootDetector.bat`** to use the original browser interface. Keep its console window open while working.
 4. On the first start, allow time for required model and PyTorch files to download. Internet access to `download.pytorch.org`, `github.com`, and the configured model hosts is required. If a proxy or firewall blocks a download, correct the connection and run the launcher again.
 
-New full Windows packages contain **only `StartRootDetector.bat`** as the launcher. Older 2023 downloads used `main.bat`; those existing downloads are unchanged. GitHub's “Source code” ZIP is not a ready-to-run Windows package.
+New full Windows packages contain `RootDetector.exe` plus **only `StartRootDetector.bat`** as a browser fallback; they do not contain `main.bat`. Older 2023 downloads used `main.bat`; those existing downloads are unchanged. GitHub's “Source code” ZIP is not a ready-to-run Windows package.
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
@@ -83,8 +83,8 @@ Training is separate from ordinary analysis. You do not need to review or label 
 
 ## Common Problems
 
-- **The first start appears slow:** model and PyTorch downloads can be large. Keep the console open and check the internet connection.
-- **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **StartRootDetector.bat** again. Existing verified downloads are reused.
+- **The first start appears slow:** model and PyTorch downloads can be large. Keep the application open and check the internet connection; the browser fallback shows detailed progress in its console.
+- **The first start stops with a download error:** allow access to the required hosts, verify free disk space, and run **RootDetector.exe** again. Existing verified downloads are reused. If the window fails, use **StartRootDetector.bat** and check `logs\desktop-host.log`.
 - **An image is rejected:** use PNG, JPEG, TIFF, or TIF and ensure the file is not damaged.
 - **An image exceeds the upload limit:** the default is 256 MiB per file. Ask a maintainer to adjust the local limit after checking available memory and the image's dimensions; the [Technical Guide](TECHNICAL-GUIDE.md) explains how.
 - **No tracking pair appears:** verify that at least two filenames share the same sample name and contain supported dates.

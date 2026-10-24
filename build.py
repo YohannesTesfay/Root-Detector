@@ -28,6 +28,12 @@ if args.installer_payload:
     if sys.platform != 'win32' or torch.__version__ != '1.10.1+cu113' or torch.version.cuda != '11.3':
         parser.error('The Windows installer must include CPU and GPU support. Install '
                      'requirements-runtime-windows.txt after requirements.txt before building.')
+if sys.platform == 'win32':
+    try:
+        import webview
+        import pythonnet
+    except ImportError as exc:
+        parser.error('Install requirements-desktop-windows.txt before building: {}'.format(exc))
 os.environ['DO_NOT_RELOAD'] = 'true'
 from backend.app import App
 App().recompile_static(force=True)        #make sure the static/ folder is up to date
@@ -49,6 +55,18 @@ rc = subprocess.call(f'''pyinstaller --noupx                            \
 if rc!=0:
     print(f'PyInstaller exited with code {rc}')
     sys.exit(rc)
+
+if sys.platform == 'win32':
+    desktop_command = [
+        'pyinstaller', '--noupx', '--noconsole', '--onefile',
+        '--name', 'RootDetector',
+        '--icon', 'packaging/windows/RootDetector.ico',
+        '--distpath', build_dir,
+        'desktop_main.py',
+    ]
+    rc = subprocess.call(desktop_command)
+    if rc != 0:
+        raise SystemExit('Desktop host PyInstaller exited with code {}'.format(rc))
 
 shutil.copytree('static', build_dir+'/static')
 os.makedirs(build_dir+'/models/')
@@ -110,6 +128,8 @@ if args.installer_payload:
     )
 shutil.rmtree('./build')
 os.remove('./main.spec')
+if sys.platform == 'win32':
+    os.remove('./RootDetector.spec')
 
 if args.prune_torchlibs:
     print('Removing PyTorch binaries...')
@@ -142,6 +162,8 @@ if args.zip:
             }
         if launchers != {'StartRootDetector.bat'}:
             raise RuntimeError('Portable ZIP must contain only StartRootDetector.bat.')
+        if 'RootDetector.exe' not in archive.namelist():
+            raise RuntimeError('Portable ZIP is missing the single-window launcher.')
 
 
 print('Done')

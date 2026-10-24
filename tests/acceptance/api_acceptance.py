@@ -208,7 +208,9 @@ class Acceptance:
         if self.args.build_info:
             supplied = Path(self.args.build_info).read_text(encoding='utf-8')
             (self.output / 'supplied-BUILD-INFO.txt').write_text(supplied, encoding='utf-8')
-            if build and supplied.strip() != build.strip():
+            # Path.read_text() translates CRLF on Windows; the diagnostics ZIP
+            # preserves its original bytes. Compare content, not line endings.
+            if build and supplied.strip().splitlines() != build.strip().splitlines():
                 raise AssertionError('Supplied package BUILD-INFO differs from the running server.')
         if self.args.expected_commit and self.args.expected_commit.lower() not in build.lower():
             raise AssertionError('Running server build provenance does not contain the expected commit.')

@@ -22,7 +22,8 @@ OutputDir=..\..\builds
 OutputBaseFilename=RootDetector-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
-UninstallDisplayIcon={app}\main\main.exe
+SetupIconFile=RootDetector.ico
+UninstallDisplayIcon={app}\RootDetector.exe
 CloseApplications=no
 RestartApplications=no
 
@@ -36,14 +37,15 @@ Type: filesandordirs; Name: "{app}\main\torch\lib"
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\RootDetector"; Filename: "{app}\main\main.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\RootDetector"; Filename: "{app}\main\main.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\RootDetector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\RootDetector (browser fallback)"; Filename: "{app}\main\main.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\RootDetector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Run]
-Filename: "{app}\main\main.exe"; Description: "Start RootDetector"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\RootDetector.exe"; Description: "Start RootDetector"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var

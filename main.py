@@ -69,7 +69,12 @@ if __name__ == '__main__':
         if exit_code is None:
             # Start the desktop browser application when no CLI operation was requested.
             print('Starting UI')
-            App().run()
+            desktop_host = os.environ.get('ROOTDETECTOR_DESKTOP_HOST') == '1'
+            app = App(open_browser=not desktop_host)
+            if desktop_host:
+                app.run(parse_args=False, host='127.0.0.1', port=5000, debug=False)
+            else:
+                app.run()
     except Exception as exc:
         if getattr(sys, 'frozen', False):
             packaged_startup_error(exc)

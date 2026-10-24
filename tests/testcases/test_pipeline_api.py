@@ -83,6 +83,9 @@ def test_pipeline_api_reports_validation_busy_completion_and_missing_run(tmp_pat
     assert created.status_code == 202
     run_id = created.get_json()['id']
     assert started.wait(2)
+    activity = client.get('/api/desktop/activity', headers={'Host': 'localhost'})
+    assert activity.status_code == 200
+    assert activity.get_json()['pipeline_runs'] == [{'id': run_id, 'state': 'running'}]
 
     busy = client.post(
         '/api/pipeline/runs',
@@ -97,6 +100,7 @@ def test_pipeline_api_reports_validation_busy_completion_and_missing_run(tmp_pat
     completed = client.get('/api/pipeline/runs/' + run_id)
     assert completed.status_code == 200
     assert completed.get_json()['state'] == 'completed'
+    assert client.get('/api/desktop/activity').get_json()['pipeline_runs'] == []
 
     missing = client.get('/api/pipeline/runs/not-a-run')
     assert missing.status_code == 404

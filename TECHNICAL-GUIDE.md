@@ -214,26 +214,28 @@ Responses include content-type, referrer, frame, permissions, and Content Securi
 
 The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. It used `main.bat`, `main/main.exe`, and `models/pretrained_models.txt`; it did not contain `main.py`.
 
-The release builder produces the same directory-bundle/full-ZIP format but writes **only `StartRootDetector.bat`** as the launcher. `BUILD-INFO.txt` identifies the source commit and Actions run. Existing older packages are unaffected; scripts that invoke `main.bat` must use the new launcher with a new package.
+The release builder produces the same directory-bundle/full-ZIP format and adds `RootDetector.exe`, a small WebView2 window host. It writes **only `StartRootDetector.bat`** as the browser fallback. The host starts the unchanged `main/main.exe` analysis process without a console or automatic browser launch, waits for `/api/session`, and displays the loopback UI in one window. The backend remains local and owns all scientific computation. `BUILD-INFO.txt` identifies the source commit and Actions run. Existing older packages are unaffected; scripts that invoke `main.bat` must use the new launcher with a new package.
+
+The window host is built separately with `requirements-desktop-windows.txt` so PyInstaller does not duplicate the large CPU/CUDA runtime. It requires Microsoft WebView2 Runtime; the BAT launcher and the installer's browser-fallback Start-menu shortcut remain available. `GET /api/desktop/activity` lets the host warn before closing active pipeline or training jobs and request cooperative cancellation. Window-host diagnostics go to `logs/desktop-host.log` in a portable package or `%LOCALAPPDATA%\RootDetector\logs\desktop-host.log` for an install. Browser and CLI behavior remain unchanged when `ROOTDETECTOR_DESKTOP_HOST` is unset.
 
 Runtime diagnostics are written to `logs/rootdetector.log` beside the portable application and rotated at 5 MiB with three backups. `GET /api/diagnostics` produces a support ZIP containing those logs, `BUILD-INFO.txt`, and a privacy-limited system snapshot. It excludes input images, results, and environment variables; logs can contain research filenames and technical paths and should be reviewed before sharing. Pipeline error IDs correlate the browser message with log entries.
 
 Browser-only failures can be reported to `POST /api/diagnostics/client`; fields are length-bounded, normalized to one line, and written with a correlation ID. Result-image downloads retry only interrupted, timeout, rate-limit, and server-error responses. Permanent client errors such as HTTP 404 fail immediately. In portable builds, `torch.__version__` can retain a `+cpu` label even after first-launch replacement libraries make CUDA available, so diagnostics report the effective inference device and CUDA availability separately from package metadata.
 
-The launcher:
+The browser fallback launcher:
 
 1. Changes the working directory to the extracted package, including paths containing spaces.
 2. sets `ROOT_PATH` to that directory;
 3. starts `main\main.exe`;
 4. leaves the console open so first-run progress and errors remain visible.
 
-When `--prune-torchlibs` is used, the first launch downloads the required Windows PyTorch libraries. The application then downloads and verifies missing model packages, loads the configured models, starts Flask, and opens the default browser. Therefore the end-user launch pattern remains effectively the same; users should double-click the BAT launcher, not the source `main.py`.
+When `--prune-torchlibs` is used, the first launch downloads the required Windows PyTorch libraries. The application then downloads and verifies missing model packages and loads the configured models. The primary `RootDetector.exe` launcher shows the local UI in its own window; the fallback BAT opens the default browser. Users should not run the source `main.py` from a packaged download.
 
 The PyTorch-library downloader verifies pinned wheel hashes, bounds downloads/extraction, stages replacement atomically, and verifies a local runtime manifest before reuse. Code signing, completely offline model bundles, and Python/runtime modernization remain follow-ups.
 
 ## Windows Release Workflow
 
-Pushing source does not replace a Windows download. The **Build Windows Binaries** and **Build Windows Installer Preview** workflows produce full packages for the selected branch; their Action artifacts are temporary. The portable artifact contains `RootDetector-Windows-portable.zip` and its SHA-256 file; the installer artifact contains `RootDetector-Windows-Setup.exe` and its SHA-256 file. An early installer compile with a small placeholder payload catches script syntax errors before the large runtime build. The older PDF's `main.bat` instruction applies only to historical downloads; new full ZIPs contain `StartRootDetector.bat` and `main\main.exe`.
+Pushing source does not replace a Windows download. The **Build Windows Binaries** and **Build Windows Installer Preview** workflows produce full packages for the selected branch; their Action artifacts are temporary. The portable artifact contains `RootDetector-Windows-portable.zip` and its SHA-256 file; the installer artifact contains `RootDetector-Windows-Setup.exe` and its SHA-256 file. Both include `RootDetector.exe` and `main\main.exe`; the portable ZIP also includes the BAT fallback. An early installer compile with a small placeholder payload catches script syntax errors before the large runtime build. The older PDF's `main.bat` instruction applies only to historical downloads.
 
 1. Open a PR against the fork's `main`, run both Docker suites, and dispatch the Windows build on that PR branch.
 2. Verify the ZIP hash and `BUILD-INFO.txt`, extract into a fresh folder, then test launch, first-run downloads, detection, tracking, export, restart, and paths with spaces.

@@ -40,6 +40,7 @@ jobs:
           python -m pip install -r requirements.txt -c constraints-legacy.txt
           python -m pip install -r requirements-core-test.txt -c constraints-legacy.txt
           python -m pip install --no-cache-dir -r requirements-runtime-windows.txt -c constraints-legacy.txt
+          python -m pip install -r requirements-desktop-windows.txt -c constraints-legacy.txt
       - name: Fetch and verify pretrained models
         run: python fetch_pretrained_models.py
       - name: Backend and released-model regressions
@@ -55,6 +56,11 @@ jobs:
           }
       - name: Build complete installed payload
         run: python build.py --installer-payload
+      - name: Verify single-window package
+        shell: pwsh
+        run: |
+          & builds/RootDetector-Windows-installer-payload/RootDetector.exe --check-package
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop host cannot find its backend or WebView dependencies.' }
       - name: Compile per-user installer
         shell: pwsh
         run: |
@@ -85,7 +91,11 @@ jobs:
           $process = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
           $application = Join-Path $installed 'main\main.exe'
+          $desktopHost = Join-Path $installed 'RootDetector.exe'
           if (-not (Test-Path $application)) { throw 'Installed application is missing.' }
+          if (-not (Test-Path $desktopHost)) { throw 'Installed desktop window is missing.' }
+          & $desktopHost --check-package
+          if ($LASTEXITCODE -ne 0) { throw 'Installed desktop window is incomplete.' }
           $release = Get-Content release.json -Raw | ConvertFrom-Json
           $installedRelease = Get-Content (Join-Path $installed 'release.json') -Raw | ConvertFrom-Json
           if ($installedRelease.version -ne $release.version) { throw 'Installed application version differs from source.' }

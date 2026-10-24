@@ -140,6 +140,16 @@ class AcceptanceTests(unittest.TestCase):
             runner.check_build('commit=abcdef12345')
             self.assertTrue(runner.summary['build_provenance_verified'])
 
+    def test_matching_build_with_windows_line_endings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self.runner(directory)
+            supplied = Path(directory) / 'local-build.txt'
+            supplied.write_text('Version: 1\nCommit: abcdef12345\n', encoding='utf-8')
+            runner.args.build_info = str(supplied)
+            runner.args.expected_commit = 'abcdef12345'
+            runner.check_build('Version: 1\r\nCommit: abcdef12345\r\n')
+            self.assertTrue(runner.summary['build_provenance_verified'])
+
     def test_settings_rejects_unapplied_model_selection(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = self.runner(directory)

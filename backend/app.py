@@ -65,6 +65,7 @@ class App(BaseApp):
         self.view_functions['images'] = self.images
         self.view_functions['get_set_settings'] = self.get_set_settings
         self.route('/api/session', methods=['GET'])(self.get_session)
+        self.route('/api/desktop/activity', methods=['GET'])(self.get_desktop_activity)
         self.route('/api/version', methods=['GET'])(self.get_version)
         self.route('/api/updates/check', methods=['POST'])(self.check_updates)
         self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
@@ -208,6 +209,23 @@ class App(BaseApp):
                 'preparation_source_pixels': backend.preparation.MAX_SOURCE_PIXELS,
                 'preparation_min_analysis_dimension': backend.preparation.MIN_ANALYSIS_DIMENSION,
             },
+        })
+
+    def get_desktop_activity(self):
+        """Give the local desktop host enough state to guard window closure."""
+        with self.pipeline_manager.lock:
+            pipelines = [
+                {'id': run.id, 'state': run.state}
+                for run in self.pipeline_manager.runs.values()
+                if run.state not in backend.pipeline.TERMINAL_RUN_STATES
+            ]
+        training_run = self.training_manager.active_run()
+        return flask.jsonify({
+            'pipeline_runs': pipelines,
+            'training_run': (
+                {'id': training_run.id, 'state': training_run.state}
+                if training_run is not None else None
+            ),
         })
 
     def get_version(self):
