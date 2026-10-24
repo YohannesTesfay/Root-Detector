@@ -58,7 +58,9 @@ if rc!=0:
 
 if sys.platform == 'win32':
     desktop_command = [
-        'pyinstaller', '--noupx', '--noconsole', '--onefile',
+        # Keep the host's dependencies unpacked. Self-extracting PyInstaller
+        # launchers have been quarantined by Defender on the ML-Desk device.
+        'pyinstaller', '--noupx', '--noconsole', '--onedir',
         '--name', 'RootDetector',
         '--icon', 'packaging/windows/RootDetector.ico',
         '--distpath', build_dir,
@@ -67,6 +69,13 @@ if sys.platform == 'win32':
     rc = subprocess.call(desktop_command)
     if rc != 0:
         raise SystemExit('Desktop host PyInstaller exited with code {}'.format(rc))
+    host_dir = os.path.join(build_dir, 'RootDetector')
+    for name in os.listdir(host_dir):
+        destination = os.path.join(build_dir, name)
+        if os.path.exists(destination):
+            raise SystemExit('Desktop host output collides with package file: {}'.format(name))
+        shutil.move(os.path.join(host_dir, name), destination)
+    os.rmdir(host_dir)
 
 shutil.copytree('static', build_dir+'/static')
 os.makedirs(build_dir+'/models/')
