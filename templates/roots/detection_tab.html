@@ -25,7 +25,8 @@
   {% else %}
   <button type="button" class="ui button download-all item"
           onclick="{{ callback_on_download_all }}(event)" title="Download all available results">
-    <i class="download icon" aria-hidden="true"></i>Download All
+    <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
+    <span class="download-busy" hidden role="status"><i class="spinner loading icon" aria-hidden="true"></i><span class="download-progress-text">Preparing download…</span></span>
   </button>
   {%- endif %}
 </div>

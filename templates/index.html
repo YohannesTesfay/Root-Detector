@@ -94,7 +94,30 @@
 
     {{ top_menu(app)             | indent }}
 
+    <aside id="root-alerts" aria-label="Root Detector alerts" hidden>
+      <div class="root-alert-heading">
+        <strong>Alerts</strong>
+        <button type="button" class="root-alert-clear">Clear all</button>
+      </div>
+      <div class="root-alert-list"></div>
+      <button type="button" class="root-alert-more" hidden></button>
+    </aside>
+
     {{ main_container(app)       | indent }}
+
+    <div id="root-confirm-layer" hidden>
+      <div class="root-confirm-panel" role="alertdialog" aria-modal="true"
+           aria-labelledby="root-confirm-heading" aria-describedby="root-confirm-description" tabindex="-1">
+        <div class="root-confirm-header">
+          <h2 class="root-confirm-title" id="root-confirm-heading">Please confirm</h2>
+        </div>
+        <p class="root-confirm-message" id="root-confirm-description"></p>
+        <div class="root-confirm-actions">
+          <button type="button" class="ui button root-confirm-cancel">Cancel</button>
+          <button type="button" class="ui primary button root-confirm-approve">Continue</button>
+        </div>
+      </div>
+    </div>
 
     {{ modal_settings()          | indent }}
     {{ modal_about()             | indent }}

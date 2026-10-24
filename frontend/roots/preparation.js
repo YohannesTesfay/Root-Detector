@@ -137,8 +137,9 @@ RootPreparation = class {
     static async discard_session(start_pending=false){
         if(this.busy)
             return
-        if(this.prepared.length && !window.confirm(
-            'Discard prepared copies that have not been downloaded or imported?'
+        if(this.prepared.length && !await RootDialogs.confirm(
+            'Discard prepared copies that have not been downloaded or imported?',
+            {title: 'Discard image preparation?', confirmLabel: 'Discard copies', destructive: true},
         ))
             return
         const replacement = start_pending ? this.pending_sources.slice() : []
@@ -317,12 +318,14 @@ RootPreparation = class {
     static async import_prepared(){
         if(!this.prepared.length || this.busy)
             return
-        if(this.index < this.sources.length && !window.confirm(
-            `Only ${this.prepared.length} of ${this.sources.length} images are prepared. Import these and skip the rest?`
+        if(this.index < this.sources.length && !await RootDialogs.confirm(
+            `Only ${this.prepared.length} of ${this.sources.length} images are prepared. Import these and skip the rest?`,
+            {title: 'Import a partial batch?', confirmLabel: 'Import prepared images'},
         ))
             return
-        if(Object.keys(GLOBAL.files).length && !window.confirm(
-            'Importing prepared copies replaces the current image set and clears its temporary results. Download existing results first. Continue?'
+        if(Object.keys(GLOBAL.files).length && !await RootDialogs.confirm(
+            'Importing prepared copies replaces the current image set and clears its temporary results. Download existing results first. Continue?',
+            {title: 'Replace loaded images?', confirmLabel: 'Replace images', destructive: true},
         ))
             return
         this.set_busy(true)

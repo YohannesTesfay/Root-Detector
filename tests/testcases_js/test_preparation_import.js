@@ -11,7 +11,8 @@ global.RootSecurity = {}
 global.file_basename = name => name.split('/').pop()
 global.remove_file_extension = name => name.replace(/\.[^.]*$/, '')
 global.sleep = async () => {}
-global.window = {location: {href: 'http://localhost'}, confirm: () => false}
+global.window = {location: {href: 'http://localhost'}}
+global.RootDialogs = {confirm: async () => false}
 const repository = path.resolve(__dirname, '../..')
 vm.runInThisContext(fs.readFileSync(path.join(repository, 'frontend/roots/file_input.js'), 'utf8'))
 
@@ -56,12 +57,12 @@ async function main(){
             throw {responseJSON: {code: 'companion_confirmation_required'}}
         return {output: 'mask.png', provenance}
     }
-    window.confirm = () => true
+    RootDialogs.confirm = async () => true
     const transformed = await RootsFileInput.validate_prepared_companion(GLOBAL.files['prepared.png'], new File(['tiff'], 'source.tiff'), 'training annotation')
     assert.deepEqual(masks, ['false', 'true'])
     assert.equal(transformed.preparation_companion, provenance)
     assert.deepEqual(GLOBAL.files['prepared.png'].prepared_companions, [provenance])
-    window.confirm = () => false
+    RootDialogs.confirm = async () => false
     await assert.rejects(RootsFileInput.validate_prepared_companion(GLOBAL.files['prepared.png'], new File(['mask'], 'source.png'), 'training annotation'), /cancelled/)
 
     const realCollect = RootsFileInput.collect_result_files
