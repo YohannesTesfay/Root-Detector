@@ -49,9 +49,16 @@ async function run() {
     page.on('pageerror', error => errors.push(error.message));
     let cropConfirmations = 0;
     page.on('dialog', async dialog => {
-        if (dialog.message().startsWith('Crop training annotation')) cropConfirmations += 1;
-        await dialog.accept();
+        errors.push(`Unexpected browser dialog: ${dialog.message()}`);
+        await dialog.dismiss();
     });
+    const approveAppConfirmation = async expectedMessage => {
+        const layer = page.locator('#root-confirm-layer:not([hidden])');
+        await layer.waitFor({state: 'visible'});
+        assert.match(await layer.locator('.root-confirm-message').innerText(), expectedMessage);
+        await layer.locator('.root-confirm-approve').click();
+        await layer.waitFor({state: 'hidden'});
+    };
     const sourceName = 'TestTube_04.04.24_scan.png';
     try {
         await page.goto(baseURL);
@@ -84,6 +91,7 @@ async function run() {
         await page.locator('#preparation-input').setInputFiles({name: 'Replacement.png', mimeType: 'image/png', buffer: source});
         await page.locator('#preparation-recovery').waitFor({state: 'visible'});
         await page.locator('#preparation-discard').click();
+        await approveAppConfirmation(/Discard prepared copies/);
         await page.locator('#preparation-source-info').filter({hasText: 'Replacement.png'}).waitFor({state: 'visible'});
         await page.locator('#preparation-dialog .actions button').filter({hasText: /Close|Cancel/}).click();
         await page.locator('#preparation-dialog').waitFor({state: 'hidden'});
@@ -93,8 +101,11 @@ async function run() {
         assert.deepEqual(restored.rectangle, {left: 10, top: 20, width: 1280, height: 1280});
         assert.equal(restored.source.source_name, sourceName);
         await page.locator('#input_masks').setInputFiles({name: sourceName, mimeType: 'image/png', buffer: exclusion});
+        await approveAppConfirmation(/Crop exclusion mask/);
         await page.waitForFunction(() => Object.values(GLOBAL.files)[0].prepared_companions?.some(record => record.kind === 'exclusion_mask'));
         await page.locator('#annotations-input').setInputFiles({name: sourceName, mimeType: 'image/png', buffer: mask});
+        await approveAppConfirmation(/Crop training annotation/);
+        cropConfirmations += 1;
         await page.waitForFunction(() => RootsTraining.imported_labels.size === 1);
         assert.equal(cropConfirmations, 1);
         const companion = await page.evaluate(() => Object.values(GLOBAL.files)[0].prepared_companions.find(record => record.kind === 'training_annotation'));
