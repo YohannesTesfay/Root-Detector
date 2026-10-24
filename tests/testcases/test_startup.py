@@ -71,7 +71,7 @@ def test_installed_runtime_requires_bundled_libraries(tmp_path, monkeypatch):
     startup.ensure_torch()
 
     (libraries / 'torch_cuda.dll').write_bytes(b'damaged')
-    with pytest.raises(RuntimeError, match='Reinstall RootDetector'):
+    with pytest.raises(RuntimeError, match='Reinstall Root Detector'):
         startup.ensure_torch()
 
 
@@ -192,7 +192,7 @@ def test_installed_runtime_rejects_cpu_only_bundle_without_downloading(tmp_path,
     monkeypatch.setattr(sys, 'argv', [str(executable)])
     monkeypatch.setattr(sys, 'executable', str(executable))
     monkeypatch.setenv('ROOTDETECTOR_INSTALLED', '1')
-    with pytest.raises(RuntimeError, match='Reinstall RootDetector'):
+    with pytest.raises(RuntimeError, match='Reinstall Root Detector'):
         startup.ensure_torch()
 
 

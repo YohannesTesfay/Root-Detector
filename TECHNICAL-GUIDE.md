@@ -1,10 +1,10 @@
-# RootDetector Technical Guide
+# Root Detector Technical Guide
 
 This document is for developers, maintainers, release builders, and researchers who need implementation details. The shorter [README](README.md) is the user-facing installation and operation guide.
 
 ## System Overview
 
-RootDetector is a local Flask application and command-line tool for analyzing minirhizotron images. It extends the shared `DigIT-Base-UI` Git submodule with root-specific detection, exclusion-mask, tracking, training, and export behavior.
+Root Detector is a local Flask application and command-line tool for analyzing minirhizotron images. It extends the shared `DigIT-Base-UI` Git submodule with root-specific detection, exclusion-mask, tracking, training, and export behavior.
 
 ```mermaid
 flowchart LR
@@ -242,7 +242,7 @@ Pushing source does not replace a Windows download. The **Build Windows Binaries
 1. Open a PR against the fork's `main`, run both Docker suites, and dispatch the Windows build on that PR branch.
 2. Verify the ZIP hash and `BUILD-INFO.txt`, extract into a fresh folder, then test launch, first-run downloads, detection, tracking, export, restart, and paths with spaces.
 3. Qualify release-sensitive GPU behavior on the packaged Windows build. Record its evidence and remaining gates in the fork PR; historical acceptance notes are kept locally and in Git history.
-4. After review and merge, build the exact fork `main` head intended for release. Verify both package `release.json` files, checksums and `BUILD-INFO.txt` against that commit. Publish the tested installer, portable ZIP, and both SHA-256 files on a GitHub Release with a matching tag such as `v0.1.0-rc.2`. Keep it a draft until artifacts and release notes are reviewed; mark preview versions as prereleases. Do not use the legacy partial update ZIP.
+4. After review and merge, build the exact fork `main` head intended for release. Verify both package `release.json` files, checksums and `BUILD-INFO.txt` against that commit. Publish the tested installer, portable ZIP, and both SHA-256 files on a GitHub Release with a matching tag such as `v0.1.0-rc.3`. Keep it a draft until artifacts and release notes are reviewed; mark preview versions as prereleases. Do not use the legacy partial update ZIP.
 
 `release.json` is the common application version and release channel for both packages; `BUILD-INFO.txt` additionally records the source commit and Actions run. The installer uses the same version in Windows Add/Remove Programs. The browser reads package metadata through `GET /api/version` at runtime, not from copied user-data files. **About → Check for updates** calls token-protected `POST /api/updates/check`; the backend reads up to 20 published GitHub releases with a short timeout, accepts only comparable version tags containing the relevant complete Windows package, and returns a fixed GitHub release-page link. Preview builds can see preview and stable releases; stable builds ignore previews. The app never downloads, replaces, or executes an update. A release in another repository requires an intentional metadata and backend URL change before building.
 

@@ -36,6 +36,7 @@
     margin: 0;
 }
 
+#updates-dialog > .close.button,
 #settings-dialog > .close.button {
     top: 0.7rem;
     right: 0.7rem;
@@ -45,8 +46,43 @@
     box-shadow: none;
 }
 
+#updates-dialog > .header,
 #settings-dialog > .header {
     padding-right: 3.5rem;
+}
+
+#updates-dialog > .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#updates-dialog > .actions > .button {
+    margin: 0;
+}
+
+#image-preparation-tools {
+    margin: 0 0 1rem;
+}
+
+#image-preparation-tools > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#image-preparation-tools > .content {
+    margin-top: 0.75rem;
+}
+
+#image-preparation-tools .preparation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+#image-preparation-tools .preparation-actions > .button {
+    margin: 0;
 }
 
 #settings-dialog > .content {

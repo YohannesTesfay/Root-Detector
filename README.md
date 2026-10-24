@@ -1,8 +1,8 @@
-# RootDetector
+# Root Detector
 
-RootDetector helps researchers and students analyze minirhizotron root images. It can identify roots, calculate root and skeleton measurements, and compare images from different dates to visualize root growth and decay.
+Root Detector helps researchers and students analyze minirhizotron root images. It can identify roots, calculate root and skeleton measurements, and compare images from different dates to visualize root growth and decay.
 
-![RootDetector interface](images/screenshot.jpg)
+![Root Detector interface](images/screenshot.jpg)
 
 ## What You Can Do
 
@@ -15,11 +15,11 @@ RootDetector helps researchers and students analyze minirhizotron root images. I
 
 ## Install and Start on Windows
 
-Download a Windows package from the [RootDetector Releases page](https://github.com/YohannesTesfay/Root-Detector/releases), not GitHub's automatically generated “Source code” archives. The complete portable package is named **RootDetector-Windows-portable.zip**. A per-user installer, **RootDetector-Windows-Setup.exe**, will be offered after its acceptance tests pass.
+Download a Windows package from the [Root Detector Releases page](https://github.com/YohannesTesfay/Root-Detector/releases), not GitHub's automatically generated “Source code” archives. The complete portable package is named **RootDetector-Windows-portable.zip**. A per-user installer, **RootDetector-Windows-Setup.exe**, will be offered after its acceptance tests pass.
 
 A per-user installer is being prepared and is not yet a qualified release. Until its Windows acceptance tests pass, use the portable ZIP below.
 
-The installer candidate includes both CPU and NVIDIA GPU processing libraries. In **Settings**, enable GPU processing to use a compatible NVIDIA GPU, or leave it disabled for CPU processing. If the selected GPU cannot initialize, RootDetector reports the problem; choose CPU explicitly to continue. The installer still needs Windows CPU/GPU acceptance before release.
+The installer candidate includes both CPU and NVIDIA GPU processing libraries. In **Settings**, enable GPU processing to use a compatible NVIDIA GPU, or leave it disabled for CPU processing. If the selected GPU cannot initialize, Root Detector reports the problem; choose CPU explicitly to continue. A rebuilt installer must pass Windows CPU/GPU acceptance before release.
 
 1. Extract the entire ZIP to a writable folder such as `Documents\RootDetector`.
 2. Open the extracted folder and double-click **`RootDetector.exe`**. It opens one application window without a command prompt; analysis still runs locally on your computer.
@@ -32,15 +32,15 @@ When you download Detection or Tracking results from the application window, cho
 
 The Windows package is currently unsigned, so Windows may show a security warning. Only run an archive obtained from a release you trust. Developers who want to run or modify the source should use the [Technical Guide](TECHNICAL-GUIDE.md).
 
-To check for a newer version, open **About → Check for updates**. RootDetector checks published GitHub releases only when you click; it displays a link to the release. Export any results you need and close RootDetector before installing a newer version. A newer per-user installer keeps saved settings and models in `%LOCALAPPDATA%\RootDetector`. For a portable ZIP, extract the new package into a separate folder and retain the old folder until you have transferred any local settings or models you need. The app does not install updates by itself.
+To check for a newer version, open **About → Check for updates**. Root Detector checks published GitHub releases only when you click; it displays a link to the release. Export any results you need and close Root Detector before installing a newer version. A newer per-user installer keeps saved settings and models in `%LOCALAPPDATA%\RootDetector`. For a portable ZIP, extract the new package into a separate folder and retain the old folder until you have transferred any local settings or models you need. The app does not install updates by itself.
 
 Only use model files from a trusted source: model packages can contain executable code. Images and result archives are data and should be imported through the app, not copied into its models folder.
 
 ## Prepare Your Images
 
-If a scan needs a smaller region, choose **Files → Prepare / Crop Images** before analysis. Inspect the preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. Cropping preserves pixel values and scale; it does not resize or align scans. Keep the untouched originals and confirm that each date shows the same physical location.
+Most supported images can be loaded directly; cropping is optional. If a scan needs a smaller region, open **Detection → Advanced image preparation (optional) → Prepare / Crop Images** before analysis. Inspect the preview, enter crop bounds in original-image pixels, and select **Apply crop to new copy** for each date. Cropping preserves pixel values and scale; it does not resize or align scans. Keep the untouched originals and confirm that each date shows the same physical location.
 
-Use **Import prepared copies** immediately, or download the prepared ZIP and later choose **Files → Load Prepared Images**. Keep the manifest with the images: it records their original names, hashes, and crop bounds and accompanies result exports. When loading annotations or exclusion masks, matching original-size masks can be cropped to the same bounds after your explicit confirmation; already-cropped masks must match the prepared image dimensions. Cropping does not make an annotation a reviewed training label.
+Use **Import prepared copies** immediately, or download the prepared ZIP and later choose **Detection → Advanced image preparation (optional) → Load Prepared Images**. Keep the manifest with the images: it records their original names, hashes, and crop bounds and accompanies result exports. When loading annotations or exclusion masks, matching original-size masks can be cropped to the same bounds after your explicit confirmation; already-cropped masks must match the prepared image dimensions. Cropping does not make an annotation a reviewed training label.
 
 The built-in preparation path currently supports single-page 8-bit RGB/grayscale PNG, JPEG, and TIFF sources up to 64 MiB and 16 million decoded pixels. The resulting crop must be at least 1280 × 1280 pixels for the released detection model; smaller crops cause its patch-stitching code to fail. Larger, multi-page, rotated, or higher-bit-depth scans need external preparation; this limit is separate from the normal upload limit. A larger upload setting alone does not make a large scan safe to crop in the app.
 
@@ -51,7 +51,7 @@ Sample_A_17.10.18_image.tiff
 Sample_A_13.11.18_image.tiff
 ```
 
-Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDetector groups matching samples, sorts them by date, and proposes consecutive tracking pairs.
+Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. Root Detector groups matching samples, sorts them by date, and proposes consecutive tracking pairs.
 
 ## Run an Analysis
 
@@ -64,7 +64,7 @@ Supported date forms include `DD.MM.YY`, `DD.MM.YYYY`, and `YYYY.MM.DD`. RootDet
 
 One failed image no longer stops unrelated images. The summary identifies completed, failed, skipped, or review-required items. Use **Retry failed** after correcting a recoverable problem.
 
-Input preparation is resumable while the application remains open. If a local upload is interrupted, RootDetector retries it up to two times and keeps already accepted files ready for the next **Run Analysis** attempt. The progress window labels upload separately from detection and tracking.
+Input preparation is resumable while the application remains open. If a local upload is interrupted, Root Detector retries it up to two times and keeps already accepted files ready for the next **Run Analysis** attempt. The progress window labels upload separately from detection and tracking.
 
 ## Review and Export Results
 
@@ -96,7 +96,7 @@ Training is separate from ordinary analysis. You do not need to review or label 
 
 ## Data and Privacy
 
-Image processing happens on the local computer. RootDetector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files, and contacts GitHub Releases if you choose **Check for updates**.
+Image processing happens on the local computer. Root Detector does not upload research images to a cloud service. The application accesses the internet on first launch to obtain runtime and model files, and contacts GitHub Releases if you choose **Check for updates**.
 
 ## Further Documentation
 
@@ -105,7 +105,7 @@ Image processing happens on the local computer. RootDetector does not upload res
 
 ## License and Citation
 
-RootDetector is distributed under the [MIT License](LICENSE).
+Root Detector is distributed under the [MIT License](LICENSE).
 
 For root detection, cite Peters, B. et al., “As good as but much more efficient and reproducible than human experts in detecting plant roots in minirhizotron images: The Convolutional Neural Network RootDetector,” *Scientific Reports* (2023), [doi:10.1038/s41598-023-28400-x](https://doi.org/10.1038/s41598-023-28400-x).
 

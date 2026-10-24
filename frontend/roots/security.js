@@ -7,8 +7,8 @@ RootSecurity = class {
         const session = await $.get('/api/session')
         if(session.asset_schema != this.asset_schema){
             const error = new Error(
-                'RootDetector browser files do not match the running application. '
-                + 'Close old RootDetector tabs, start the intended extracted folder, and reload.'
+                'Root Detector browser files do not match the running application. '
+                + 'Close old Root Detector tabs, start the intended extracted folder, and reload.'
             )
             error.code = 'asset_schema_mismatch'
             throw error
@@ -65,7 +65,7 @@ RootSecurity = class {
         }
         if(Number(error?.status) == 0)
             candidates.push(
-                'The connection to the local RootDetector process was interrupted. '
+                'The connection to the local Root Detector process was interrupted. '
                 + 'Keep this window open, verify the selected file is still available, and retry.'
             )
         if(error?.statusText && error.statusText != 'error')

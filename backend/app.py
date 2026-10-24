@@ -121,7 +121,7 @@ class App(BaseApp):
     def protect_local_request(self):
         request_host = urllib.parse.urlsplit(flask.request.host_url).hostname
         if request_host not in {'localhost', '127.0.0.1', '::1'}:
-            return self.json_error('invalid_host', 'RootDetector only accepts loopback requests.', 403)
+            return self.json_error('invalid_host', 'Root Detector only accepts loopback requests.', 403)
 
         origin = flask.request.headers.get('Origin')
         if origin and self._origin_identity(origin) != self._origin_identity(flask.request.host_url):
@@ -147,7 +147,7 @@ class App(BaseApp):
             if not hmac.compare_digest(supplied_token, self.session_token):
                 return self.json_error(
                     'invalid_session_token',
-                    'The local session token is missing or invalid. Reload RootDetector and try again.',
+                    'The local session token is missing or invalid. Reload Root Detector and try again.',
                     403,
                 )
         return None
@@ -172,7 +172,7 @@ class App(BaseApp):
     def handle_request_too_large(self, _error):
         return self.json_error(
             'upload_too_large',
-            'The request exceeds RootDetector\'s {} file limit plus multipart overhead.'.format(
+            'The request exceeds Root Detector\'s {} file limit plus multipart overhead.'.format(
                 backend.security.upload_limit_label(self.max_upload_bytes)
             ),
             413,
@@ -183,7 +183,7 @@ class App(BaseApp):
             return error
         payload = backend.jobs.error_payload(
             'internal_error',
-            'RootDetector encountered an unexpected error. Download diagnostics and retry.',
+            'Root Detector encountered an unexpected error. Download diagnostics and retry.',
             'api',
             item_id=flask.request.path,
             retryable=True,
@@ -1032,6 +1032,6 @@ class App(BaseApp):
         if host not in {'localhost', '127.0.0.1', '::1'} and not (
             container_bind_allowed and host in {'0.0.0.0', '::'}
         ):
-            raise RuntimeError('RootDetector must bind to a loopback address.')
+            raise RuntimeError('Root Detector must bind to a loopback address.')
         return super().run(parse_args=False, **args)
     

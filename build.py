@@ -118,7 +118,7 @@ build_info = (
     'GitHub Actions run: {}\n'
     'Package: {}\n'
 ).format(
-    'RootDetector installer preview' if args.installer_payload else 'RootDetector portable build',
+    'Root Detector installer preview' if args.installer_payload else 'Root Detector portable build',
     release_metadata['version'],
     repository,
     commit,
@@ -133,7 +133,7 @@ if args.installer_payload:
     validate_bundled_dlls(os.path.join(os.path.dirname(torch.__file__), 'lib'), torch_libs)
     write_runtime_manifest(torch_libs, 'cu113')
     open(os.path.join(build_dir, 'INSTALL-MODE.txt'), 'w').write(
-        'Installed RootDetector; per-user data is stored under LOCALAPPDATA.\n'
+        'Installed Root Detector; per-user data is stored under LOCALAPPDATA.\n'
     )
 shutil.rmtree('./build')
 os.remove('./main.spec')

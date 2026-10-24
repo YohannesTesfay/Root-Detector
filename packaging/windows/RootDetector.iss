@@ -9,12 +9,12 @@
 
 [Setup]
 AppId={{C4886A85-376C-4C2A-BD59-956A8A3CA12F}
-AppName=RootDetector
+AppName=Root Detector
 AppMutex=Local\RootDetector-C4886A85-376C-4C2A-BD59-956A8A3CA12F
 AppVersion={#AppVersion}
 AppPublisher=Experimental Plant Ecology, University of Greifswald
 DefaultDirName={localappdata}\Programs\RootDetector
-DefaultGroupName=RootDetector
+DefaultGroupName=Root Detector
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -28,6 +28,10 @@ CloseApplications=no
 RestartApplications=no
 
 [InstallDelete]
+; Remove shortcuts installed under the previous visible name during upgrades.
+Type: files; Name: "{autoprograms}\RootDetector.lnk"
+Type: files; Name: "{autoprograms}\RootDetector (browser fallback).lnk"
+Type: files; Name: "{autodesktop}\RootDetector.lnk"
 ; AppMutex refuses upgrades while RootDetector is running. Replace only the
 ; packaged DLL set so obsolete CPU/CUDA files cannot survive an upgrade and
 ; conflict with the new runtime manifest. User models/cache are outside {app}.
@@ -37,15 +41,15 @@ Type: filesandordirs; Name: "{app}\main\torch\lib"
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\RootDetector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"
-Name: "{autoprograms}\RootDetector (browser fallback)"; Filename: "{app}\main\main.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\RootDetector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Root Detector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\Root Detector (browser fallback)"; Filename: "{app}\main\main.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\Root Detector"; Filename: "{app}\RootDetector.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Run]
-Filename: "{app}\RootDetector.exe"; Description: "Start RootDetector"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\RootDetector.exe"; Description: "Start Root Detector"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var
@@ -70,7 +74,7 @@ begin
     Exit;
   DataDirectory := ExpandConstant('{localappdata}\RootDetector');
   if not ForceDirectories(DataDirectory) then begin
-    Result := 'Cannot access the RootDetector user-data directory. Check folder permissions and retry.';
+    Result := 'Cannot access the Root Detector user-data directory. Check folder permissions and retry.';
     Exit;
   end;
   { Deny sharing for the same file the app keeps open throughout its lifetime.
@@ -81,7 +85,7 @@ begin
   LifecycleAcquired := LifecycleHandle <> -1;
   if not LifecycleAcquired then begin
     ErrorCode := DLLGetLastError;
-    Result := 'RootDetector user data is in use or unavailable. Close RootDetector in all Windows sessions and retry. ' +
+    Result := 'Root Detector user data is in use or unavailable. Close Root Detector in all Windows sessions and retry. ' +
       'If no copy is running, check access to the user-data folder. Windows error: ' + IntToStr(ErrorCode);
     Log(Result);
   end;

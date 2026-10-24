@@ -43,7 +43,7 @@ RootPipeline = class {
                 if(this.upload_cancel_requested)
                     break
                 current_filename = filename
-                this.render_upload(filename, 'uploading', 'Sending to the local RootDetector process...')
+                this.render_upload(filename, 'uploading', 'Sending to the local Root Detector process...')
                 let upload
                 try {
                     upload = await RootsFileInput.ensure_uploaded(GLOBAL.files[filename], {
@@ -406,7 +406,7 @@ RootPipeline = class {
     }
 
     static error_message(error){
-        return RootSecurity.error_message(error, 'RootDetector returned an unreadable error.')
+        return RootSecurity.error_message(error, 'Root Detector returned an unreadable error.')
     }
 
     static request(url, method, data=undefined){

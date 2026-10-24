@@ -233,7 +233,7 @@ RootTrackingDownload = class extends BaseDownload {
             tracking_matcher: tracking_data.tracking_matcher,
             run_id: tracking_data.run_id,
             run_profile: tracking_data.run_profile,
-            migration_warning: 'Tracking CSV files exported by RootDetector before schema 2 may have background, mask, same, decay, and growth values under incorrect headers. Re-export those analyses before comparing or aggregating them.',
+            migration_warning: 'Tracking CSV files exported by Root Detector before schema 2 may have background, mask, same, decay, and growth values under incorrect headers. Re-export those analyses before comparing or aggregating them.',
         }, null, 2)
         const preparations = [filename0, filename1]
             .map(filename => GLOBAL.files[filename]?.preparation)

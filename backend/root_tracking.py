@@ -1052,7 +1052,7 @@ def compile_results_into_zip(
                     'statistics_rows': statistics_rows,
                     'tracking_matcher_schema': 2,
                     'migration_warning': (
-                        'Tracking CSV files exported by RootDetector before schema 2 may have '
+                        'Tracking CSV files exported by Root Detector before schema 2 may have '
                         'background, mask, same, decay, and growth values under incorrect headers. '
                         'Re-export those analyses before comparing or aggregating them.'
                     ),

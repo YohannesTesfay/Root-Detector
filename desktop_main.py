@@ -97,10 +97,10 @@ class DesktopHost:
     def start_backend(self):
         executable = backend_path(self.root)
         if not executable.is_file():
-            raise RuntimeError('The package is incomplete: main/main.exe is missing. Re-extract or reinstall RootDetector.')
+            raise RuntimeError('The package is incomplete: main/main.exe is missing. Re-extract or reinstall Root Detector.')
         if loopback_port_busy():
             raise RuntimeError(
-                'Port 5000 is already in use. Close other RootDetector copies and retry. '
+                'Port 5000 is already in use. Close other Root Detector copies and retry. '
                 'This window will not connect to an unknown local process.'
             )
         path = log_path(self.root)
@@ -140,12 +140,12 @@ class DesktopHost:
                 time.sleep(1)
             if not self.closed.is_set():
                 raise RuntimeError(
-                    'RootDetector did not become ready within 30 minutes. '
+                    'Root Detector did not become ready within 30 minutes. '
                     'Check the network, disk space, and {}.'.format(log_path(self.root))
                 )
         except Exception as exc:
             if not self.closed.is_set():
-                self.window.load_html(status_page('RootDetector could not start', str(exc)))
+                self.window.load_html(status_page('Root Detector could not start', str(exc)))
 
     def on_closing(self, _window=None):
         if self.process is None or self.process.poll() is not None:
@@ -153,7 +153,7 @@ class DesktopHost:
             return True
         if not self.ready:
             confirmed = self.window.create_confirmation_dialog(
-                'RootDetector is still starting',
+                'Root Detector is still starting',
                 'Closing now will interrupt startup or model downloads. Close anyway?',
             )
             if confirmed:
@@ -163,7 +163,7 @@ class DesktopHost:
             activity = self.request('/api/desktop/activity')
         except (OSError, ValueError):
             confirmed = self.window.create_confirmation_dialog(
-                'RootDetector status unavailable',
+                'Root Detector status unavailable',
                 'The local analysis process is not responding. Closing may interrupt work. Close anyway?',
             )
             if confirmed:
@@ -203,7 +203,7 @@ class DesktopHost:
 
 def show_native_error(message):
     if sys.platform == 'win32':
-        ctypes.windll.user32.MessageBoxW(None, message, 'RootDetector', 0x10)
+        ctypes.windll.user32.MessageBoxW(None, message, 'Root Detector', 0x10)
     else:
         print(message, file=sys.stderr)
 
@@ -237,8 +237,8 @@ def main():
         import webview
         configure_webview(webview)
         host.window = webview.create_window(
-            'RootDetector',
-            html=status_page('Starting RootDetector', 'Preparing the local analysis process. First launch may take several minutes.'),
+            'Root Detector',
+            html=status_page('Starting Root Detector', 'Preparing the local analysis process. First launch may take several minutes.'),
             width=1200,
             height=800,
             min_size=(800, 600),
@@ -255,7 +255,7 @@ def main():
         except OSError:
             location = ''
         show_native_error(
-            'The RootDetector window could not open. Install the Microsoft WebView2 Runtime '
+            'The Root Detector window could not open. Install the Microsoft WebView2 Runtime '
             'or use the browser fallback.{}'.format(location)
         )
         return 1

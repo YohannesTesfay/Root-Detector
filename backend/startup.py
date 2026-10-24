@@ -81,7 +81,7 @@ def download_and_extract_pytorch_libs(destination:str) -> None:
         os.replace(backup_dir, library_dir)
     if os.path.exists(backup_dir):
         raise RuntimeError('A previous runtime update needs recovery. Close other '
-                           'RootDetector copies and re-extract the portable package.')
+                           'Root Detector copies and re-extract the portable package.')
     print('Downloading verified PyTorch {} runtime ...'.format(variant))
     with tempfile.TemporaryDirectory(prefix='.runtime-', dir=torch_root) as temporary:
         wheel_path = os.path.join(temporary, 'torch.whl')
@@ -140,7 +140,7 @@ def ensure_torch() -> None:
             # Installed binaries are never replaced by a first-launch download.
             validate_runtime(library_dir, required_variant='cu113')
         except RuntimeError as exc:
-            raise RuntimeError('{} Reinstall RootDetector.'.format(exc)) from exc
+            raise RuntimeError('{} Reinstall Root Detector.'.format(exc)) from exc
         return
     try:
         validate_runtime(library_dir)

@@ -10,7 +10,7 @@
 
 <html>
 <head>
-    <title>DigIT RootDetector</title>
+    <title>Root Detector</title>
     <script>
       window.RootDetectorBoot = {
         failed_assets: [],
@@ -31,22 +31,22 @@
         show_recovery: function(kind, error) {
           const messages = {
             assets: [
-              'RootDetector could not load its browser files.',
+              'Root Detector could not load its browser files.',
               'Start <code>StartRootDetector.bat</code> from one complete extracted folder, '
-                + 'then reload. If you changed packages, close old RootDetector tabs first.',
+                + 'then reload. If you changed packages, close old Root Detector tabs first.',
             ],
             connection: [
-              'RootDetector is not reachable.',
+              'Root Detector is not reachable.',
               'Start <code>StartRootDetector.bat</code> from the extracted folder, '
                 + 'keep its console window open, then reload this tab.',
             ],
             version: [
-              'This tab belongs to a different RootDetector version.',
-              'Close old RootDetector tabs, keep only the intended copy running, '
+              'This tab belongs to a different Root Detector version.',
+              'Close old Root Detector tabs, keep only the intended copy running, '
                 + 'then open the address shown by <code>StartRootDetector.bat</code>.',
             ],
             startup: [
-              'RootDetector could not initialize this page.',
+              'Root Detector could not initialize this page.',
               'Reload once. If the problem continues, restart <code>StartRootDetector.bat</code> '
                 + 'and check its console or diagnostics.',
             ],
@@ -74,7 +74,7 @@
           try {
             await RootDetectorApp.init()
           } catch(error) {
-            console.error('RootDetector startup failed.', error)
+            console.error('Root Detector startup failed.', error)
             const kind = error?.code == 'asset_schema_mismatch' ? 'version'
               : error?.status == 0 ? 'connection' : 'startup'
             this.show_recovery(kind, error)

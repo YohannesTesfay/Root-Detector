@@ -49,11 +49,18 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
 
 def test_optional_preparation_uses_original_pixel_bounds_and_separate_preview():
     menu = read('templates/roots/top_menu.html')
+    detection_tab = read('templates/roots/detection_tab.html')
     modal = read('templates/roots/modals.html')
     scripts = read('templates/roots/scripts.html')
     preparation = read('frontend/roots/preparation.js')
 
-    assert 'id="prepare-images-button"' in menu
+    assert 'id="prepare-images-button"' not in menu
+    assert 'id="load-prepared-images-button"' not in menu
+    assert '<details class="ui segment" id="image-preparation-tools">' in detection_tab
+    assert 'Advanced image preparation (optional)' in detection_tab
+    assert 'Cropping is not required for ordinary detection' in detection_tab
+    assert 'id="prepare-images-button"' in detection_tab
+    assert 'id="load-prepared-images-button"' in detection_tab
     assert 'roots/preparation.js' in scripts
     assert 'id="preparation-preview"' in modal
     assert 'original pixels' in modal
@@ -99,6 +106,28 @@ def test_modal_close_icons_are_centered_in_their_buttons():
     assert 'align-items: center;' in styles
     assert 'justify-content: center;' in styles
     assert 'padding: 0;' in styles
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {' in styles
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {\n    top: 0.7rem;' in styles
+    assert '#updates-dialog > .header,\n#settings-dialog > .header {' in styles
+    assert '#updates-dialog > .actions {' in styles
+    assert 'class="ui primary button" id="updates-check-button"' in template
+    assert 'class="ui basic button" onclick="$(\'#updates-dialog\').modal(\'hide\')">Close' in template
+
+
+def test_visible_app_name_has_spaces_without_renaming_compatibility_paths():
+    page = read('templates/index.html')
+    modals = read('templates/roots/modals.html')
+    desktop = read('desktop_main.py')
+    installer = read('packaging/windows/RootDetector.iss')
+
+    assert '<title>Root Detector</title>' in page
+    assert 'About Root Detector' in modals
+    assert "            'Root Detector'," in desktop
+    assert 'AppName=Root Detector' in installer
+    assert 'Name: "{autoprograms}\\Root Detector"' in installer
+    assert 'Name: "{autodesktop}\\Root Detector"' in installer
+    assert 'DefaultDirName={localappdata}\\Programs\\RootDetector' in installer
+    assert 'Filename: "{app}\\RootDetector.exe"' in installer
 
 
 def test_training_can_be_closed_or_retried_after_interruption():
@@ -142,7 +171,7 @@ def test_large_batch_upload_is_resumable_and_errors_are_readable():
     assert "status == 0" in file_input
     assert '[object Object]' not in pipeline
     assert 'responseJSON?.message' in security
-    assert 'The connection to the local RootDetector process was interrupted.' in security
+    assert 'The connection to the local Root Detector process was interrupted.' in security
     assert 'report_client_error' in security
     assert 'overflow-wrap: anywhere' in styles
     assert 'max-width: calc(100vw - 1.75rem)' in styles
@@ -154,9 +183,9 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     security = read('frontend/roots/security.js')
 
     assert 'RootDetectorBoot.start()' in template
-    assert 'RootDetector could not load its browser files.' in template
-    assert 'RootDetector is not reachable.' in template
-    assert 'This tab belongs to a different RootDetector version.' in template
+    assert 'Root Detector could not load its browser files.' in template
+    assert 'Root Detector is not reachable.' in template
+    assert 'This tab belongs to a different Root Detector version.' in template
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
