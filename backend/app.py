@@ -5,6 +5,7 @@ from base.backend.paths import get_models_path
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -562,6 +563,13 @@ class App(BaseApp):
             path,
             must_exist=True,
         )
+        if re.fullmatch(r'tracking_results\.[0-9a-f]{24}\.zip', path):
+            return flask.send_file(
+                full_path,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='RootDetector-tracking-results.zip',
+            )
         return flask.send_file(full_path)
 
     def get_set_settings(self):

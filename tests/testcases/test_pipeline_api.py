@@ -242,6 +242,29 @@ def test_diagnostics_download_excludes_research_data(tmp_path, monkeypatch):
     assert 'Result fetch was interrupted.' in log_text
 
 
+def test_tracking_archive_download_has_readable_filename(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+
+    app = App()
+    app.testing = True
+    archive_name = 'tracking_results.' + 'a' * 24 + '.zip'
+    archive_path = os.path.join(app.cache_path, archive_name)
+    with zipfile.ZipFile(archive_path, 'w') as archive:
+        archive.writestr('statistics.csv', 'pair,growth\n')
+
+    response = app.test_client().get('/images/' + archive_name)
+    assert response.status_code == 200
+    assert response.mimetype == 'application/zip'
+    assert 'attachment' in response.headers['Content-Disposition']
+    assert 'RootDetector-tracking-results.zip' in response.headers['Content-Disposition']
+    with zipfile.ZipFile(io.BytesIO(response.data)) as downloaded:
+        assert downloaded.read('statistics.csv') == b'pair,growth\n'
+
+
 def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path, monkeypatch):
     monkeypatch.setenv('ROOT_PATH', os.getcwd())
     monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
