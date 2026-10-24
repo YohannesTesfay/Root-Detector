@@ -7,8 +7,17 @@ import desktop_main
 
 
 class RunningProcess:
+    def __init__(self):
+        self.terminated = False
+
     def poll(self):
-        return None
+        return 0 if self.terminated else None
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
 
 
 class Window:
@@ -79,6 +88,7 @@ def test_idle_close_does_not_cancel(tmp_path):
     host.window = Window()
     host.request = lambda path, method='GET': {'pipeline_runs': [], 'training_run': None}
     assert host.on_closing() is True
+    assert host.process.terminated is True
     assert host.window.prompts == []
 
 
@@ -87,6 +97,7 @@ def test_startup_close_warns_before_stopping_download(tmp_path):
     host.process = RunningProcess()
     host.window = Window(confirm=False)
     assert host.on_closing() is False
+    assert host.process.terminated is False
     assert 'model downloads' in host.window.prompts[0][1]
 
 

@@ -149,22 +149,30 @@ class DesktopHost:
 
     def on_closing(self, _window=None):
         if self.process is None or self.process.poll() is not None:
+            self.stop_backend()
             return True
         if not self.ready:
-            return self.window.create_confirmation_dialog(
+            confirmed = self.window.create_confirmation_dialog(
                 'RootDetector is still starting',
                 'Closing now will interrupt startup or model downloads. Close anyway?',
             )
+            if confirmed:
+                self.stop_backend()
+            return confirmed
         try:
             activity = self.request('/api/desktop/activity')
         except (OSError, ValueError):
-            return self.window.create_confirmation_dialog(
+            confirmed = self.window.create_confirmation_dialog(
                 'RootDetector status unavailable',
                 'The local analysis process is not responding. Closing may interrupt work. Close anyway?',
             )
+            if confirmed:
+                self.stop_backend()
+            return confirmed
         active = activity.get('pipeline_runs', [])
         training = activity.get('training_run')
         if not active and not training:
+            self.stop_backend()
             return True
         if not self.window.create_confirmation_dialog(
             'Analysis or training is running',
