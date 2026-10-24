@@ -48,13 +48,32 @@ def test_partial_settings_save_preserves_models_across_restart(tmp_path, monkeyp
         'tracking': 'tracking-a',
     }
     assert saved['use_gpu'] is True
-    assert 'tracking_exclusion_policy' not in saved
+    assert saved['tracking_exclusion_policy'] == 'first'
+    assert saved['tracking_sampling_mode'] == 'legacy'
+
+    bad_mode = app.test_client().post(
+        '/settings', json={'tracking_sampling_mode': []}, headers=headers
+    )
+    assert bad_mode.status_code == 400
+    assert bad_mode.get_json()['code'] == 'invalid_tracking_sampling_mode'
+
+    changed_mode = app.test_client().post(
+        '/settings', json={'tracking_sampling_mode': 'deterministic'}, headers=headers
+    )
+    assert changed_mode.status_code == 200
+
+    changed_policy = app.test_client().post(
+        '/settings', json={'tracking_exclusion_policy': 'union'}, headers=headers
+    )
+    assert changed_policy.status_code == 200
 
     restarted = App()
     restarted.testing = True
     settings = restarted.test_client().get('/settings', headers={'Host': 'localhost'}).get_json()['settings']
     assert settings['active_models'] == saved['active_models']
     assert settings['use_gpu'] is True
+    assert settings['tracking_sampling_mode'] == 'deterministic'
+    assert settings['tracking_exclusion_policy'] == 'union'
 
     # A previously damaged file must also be recoverable through the API.
     (tmp_path / 'settings.json').write_text(json.dumps({

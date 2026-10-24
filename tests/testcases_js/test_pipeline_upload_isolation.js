@@ -5,7 +5,17 @@ const vm = require('vm')
 
 
 const repository = path.resolve(__dirname, '..', '..')
-global.$ = () => ({hasClass: () => false})
+const controlSelections = []
+global.$ = selector => {
+    controlSelections.push(selector)
+    const control = {
+        hasClass: () => false,
+        toggleClass: () => control,
+        attr: () => control,
+        prop: () => control,
+    }
+    return control
+}
 global.GLOBAL = {
     files: {
         'first.tiff': {name: 'first.tiff'},
@@ -74,8 +84,16 @@ async function test_failed_upload_is_excluded_without_aborting(){
     assert(uploadRows.some(row => row.filename == 'broken.tiff' && row.state == 'failed'))
 }
 
+function test_running_state_disables_both_import_routes(){
+    RootPipeline.set_running(true)
+    assert(controlSelections.some(selector => selector.includes('#load-results-button')))
+    assert(controlSelections.some(selector => selector.includes('#results-input')
+        && selector.includes('#annotations-input')))
+}
+
 
 Promise.resolve()
+    .then(test_running_state_disables_both_import_routes)
     .then(test_failed_upload_is_excluded_without_aborting)
     .then(() => console.log('Pipeline upload-isolation tests passed.'))
     .catch(error => {

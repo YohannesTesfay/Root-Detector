@@ -34,7 +34,7 @@ async function test_error_normalization(){
     )
     assert.match(
         RootSecurity.error_message({status: 0}),
-        /connection to the local RootDetector process was interrupted/i,
+        /connection to the local Root Detector process was interrupted/i,
     )
     assert.notStrictEqual(
         RootSecurity.error_message({message: '[object Object]'}),
@@ -95,7 +95,7 @@ async function test_boot_recovery(){
 
     context.RootDetectorApp = {init: async () => { throw {status: 0, message: '[object Object]'} }}
     await context.RootDetectorBoot.start()
-    assert.match(body.box.innerHTML, /RootDetector is not reachable/)
+    assert.match(body.box.innerHTML, /Root Detector is not reachable/)
     assert.match(body.box.innerHTML, /StartRootDetector\.bat/)
     assert.doesNotMatch(body.box.detail.textContent, /\[object Object\]/)
 
@@ -105,7 +105,7 @@ async function test_boot_recovery(){
         throw error
     }}
     await context.RootDetectorBoot.start()
-    assert.match(body.box.innerHTML, /different RootDetector version/)
+    assert.match(body.box.innerHTML, /different Root Detector version/)
     assert.strictEqual(body.box.detail.textContent, 'Browser version does not match')
 
     context.RootDetectorApp = {init: async () => { throw {message: 'Model setup failed'} }}

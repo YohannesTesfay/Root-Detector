@@ -13,7 +13,7 @@
 {% macro top_menu(app) %}
 <div class="ui container menu page-wide">
   <div class="header item" style="padding-top:0; padding-bottom:0">
-    <img class="logo" src="logo.svg" alt="RootDetector">
+    <img class="logo" src="logo.svg" alt="Root Detector">
   </div>
 
   <div class="ui simple dropdown item" id="file-import-menu" role="button" tabindex="0"
@@ -23,13 +23,13 @@
     <i class="dropdown icon"></i>
     <div class="ui menu">
       <a href="#" class="ui icon item" id="load-input-images-button"
-              title="Choose one or more root images"
+              title="Choose root images or prepared PNGs with their manifest; restore earlier results separately"
               onclick="if(this.classList.contains('disabled')) return false; document.getElementById('input_images').click(); return false;">
         <i class="images outline icon"></i>
         Load Input Images
       </a>
       <input type="file" id="input_images" style="display:none"
-             onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*" multiple>
+             onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*,.json,.zip" multiple>
 
       <a href="#" class="ui icon item" id="load-input-folder-button"
               title="Choose a folder containing root images"
@@ -42,15 +42,16 @@
 
       <div class="ui divider"></div>
 
-      <a href="#" class="ui icon item" id="load-annotations-button"
-              title="Load existing segmentation annotations or a results ZIP"
-              onclick="if(this.classList.contains('disabled')) return false; document.getElementById('annotations-input').click(); return false;">
-        <i class="images icon"></i>
-        Load Annotations
+      <a href="#" class="ui icon item" id="load-results-button"
+              title="Restore earlier detection results for the loaded images; predictions are not training labels"
+              onclick="if(this.classList.contains('disabled')) return false; document.getElementById('results-input').click(); return false;">
+        <i class="archive icon"></i>
+        Restore Detection Results
       </a>
-      <input type="file" id="annotations-input" style="display:none"
-             onchange="{{ app }}.FileInput.on_annotations_select(event)" accept="image/*, application/zip, application/x-zip-compressed" multiple>
+      <input type="file" id="results-input" style="display:none"
+             onchange="{{ app }}.FileInput.on_results_select(event)" accept=".zip,.png" multiple>
 
+      <div class="ui divider"></div>
       {{ load_exclude_masks_item(app) | indent(6) }}
     </div>
   </div>
@@ -62,12 +63,23 @@
     <span class="text">Settings</span>
   </a>
 
+  <a href="#" class="ui simple item" id="about-button"
+          title="View the installed version and check for a newer release"
+          onclick="RootUpdates.open(); return false;">
+    <i class="info circle icon"></i>
+    <span class="text">About</span>
+  </a>
+
   <a href="#" class="ui primary disabled item" id="pipeline-run-button"
-          title="Run detection for every image, then tracking for every valid pair"
+          title="Load input images first. Then run detection for every image and tracking for valid pairs."
+          aria-describedby="analysis-prerequisites"
           tabindex="-1" aria-disabled="true"
           onclick="if(this.classList.contains('disabled')) return false; RootPipeline.on_run_analysis(event); return false;">
     <i class="play icon"></i>
     Run Analysis
   </a>
+</div>
+<div class="ui container page-wide" id="workflow-guide" role="note">
+  <p id="analysis-prerequisites"><strong>Workflow:</strong> Load images → Run Analysis (detection, then tracking for valid pairs) → Review → Export. Training a new model is optional and uses separately reviewed labels. Run Analysis becomes available after images are loaded; no second upload is needed between detection and tracking.</p>
 </div>
 {% endmacro %}

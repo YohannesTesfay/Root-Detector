@@ -83,6 +83,9 @@ def test_pipeline_api_reports_validation_busy_completion_and_missing_run(tmp_pat
     assert created.status_code == 202
     run_id = created.get_json()['id']
     assert started.wait(2)
+    activity = client.get('/api/desktop/activity', headers={'Host': 'localhost'})
+    assert activity.status_code == 200
+    assert activity.get_json()['pipeline_runs'] == [{'id': run_id, 'state': 'running'}]
 
     busy = client.post(
         '/api/pipeline/runs',
@@ -97,6 +100,7 @@ def test_pipeline_api_reports_validation_busy_completion_and_missing_run(tmp_pat
     completed = client.get('/api/pipeline/runs/' + run_id)
     assert completed.status_code == 200
     assert completed.get_json()['state'] == 'completed'
+    assert client.get('/api/desktop/activity').get_json()['pipeline_runs'] == []
 
     missing = client.get('/api/pipeline/runs/not-a-run')
     assert missing.status_code == 404
@@ -117,7 +121,7 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     session = client.get('/api/session', headers={'Host': 'localhost'})
     assert session.status_code == 200
     assert session.get_json()['token'] == app.session_token
-    assert session.get_json()['asset_schema'] == 'rootdetector-web-rc2-1'
+    assert session.get_json()['asset_schema'] == 'rootdetector-web-app-rc1-1'
     assert session.headers['X-Content-Type-Options'] == 'nosniff'
     assert session.headers['X-Frame-Options'] == 'DENY'
     assert "frame-ancestors 'none'" in session.headers['Content-Security-Policy']
@@ -148,6 +152,51 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     cleared = client.post('/clear_cache', headers=request_headers(app))
     assert cleared.status_code == 200
     assert cleared.get_json() == {'cleared': True}
+
+
+def test_tracking_provenance_mismatch_is_actionable_validation_error(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+
+    def reject_stale_tracking(*_args):
+        raise ValueError('Saved tracking points used a different sampling mode. Run tracking again.')
+
+    monkeypatch.setattr(
+        'backend.root_tracking.process',
+        reject_stale_tracking,
+    )
+
+    app = App()
+    app.testing = True
+    for name in ('first.png', 'second.png'):
+        with open(os.path.join(app.cache_path, name), 'wb') as output:
+            output.write(png_bytes())
+    response = app.test_client().post(
+        '/process_root_tracking',
+        json={'filename0': 'first.png', 'filename1': 'second.png', 'points0': []},
+        headers=request_headers(app),
+    )
+    assert response.status_code == 400
+    assert response.get_json()['code'] == 'invalid_tracking_pair'
+    assert 'Run tracking again' in response.get_json()['message']
+
+    invalid_run = app.test_client().post(
+        '/compile_tracking_results',
+        json={'file_pairs': [['first.png', 'second.png', '../wrong']]},
+        headers=request_headers(app),
+    )
+    assert invalid_run.status_code == 400
+    assert invalid_run.get_json()['code'] == 'invalid_tracking_result'
+    missing_run = app.test_client().post(
+        '/compile_tracking_results',
+        json={'file_pairs': [['first.png', 'second.png', 'a' * 32]]},
+        headers=request_headers(app),
+    )
+    assert missing_run.status_code == 400
+    assert missing_run.get_json()['code'] == 'invalid_tracking_result'
 
 
 def test_diagnostics_download_excludes_research_data(tmp_path, monkeypatch):
@@ -191,6 +240,35 @@ def test_diagnostics_download_excludes_research_data(tmp_path, monkeypatch):
     assert str(tmp_path) not in json.dumps(snapshot)
     assert 'Browser manual_detection failed for example.tiff' in log_text
     assert 'Result fetch was interrupted.' in log_text
+
+
+def test_tracking_archive_download_has_readable_filename(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+
+    app = App()
+    app.testing = True
+    archive_name = 'tracking_results.' + 'a' * 24 + '.zip'
+    archive_path = os.path.join(app.cache_path, archive_name)
+    with zipfile.ZipFile(archive_path, 'w') as archive:
+        archive.writestr('statistics.csv', 'pair,growth\n')
+
+    response = app.test_client().get('/images/' + archive_name)
+    assert response.status_code == 200
+    assert response.mimetype == 'application/zip'
+    assert 'attachment' in response.headers['Content-Disposition']
+    assert 'RootDetector-tracking-results.zip' in response.headers['Content-Disposition']
+    with zipfile.ZipFile(io.BytesIO(response.data)) as downloaded:
+        assert downloaded.read('statistics.csv') == b'pair,growth\n'
+
+    run_id = 'b' * 32
+    single = app.test_client().get('/images/' + archive_name + '?run_id=' + run_id)
+    assert 'RootDetector-tracking-{}.zip'.format(run_id) in single.headers['Content-Disposition']
+    invalid = app.test_client().get('/images/' + archive_name + '?run_id=../wrong')
+    assert invalid.status_code == 400
 
 
 def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path, monkeypatch):
@@ -279,14 +357,14 @@ def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path,
     assert unsafe_model_type.status_code == 400
     assert unsafe_model_type.get_json()['code'] == 'invalid_model_type'
 
-    scientific_policy = client.post(
+    invalid_policy = client.post(
         '/settings',
-        json={'active_models': {}, 'tracking_exclusion_policy': 'union'},
+        json={'active_models': {}, 'tracking_exclusion_policy': 'automatic'},
         headers=headers,
     )
-    assert scientific_policy.status_code == 400
-    assert scientific_policy.get_json()['code'] == 'invalid_settings'
-    assert len(scientific_policy.get_json()['diagnostic_id']) == 12
+    assert invalid_policy.status_code == 400
+    assert invalid_policy.get_json()['code'] == 'invalid_tracking_exclusion_policy'
+    assert len(invalid_policy.get_json()['diagnostic_id']) == 12
 
 
 def test_configured_upload_limit_is_reported_and_enforced(tmp_path, monkeypatch):

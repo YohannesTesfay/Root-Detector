@@ -57,7 +57,7 @@ vm.runInThisContext(fs.readFileSync(path.join(repository, 'frontend/roots/downlo
 
 async function test_failed_rerun_cannot_export_stale_result(){
     RootTracking.apply_pipeline_result({filename0: pair[0], filename1: pair[1], state: 'failed', error: {message: 'GPU error'}})
-    assert.deepStrictEqual(GLOBAL.files[pair[0]].tracking_results[pair[1]], {})
+    assert.deepStrictEqual(GLOBAL.files[pair[0]].tracking_results[pair[1]], {success: false, code: 'tracking_failed'})
     assert.strictEqual(RootTrackingDownload.is_exportable_result(GLOBAL.files[pair[0]].tracking_results[pair[1]]), false)
 }
 

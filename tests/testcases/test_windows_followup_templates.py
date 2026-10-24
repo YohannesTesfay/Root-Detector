@@ -17,7 +17,7 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     for control_id in [
         'load-input-images-button',
         'load-input-folder-button',
-        'load-annotations-button',
+        'load-results-button',
         'load-exclude-masks-button',
     ]:
         assert 'id="{}"'.format(control_id) in template
@@ -28,6 +28,15 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert "keydown.rootdetector-menu" in app
     assert 'event.target !== event.currentTarget' in app
     assert 'id="file-import-menu"' in template
+    assert 'id="results-input"' in template
+    assert 'id="load-annotations-button"' not in template
+    training_tab = read('templates/roots/training_tab.html')
+    assert 'id="load-annotations-button"' in training_tab
+    assert 'id="annotations-input"' in training_tab
+    assert 'Import Reviewed Labels' in training_tab
+    assert 'Restore Detection Results' in template
+    assert 'Load images → Run Analysis' in template
+    assert 'no second upload is needed' in template
     assert 'aria-expanded="false"' in template
     assert "$('#file-import-menu').dropdown({action: 'hide'})" in app
     assert "addClass('keyboard-open')" in app
@@ -36,6 +45,29 @@ def test_file_import_controls_are_fomantic_menu_links_with_disabled_guards():
     assert "mouseenter.rootdetector-files-menu mouseleave.rootdetector-files-menu" in app
     assert "find('.menu a.item:not(.disabled)').first().trigger('focus')" in app
     assert '#file-import-menu.keyboard-open > .menu' in styles
+
+
+def test_optional_preparation_uses_original_pixel_bounds_and_separate_preview():
+    menu = read('templates/roots/top_menu.html')
+    detection_tab = read('templates/roots/detection_tab.html')
+    modal = read('templates/roots/modals.html')
+    scripts = read('templates/roots/scripts.html')
+    preparation = read('frontend/roots/preparation.js')
+
+    assert 'id="prepare-images-button"' not in menu
+    assert 'id="load-prepared-images-button"' not in menu
+    assert '<details class="ui segment" id="image-preparation-tools">' in detection_tab
+    assert 'Advanced image preparation (optional)' in detection_tab
+    assert 'Cropping is not required for ordinary detection' in detection_tab
+    assert 'id="prepare-images-button"' in detection_tab
+    assert 'id="load-prepared-images-button"' in detection_tab
+    assert 'roots/preparation.js' in scripts
+    assert 'id="preparation-preview"' in modal
+    assert 'original pixels' in modal
+    assert 'id="crop-left"' in modal and 'id="crop-width"' in modal
+    assert 'RootSecurity.request(\'/api/preparation/apply\'' in preparation
+    assert 'file.preparation = result.manifest' in preparation
+    assert 'RootDetector-prepared-images.zip' in preparation
 
 
 def test_narrow_top_menu_keeps_run_analysis_visible():
@@ -62,6 +94,40 @@ def test_settings_actions_are_keyboard_focusable():
     assert '#settings-dialog > .content' in styles
     assert 'max-height: calc(100vh - 11rem)' in styles
     assert 'overflow-y: auto' in styles
+
+
+def test_modal_close_icons_are_centered_in_their_buttons():
+    template = read('templates/roots/modals.html')
+    styles = read('frontend/roots/styles.css')
+
+    assert 'aria-label="Close About"' in template
+    assert 'aria-label="Close settings"' in template
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {' in styles
+    assert 'align-items: center;' in styles
+    assert 'justify-content: center;' in styles
+    assert 'padding: 0;' in styles
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {' in styles
+    assert '#updates-dialog > .close.button,\n#settings-dialog > .close.button {\n    top: 0.7rem;' in styles
+    assert '#updates-dialog > .header,\n#settings-dialog > .header {' in styles
+    assert '#updates-dialog > .actions {' in styles
+    assert 'class="ui primary button" id="updates-check-button"' in template
+    assert 'class="ui basic button" onclick="$(\'#updates-dialog\').modal(\'hide\')">Close' in template
+
+
+def test_visible_app_name_has_spaces_without_renaming_compatibility_paths():
+    page = read('templates/index.html')
+    modals = read('templates/roots/modals.html')
+    desktop = read('desktop_main.py')
+    installer = read('packaging/windows/RootDetector.iss')
+
+    assert '<title>Root Detector</title>' in page
+    assert 'About Root Detector' in modals
+    assert "            'Root Detector'," in desktop
+    assert 'AppName=Root Detector' in installer
+    assert 'Name: "{autoprograms}\\Root Detector"' in installer
+    assert 'Name: "{autodesktop}\\Root Detector"' in installer
+    assert 'DefaultDirName={localappdata}\\Programs\\RootDetector' in installer
+    assert 'Filename: "{app}\\RootDetector.exe"' in installer
 
 
 def test_training_can_be_closed_or_retried_after_interruption():
@@ -105,7 +171,7 @@ def test_large_batch_upload_is_resumable_and_errors_are_readable():
     assert "status == 0" in file_input
     assert '[object Object]' not in pipeline
     assert 'responseJSON?.message' in security
-    assert 'The connection to the local RootDetector process was interrupted.' in security
+    assert 'The connection to the local Root Detector process was interrupted.' in security
     assert 'report_client_error' in security
     assert 'overflow-wrap: anywhere' in styles
     assert 'max-width: calc(100vw - 1.75rem)' in styles
@@ -117,13 +183,13 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     security = read('frontend/roots/security.js')
 
     assert 'RootDetectorBoot.start()' in template
-    assert 'RootDetector could not load its browser files.' in template
-    assert 'RootDetector is not reachable.' in template
-    assert 'This tab belongs to a different RootDetector version.' in template
+    assert 'Root Detector could not load its browser files.' in template
+    assert 'Root Detector is not reachable.' in template
+    assert 'This tab belongs to a different Root Detector version.' in template
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
-    assert 'rootdetector-web-rc2-1' in security
+    assert 'rootdetector-web-app-rc1-1' in security
 
 
 def test_tracking_tab_explains_detection_only_runs():
@@ -155,8 +221,9 @@ def test_windows_workflow_uploads_only_the_full_portable_zip():
     assert 'actions/checkout@v5' in workflow
     assert 'actions/setup-python@v6' in workflow
     assert 'actions/upload-artifact@v6' in workflow
-    assert 'node tests/testcases_js/test_tracking_utils.js' in workflow
-    assert 'path: builds/*_DigIT_RootDetector.zip' in workflow
+    assert 'Get-ChildItem tests/testcases_js/test_*.js' in workflow
+    assert 'builds/RootDetector-Windows-portable.zip' in workflow
+    assert 'builds/RootDetector-Windows-portable.sha256' in workflow
     assert 'path: builds/*.zip' not in workflow
 
 

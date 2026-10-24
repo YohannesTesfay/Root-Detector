@@ -43,7 +43,7 @@ RootPipeline = class {
                 if(this.upload_cancel_requested)
                     break
                 current_filename = filename
-                this.render_upload(filename, 'uploading', 'Sending to the local RootDetector process...')
+                this.render_upload(filename, 'uploading', 'Sending to the local Root Detector process...')
                 let upload
                 try {
                     upload = await RootsFileInput.ensure_uploaded(GLOBAL.files[filename], {
@@ -390,13 +390,13 @@ RootPipeline = class {
             .toggleClass('disabled loading', run_disabled)
             .attr('aria-disabled', String(run_disabled))
             .attr('tabindex', run_disabled ? '-1' : '0')
-        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button, .process-all')
+        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-results-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button, #load-prepared-images-button, .process-all')
             .toggleClass('disabled', running)
             .prop('disabled', running)
             .attr('aria-disabled', String(running))
-        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-annotations-button, #load-exclude-masks-button')
+        $('#settings-button, #load-input-images-button, #load-input-folder-button, #load-results-button, #load-annotations-button, #load-exclude-masks-button, #prepare-images-button, #load-prepared-images-button')
             .attr('tabindex', running ? '-1' : '0')
-        $('#input_images, #input_folder, #input_masks').prop('disabled', running)
+        $('#input_images, #input_folder, #input_masks, #results-input, #annotations-input, #preparation-input, #prepared-import-input').prop('disabled', running)
     }
 
     static pretty_state(value){
@@ -406,7 +406,7 @@ RootPipeline = class {
     }
 
     static error_message(error){
-        return RootSecurity.error_message(error, 'RootDetector returned an unreadable error.')
+        return RootSecurity.error_message(error, 'Root Detector returned an unreadable error.')
     }
 
     static request(url, method, data=undefined){
