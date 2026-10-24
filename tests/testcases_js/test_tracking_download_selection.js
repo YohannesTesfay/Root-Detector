@@ -23,7 +23,7 @@ async function main(){
             return 'tracking_results.selected.zip'
         }},
         downloadURI: (...args) => { downloaded = args },
-        url_for_image: name => `/images/${name}`,
+        url_for_image: name => `/images/${name}?_=123`,
         $: () => {
             const element = {addClass: () => element, removeClass: () => element,
                 closest: () => element,
@@ -45,7 +45,7 @@ async function main(){
     ])
     assert.deepStrictEqual(downloaded, [
         'RootDetector-tracking-results.zip',
-        '/images/tracking_results.selected.zip',
+        '/images/tracking_results.selected.zip?_=123',
     ])
     request = undefined
     await context.RootTrackingDownload.on_single_item_download_click({target: {}, currentTarget: {}})
@@ -54,7 +54,7 @@ async function main(){
         ['first.png', 'second.png', 'a'.repeat(32)],
     ])
     assert.strictEqual(downloaded[0], `RootDetector-tracking-${'a'.repeat(32)}.zip`)
-    assert.strictEqual(downloaded[1], `/images/tracking_results.selected.zip?run_id=${'a'.repeat(32)}`)
+    assert.strictEqual(downloaded[1], `/images/tracking_results.selected.zip?_=123&run_id=${'a'.repeat(32)}`)
     console.log('Tracking download selection tests passed.')
 }
 

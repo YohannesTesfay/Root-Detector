@@ -164,7 +164,8 @@ RootTrackingDownload = class extends BaseDownload {
                 '/compile_tracking_results', 'POST', this.selection_payload([pair]),
             )
             const url = url_for_image(result)
-            const run_url = data.run_id ? `${url}?run_id=${encodeURIComponent(data.run_id)}` : url
+            const separator = url.includes('?') ? '&' : '?'
+            const run_url = data.run_id ? `${url}${separator}run_id=${encodeURIComponent(data.run_id)}` : url
             downloadURI(`RootDetector-tracking-${data.run_id ?? filename}.zip`, run_url)
         } catch(error) {
             $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
