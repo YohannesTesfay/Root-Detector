@@ -1,7 +1,5 @@
 """Model-free checks for the separate Windows window host."""
 
-from pathlib import Path
-
 import desktop_main
 
 
@@ -20,10 +18,10 @@ class Window:
         return self.confirm
 
 
-def test_backend_environment_preserves_existing_values(monkeypatch):
+def test_backend_environment_preserves_existing_values(monkeypatch, tmp_path):
     monkeypatch.setenv('EXISTING_TEST_VALUE', 'unchanged')
-    result = desktop_main.backend_environment(Path('/test package'))
-    assert result['ROOT_PATH'] == '/test package'
+    result = desktop_main.backend_environment(tmp_path)
+    assert result['ROOT_PATH'] == str(tmp_path)
     assert result['ROOTDETECTOR_DESKTOP_HOST'] == '1'
     assert result['EXISTING_TEST_VALUE'] == 'unchanged'
 
