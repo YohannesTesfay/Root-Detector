@@ -60,8 +60,8 @@ jobs:
         shell: pwsh
         run: |
           $env:ROOTDETECTOR_CHECK_LOG = Join-Path $env:RUNNER_TEMP 'rootdetector-desktop-check.txt'
-          & builds/RootDetector-Windows-installer-payload/RootDetector.exe --check-package
-          if ($LASTEXITCODE -ne 0) {
+          $hostCheck = Start-Process -FilePath builds/RootDetector-Windows-installer-payload/RootDetector.exe -ArgumentList '--check-package' -Wait -PassThru
+          if ($hostCheck.ExitCode -ne 0) {
             if (Test-Path $env:ROOTDETECTOR_CHECK_LOG) { Get-Content $env:ROOTDETECTOR_CHECK_LOG }
             throw 'Desktop host cannot find its backend or WebView dependencies.'
           }
@@ -98,8 +98,8 @@ jobs:
           $desktopHost = Join-Path $installed 'RootDetector.exe'
           if (-not (Test-Path $application)) { throw 'Installed application is missing.' }
           if (-not (Test-Path $desktopHost)) { throw 'Installed desktop window is missing.' }
-          & $desktopHost --check-package
-          if ($LASTEXITCODE -ne 0) { throw 'Installed desktop window is incomplete.' }
+          $hostCheck = Start-Process -FilePath $desktopHost -ArgumentList '--check-package' -Wait -PassThru
+          if ($hostCheck.ExitCode -ne 0) { throw 'Installed desktop window is incomplete.' }
           $release = Get-Content release.json -Raw | ConvertFrom-Json
           $installedRelease = Get-Content (Join-Path $installed 'release.json') -Raw | ConvertFrom-Json
           if ($installedRelease.version -ne $release.version) { throw 'Installed application version differs from source.' }

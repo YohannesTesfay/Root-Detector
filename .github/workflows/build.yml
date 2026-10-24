@@ -52,9 +52,9 @@ jobs:
           $hosts = @(Get-ChildItem builds/*_DigIT_RootDetector/RootDetector.exe)
           if ($hosts.Count -ne 1) { throw 'Expected exactly one desktop host.' }
           $env:ROOTDETECTOR_CHECK_LOG = Join-Path $env:RUNNER_TEMP 'rootdetector-desktop-check.txt'
-          & $hosts[0].FullName --check-package
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Desktop host exit code: $LASTEXITCODE"
+          $hostCheck = Start-Process -FilePath $hosts[0].FullName -ArgumentList '--check-package' -Wait -PassThru
+          if ($hostCheck.ExitCode -ne 0) {
+            Write-Host "Desktop host exit code: $($hostCheck.ExitCode)"
             if (Test-Path $env:ROOTDETECTOR_CHECK_LOG) { Get-Content $env:ROOTDETECTOR_CHECK_LOG }
             throw 'Desktop host cannot find its backend or WebView dependencies.'
           }
