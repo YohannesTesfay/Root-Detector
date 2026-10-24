@@ -564,11 +564,17 @@ class App(BaseApp):
             must_exist=True,
         )
         if re.fullmatch(r'tracking_results\.[0-9a-f]{24}\.zip', path):
+            run_id = flask.request.args.get('run_id')
+            download_name = 'RootDetector-tracking-results.zip'
+            if run_id is not None:
+                if not re.fullmatch(r'[0-9a-f]{32}', run_id):
+                    raise backend.security.ValidationError('Invalid tracking result ID.', 'invalid_tracking_result')
+                download_name = 'RootDetector-tracking-{}.zip'.format(run_id)
             return flask.send_file(
                 full_path,
                 mimetype='application/zip',
                 as_attachment=True,
-                download_name='RootDetector-tracking-results.zip',
+                download_name=download_name,
             )
         return flask.send_file(full_path)
 

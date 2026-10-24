@@ -264,6 +264,12 @@ def test_tracking_archive_download_has_readable_filename(tmp_path, monkeypatch):
     with zipfile.ZipFile(io.BytesIO(response.data)) as downloaded:
         assert downloaded.read('statistics.csv') == b'pair,growth\n'
 
+    run_id = 'b' * 32
+    single = app.test_client().get('/images/' + archive_name + '?run_id=' + run_id)
+    assert 'RootDetector-tracking-{}.zip'.format(run_id) in single.headers['Content-Disposition']
+    invalid = app.test_client().get('/images/' + archive_name + '?run_id=../wrong')
+    assert invalid.status_code == 400
+
 
 def test_upload_validation_rejects_paths_corruption_and_name_conflicts(tmp_path, monkeypatch):
     monkeypatch.setenv('ROOT_PATH', os.getcwd())

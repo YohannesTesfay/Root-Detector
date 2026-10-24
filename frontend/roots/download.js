@@ -163,7 +163,9 @@ RootTrackingDownload = class extends BaseDownload {
             const result = await RootSecurity.request(
                 '/compile_tracking_results', 'POST', this.selection_payload([pair]),
             )
-            downloadURI(`RootDetector-tracking-${data.run_id ?? filename}.zip`, url_for_image(result))
+            const url = url_for_image(result)
+            const run_url = data.run_id ? `${url}?run_id=${encodeURIComponent(data.run_id)}` : url
+            downloadURI(`RootDetector-tracking-${data.run_id ?? filename}.zip`, run_url)
         } catch(error) {
             $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
