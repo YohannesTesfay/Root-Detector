@@ -8,6 +8,8 @@ RootPreparation = class {
     static pending_sources = []
     static inspection_failed = false
     static busy = false
+    static batch_running = false
+    static stop_requested = false
     static max_prepared_batch_bytes = 256 * 1024 * 1024
 
     static show_error(error){
@@ -19,6 +21,7 @@ RootPreparation = class {
     static set_busy(busy){
         this.busy = busy
         $('#preparation-dialog .actions button, #preparation-recovery button').prop('disabled', busy)
+        $('#preparation-stop').prop('disabled', !this.batch_running || !busy)
         if(!busy && this.stage)
             this.update_bounds()
     }
@@ -58,7 +61,9 @@ RootPreparation = class {
         this.index = 0
         this.bounds_template = undefined
         this.inspection_failed = false
-        $('#preparation-preview-wrap, #preparation-fields, #preparation-apply, #preparation-download, #preparation-import, #preparation-recovery, #preparation-error').hide()
+        this.batch_running = false
+        this.stop_requested = false
+        $('#preparation-preview-wrap, #preparation-fields, #preparation-apply, #preparation-batch-apply, #preparation-stop, #preparation-download, #preparation-import, #preparation-recovery, #preparation-error, #preparation-batch-report').hide()
         $('#preparation-preview').removeAttr('src')
         $('#preparation-source-info, #preparation-summary').text('')
     }
@@ -86,7 +91,7 @@ RootPreparation = class {
         this.stage = undefined
         this.bounds_template = undefined
         this.inspection_failed = false
-        $('#preparation-error, #preparation-recovery, #preparation-download, #preparation-import').hide()
+        $('#preparation-error, #preparation-recovery, #preparation-download, #preparation-import, #preparation-batch-report').hide()
         $('#preparation-dialog').modal({closable: false}).modal('show')
         await this.inspect_current()
     }
@@ -138,7 +143,7 @@ RootPreparation = class {
         if(this.busy)
             return
         if(this.prepared.length && !await RootDialogs.confirm(
-            'Discard prepared copies that have not been downloaded or imported?',
+            'Discard prepared copies from this session? Copies already downloaded will remain on your computer.',
             {title: 'Discard image preparation?', confirmLabel: 'Discard copies', destructive: true},
         ))
             return
@@ -161,7 +166,7 @@ RootPreparation = class {
             $('#preparation-dialog').modal('hide')
     }
 
-    static async inspect_current(){
+    static async inspect_current(batch=false){
         const file = this.sources[this.index]
         if(!file)
             return
@@ -170,7 +175,7 @@ RootPreparation = class {
         $('#preparation-source-info').text(`Inspecting ${this.index + 1} of ${this.sources.length}: ${file.name}...`)
         $('#preparation-preview-wrap').hide()
         $('#preparation-preview').removeAttr('src')
-        $('#preparation-fields, #preparation-apply').hide()
+        $('#preparation-fields, #preparation-apply, #preparation-batch-apply').hide()
         $('#preparation-error').hide()
         try {
             const inspected = await upload_file_to_flask(file, '/api/preparation/inspect')
@@ -188,14 +193,22 @@ RootPreparation = class {
                 width: inspected.source_width, height: inspected.source_height,
             }
             this.set_bounds(bounds)
-            $('#preparation-fields, #preparation-apply').show()
+            $('#preparation-fields, #preparation-apply, #preparation-batch-apply').show()
+            $('#preparation-batch-apply').toggle(this.index < this.sources.length - 1)
             this.update_bounds()
+            return true
         } catch(error) {
             this.inspection_failed = true
-            this.show_error(error)
-            this.show_recovery()
+            if(!batch){
+                this.show_error(error)
+                this.show_recovery()
+            } else {
+                this.batch_error = RootSecurity.error_message(error, 'Image inspection failed.')
+            }
+            return false
         } finally {
-            this.set_busy(false)
+            if(!batch)
+                this.set_busy(false)
         }
     }
 
@@ -238,6 +251,7 @@ RootPreparation = class {
             && width * height <= Number(RootSecurity.limits?.preparation_source_pixels ?? 16000000)
             && Math.max(width, height) <= 32768
         $('#preparation-apply').prop('disabled', !valid || this.busy)
+        $('#preparation-batch-apply').prop('disabled', !valid || this.busy)
         $('#preparation-selection').toggle(valid)
         if(valid){
             $('#preparation-selection').css({
@@ -255,50 +269,143 @@ RootPreparation = class {
         return valid
     }
 
+    static async prepare_stage(bounds){
+        const result = await RootSecurity.request('/api/preparation/apply', 'POST', {
+            id: this.stage.id,
+            rectangle: bounds,
+        })
+        const blob = await fetch_as_blob(`/images/${encodeURIComponent(result.output)}`)
+        const current_bytes = this.prepared.reduce((total, file) => total + file.size, 0)
+        if(current_bytes + blob.size > this.max_prepared_batch_bytes)
+            throw Object.assign(new Error(
+                'Prepared copies would exceed the 256 MiB browser batch budget. '
+                + 'Download or import the completed copies, then prepare the remaining images in a new batch.'
+            ), {code: 'prepared_batch_budget'})
+        const file = new File([blob], result.manifest.output_name, {type: 'image/png'})
+        if(this.prepared.some(previous => previous.name == file.name))
+            throw new Error(`Two prepared copies would be named ${file.name}. Use distinct source names or regions.`)
+        // Only commit a copy once its server stage is released. Failed cleanup
+        // must retain the stage so it can be retried without a duplicate.
+        await this.discard_current_stage()
+        file.preparation = result.manifest
+        this.prepared.push(file)
+        $('#preparation-download, #preparation-import').show()
+    }
+
+    static show_finished(){
+        $('#preparation-preview-wrap, #preparation-fields, #preparation-apply, #preparation-batch-apply').hide()
+        $('#preparation-source-info').text(
+            `${this.prepared.length} prepared ${this.prepared.length == 1 ? 'copy is' : 'copies are'} ready.`
+        )
+        $('#preparation-summary').text(
+            'Download the prepared copies and manifest to retain them; reopen that ZIP with Files → Load Input Images. '
+            + 'The original files have not been changed.'
+        )
+    }
+
     static async apply_current(){
         if(this.busy || !this.stage || !this.update_bounds())
             return
         const bounds = this.current_bounds()
         this.set_busy(true)
         try {
-            const result = await RootSecurity.request('/api/preparation/apply', 'POST', {
-                id: this.stage.id,
-                rectangle: bounds,
-            })
-            const blob = await fetch_as_blob(`/images/${encodeURIComponent(result.output)}`)
-            const current_bytes = this.prepared.reduce((total, file) => total + file.size, 0)
-            if(current_bytes + blob.size > this.max_prepared_batch_bytes)
-                throw new Error(
-                    'Prepared copies would exceed the 256 MiB browser batch budget. '
-                    + 'Download or import the completed copies, then prepare the remaining images in a new batch.'
-                )
-            const file = new File([blob], result.manifest.output_name, {type: 'image/png'})
-            if(this.prepared.some(previous => previous.name == file.name))
-                throw new Error(`Two prepared copies would be named ${file.name}. Use distinct source names or regions.`)
-            // Only commit a copy to the browser batch once its server stage is
-            // released. A failed discard can then be retried without a duplicate.
-            await this.discard_current_stage()
-            file.preparation = result.manifest
-            this.prepared.push(file)
-            $('#preparation-download, #preparation-import').show()
+            await this.prepare_stage(bounds)
             this.bounds_template = $('#crop-reuse-bounds').is(':checked') ? bounds : undefined
             this.index += 1
             if(this.index < this.sources.length){
                 await this.inspect_current()
             } else {
-                $('#preparation-preview-wrap, #preparation-fields, #preparation-apply').hide()
-                $('#preparation-source-info').text(`${this.prepared.length} prepared copy/copies are ready.`)
-                $('#preparation-summary').text(
-                    'Download the prepared copies and manifest to retain them; reopen that ZIP with Files → Load Input Images. '
-                    + 'The original files have not been changed.'
-                )
-                $('#preparation-download, #preparation-import').show()
+                this.show_finished()
             }
         } catch(error) {
             this.show_error(error)
         } finally {
             this.set_busy(false)
         }
+    }
+
+    static stop_batch(){
+        if(this.batch_running){
+            this.stop_requested = true
+            $('#preparation-batch-report').text('Stopping after the current image...').show()
+        }
+    }
+
+    static async apply_same_crop(){
+        if(this.busy || !this.stage || !this.update_bounds())
+            return
+        const bounds = this.current_bounds()
+        const width = this.stage.source_width
+        const height = this.stage.source_height
+        const count = this.sources.length - this.index
+        if(!await RootDialogs.confirm(
+            `Apply this exact pixel rectangle to the current image and up to ${count - 1} remaining image(s)? `
+            + `Only ${width} × ${height} pixel sources will be processed. Verify that all dates show the same physical region; this does not align scans.`,
+            {title: 'Batch crop images?', confirmLabel: 'Apply same crop'},
+        )) return
+        this.batch_running = true
+        this.stop_requested = false
+        this.batch_error = ''
+        const skipped = []
+        this.set_busy(true)
+        $('#preparation-stop, #preparation-batch-report').show()
+        try {
+            while(this.index < this.sources.length && !this.stop_requested){
+                const source = this.sources[this.index]
+                if(!this.stage && !await this.inspect_current(true)){
+                    skipped.push(`${source.name}: ${this.batch_error}`)
+                    this.index += 1
+                    continue
+                }
+                this.set_bounds(bounds)
+                this.update_bounds()
+                $('#preparation-batch-report').text(
+                    `Preparing ${this.index + 1} of ${this.sources.length}: ${source.name}. `
+                    + `${this.prepared.length} completed, ${skipped.length} skipped.`
+                )
+                if(this.stage.source_width != width || this.stage.source_height != height){
+                    try { await this.discard_current_stage() }
+                    catch(error){
+                        this.show_error(error)
+                        break
+                    }
+                    skipped.push(`${source.name}: source dimensions differ from ${width} × ${height} pixels.`)
+                    this.index += 1
+                    continue
+                }
+                try {
+                    await this.prepare_stage(bounds)
+                    this.index += 1
+                } catch(error) {
+                    const message = RootSecurity.error_message(error, 'Crop failed.')
+                    try { await this.discard_current_stage() }
+                    catch(cleanup_error){
+                        this.show_error(cleanup_error)
+                        break
+                    }
+                    skipped.push(`${source.name}: ${message}`)
+                    this.index += 1
+                    if(error.code == 'prepared_batch_budget')
+                        break
+                }
+            }
+            const remaining = this.sources.length - this.index
+            $('#preparation-batch-report').text(
+                `${this.prepared.length} prepared; ${skipped.length} skipped; ${remaining} remaining.`
+                + (skipped.length ? `\n${skipped.join('\n')}` : '')
+            ).show()
+            if(this.index >= this.sources.length)
+                this.show_finished()
+        } catch(error) {
+            this.show_error(error)
+        } finally {
+            this.batch_running = false
+            this.stop_requested = false
+            $('#preparation-stop').hide()
+            this.set_busy(false)
+        }
+        if(this.index < this.sources.length && !this.stage)
+            await this.inspect_current()
     }
 
     static download_prepared(){

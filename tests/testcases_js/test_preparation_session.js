@@ -148,7 +148,62 @@ async function main(){
     assert.equal(imported.length, 1, 'Already-hidden dialog must not block import.')
     assert.deepEqual(imported[0].preparation, manifest)
     assert.equal(RootPreparation.has_session(), false)
-    console.log('Preparation recovery, safe reselection, discard retry, and provenance passed')
+
+    // A batch must never silently crop differently sized scans, and one bad
+    // source must not prevent later compatible images from being prepared.
+    let stageNumber = 0
+    global.upload_file_to_flask = async file => {
+        if(file.name == 'unreadable.png') throw new Error('Unsupported image')
+        return {
+            id: `batch-stage-${++stageNumber}`,
+            preview: `batch-preview-${stageNumber}.png`,
+            source_width: file.name == 'different.png' ? 1300 : 1400,
+            source_height: 1400,
+            source_bytes: file.size,
+        }
+    }
+    const names = ['first.png', 'different.png', 'unreadable.png', 'apply-fail.png', 'last.png']
+    await RootPreparation.on_files_select({target: {
+        files: names.map(name => new File(['original'], name)), value: 'chosen',
+    }})
+    RootSecurity.request = async (url, method, payload) => {
+        if(url == '/api/preparation/apply'){
+            const name = RootPreparation.sources[RootPreparation.index].name
+            if(name == 'apply-fail.png') throw new Error('Crop request failed')
+            return {output: `${name}.png`, manifest: {
+                output_name: `${name}.png`, source: {source_name: name}, rectangle: payload.rectangle,
+            }}
+        }
+        return {}
+    }
+    await RootPreparation.apply_same_crop()
+    assert.equal(RootPreparation.index, 5)
+    assert.deepEqual(RootPreparation.prepared.map(file => file.preparation.source.source_name), ['first.png', 'last.png'])
+    assert.match(element('#preparation-batch-report').text(), /different\.png: source dimensions differ/)
+    assert.match(element('#preparation-batch-report').text(), /unreadable\.png: Unsupported image/)
+    assert.match(element('#preparation-batch-report').text(), /apply-fail\.png: Crop request failed/)
+    assert.equal(RootPreparation.stage, undefined)
+
+    await RootPreparation.discard_session()
+    await RootPreparation.on_files_select({target: {
+        files: ['one.png', 'two.png', 'three.png'].map(name => new File(['original'], name)), value: 'chosen',
+    }})
+    RootSecurity.request = async (url, method, payload) => {
+        if(url == '/api/preparation/apply'){
+            RootPreparation.stop_batch()
+            const name = RootPreparation.sources[RootPreparation.index].name
+            return {output: `${name}.png`, manifest: {
+                output_name: `${name}.png`, source: {source_name: name}, rectangle: payload.rectangle,
+            }}
+        }
+        return {}
+    }
+    await RootPreparation.apply_same_crop()
+    assert.equal(RootPreparation.prepared.length, 1, 'Stopping must complete only the current image.')
+    assert.equal(RootPreparation.index, 1)
+    assert.equal(RootPreparation.stage?.source_width, 1400, 'The next image remains ready for manual review.')
+    assert.equal(RootPreparation.busy, false)
+    console.log('Preparation recovery, batch compatibility, failure isolation, stop, and provenance passed')
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1 })
