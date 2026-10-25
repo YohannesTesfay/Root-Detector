@@ -137,9 +137,41 @@ async function run() {
         const freshResult = await (await freshDetection).json();
         assert.equal(freshResult.statistics.sum_mask, 90 * 1280, 'Restored exclusion mask must affect newly computed results.');
         await page.waitForFunction(() => Object.values(GLOBAL.files)[0].results?.statistics?.sum_mask === 90 * 1280);
+
+        // Batch preparation reuses one deliberate ROI, skips different-sized
+        // scans, and retains separate provenance for each completed copy.
+        const batchFiles = [
+            {name: 'BatchTube_04.04.24_scan.png', mimeType: 'image/png', buffer: source},
+            {name: 'BatchTube_05.04.24_scan.png', mimeType: 'image/png', buffer: source},
+            {name: 'BatchTube_06.04.24_scan.png', mimeType: 'image/png', buffer: rgbPNG(1300, 1400, () => [32, 48, 16])},
+        ];
+        await page.locator('#preparation-input').setInputFiles(batchFiles);
+        await page.locator('#preparation-fields').waitFor({state: 'visible'});
+        for (const [key, value] of Object.entries({left: 10, top: 20, width: 1280, height: 1280})) {
+            await page.locator(`#crop-${key}`).fill(String(value));
+        }
+        await page.locator('#preparation-batch-apply').click();
+        await approveAppConfirmation(/Apply this exact pixel rectangle/);
+        await page.waitForFunction(() => RootPreparation.index === 3 && !RootPreparation.busy);
+        const batch = await page.evaluate(() => RootPreparation.prepared.map(file => file.preparation));
+        assert.equal(batch.length, 2);
+        assert.deepEqual(batch.map(record => record.rectangle), [
+            {left: 10, top: 20, width: 1280, height: 1280},
+            {left: 10, top: 20, width: 1280, height: 1280},
+        ]);
+        assert.deepEqual(batch.map(record => record.source.source_name), batchFiles.slice(0, 2).map(file => file.name));
+        assert.match(await page.locator('#preparation-batch-report').innerText(), /BatchTube_06\.04\.24_scan\.png: source dimensions differ/);
+        assert.equal(await page.locator('#preparation-download').isEnabled(), true);
+        assert.equal(await page.locator('#preparation-dialog .actions button').filter({hasText: 'Close'}).isEnabled(), true);
+        await page.locator('#preparation-import').click();
+        await approveAppConfirmation(/Importing prepared copies replaces the current image set/);
+        await page.waitForFunction(() => Object.values(GLOBAL.files).length === 2);
+        await page.waitForFunction(() => RootTracking.get_file_pairs().length === 1);
+        assert.equal(await page.evaluate(() => RootTracking.get_file_pairs().length), 1,
+            'The prepared observations should retain a valid chronological tracking pair.');
         assert.deepEqual(errors, []);
         await page.screenshot({path: path.join(artifacts, 'preparation-completed.png'), fullPage: true});
-        console.log('PASS crop preparation, prepared ZIP restore, original mask confirmation, result/provenance roundtrip, restored exclusion on fresh detection, and explicit training review');
+        console.log('PASS crop preparation, batch ROI and size guard, prepared ZIP restore, original mask confirmation, result/provenance roundtrip, restored exclusion on fresh detection, and explicit training review');
     } catch (error) {
         await page.screenshot({path: path.join(artifacts, 'preparation-failure.png'), fullPage: true}).catch(() => {});
         throw error;
