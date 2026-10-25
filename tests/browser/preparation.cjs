@@ -163,6 +163,12 @@ async function run() {
         assert.match(await page.locator('#preparation-batch-report').innerText(), /BatchTube_06\.04\.24_scan\.png: source dimensions differ/);
         assert.equal(await page.locator('#preparation-download').isEnabled(), true);
         assert.equal(await page.locator('#preparation-dialog .actions button').filter({hasText: 'Close'}).isEnabled(), true);
+        await page.locator('#preparation-import').click();
+        await approveAppConfirmation(/Importing prepared copies replaces the current image set/);
+        await page.waitForFunction(() => Object.values(GLOBAL.files).length === 2);
+        await page.waitForFunction(() => RootTracking.get_file_pairs().length === 1);
+        assert.equal(await page.evaluate(() => RootTracking.get_file_pairs().length), 1,
+            'The prepared observations should retain a valid chronological tracking pair.');
         assert.deepEqual(errors, []);
         await page.screenshot({path: path.join(artifacts, 'preparation-completed.png'), fullPage: true});
         console.log('PASS crop preparation, batch ROI and size guard, prepared ZIP restore, original mask confirmation, result/provenance roundtrip, restored exclusion on fresh detection, and explicit training review');
