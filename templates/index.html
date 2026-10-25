@@ -32,8 +32,9 @@
           const messages = {
             assets: [
               'Root Detector could not load its browser files.',
-              'Start <code>StartRootDetector.bat</code> from one complete extracted folder, '
-                + 'then reload. If you changed packages, close old Root Detector tabs first.',
+              'Close and reopen this Root Detector window. If you use the browser fallback, '
+                + 'start <code>StartRootDetector.bat</code> from one complete extracted folder. '
+                + 'Close old windows and tabs from other packages first.',
             ],
             connection: [
               'Root Detector is not reachable.',
@@ -63,8 +64,38 @@
           document.body.innerHTML = ''
           document.body.appendChild(box)
         },
+        retry_missing_assets: async function() {
+          if(!window.location || typeof window.location.replace != 'function')
+            return false
+          const url = new URL(window.location.href)
+          const raw = url.searchParams.get('rd_asset_retry') || '0'
+          if(!/^[0-2]$/.test(raw) || Number(raw) >= 2)
+            return false
+          url.searchParams.set('rd_asset_retry', String(Number(raw) + 1))
+          // A WebView can fail one localhost script request while the packaged
+          // backend is finishing startup. Reload the whole page so script order
+          // is restored; bound the attempts so an incomplete package is visible.
+          await new Promise(resolve => setTimeout(resolve, 750))
+          window.location.replace(url.toString())
+          return true
+        },
+        clear_asset_retry: function() {
+          if(!window.location || !window.history || typeof window.history.replaceState != 'function')
+            return
+          try {
+            const url = new URL(window.location.href)
+            if(!url.searchParams.has('rd_asset_retry'))
+              return
+            url.searchParams.delete('rd_asset_retry')
+            window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+          } catch(_error) {
+            // URL tidying must not turn a working page into a startup error.
+          }
+        },
         start: async function() {
           if(this.failed_assets.length || typeof RootDetectorApp == 'undefined') {
+            if(await this.retry_missing_assets())
+              return
             const missing = this.failed_assets.length
               ? 'Missing: ' + this.failed_assets.join(', ')
               : 'A required application script did not load.'
@@ -73,6 +104,7 @@
           }
           try {
             await RootDetectorApp.init()
+            this.clear_asset_retry()
           } catch(error) {
             console.error('Root Detector startup failed.', error)
             const kind = error?.code == 'asset_schema_mismatch' ? 'version'
