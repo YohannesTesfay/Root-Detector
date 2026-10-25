@@ -26,7 +26,8 @@ async function main(){
         url_for_image: name => `/images/${name}?_=123`,
         $: () => {
             const element = {addClass: () => element, removeClass: () => element,
-                closest: () => element,
+                toggleClass: () => element, prop: () => element,
+                find: () => element, text: () => element, closest: () => element,
                 attr: name => ({filename0: 'first.png', filename1: 'second.png',
                     filename: 'first.png.second.png'}[name] ?? element),
                 removeAttr: () => element, toast: () => element}

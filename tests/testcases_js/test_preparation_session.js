@@ -38,7 +38,8 @@ function element(selector){
 }
 global.$ = element
 global.File = File
-global.window = {confirm: () => true}
+global.window = {}
+global.RootDialogs = {confirm: async () => true}
 global.GLOBAL = {files: {}}
 global.RootSecurity = {
     limits: {},

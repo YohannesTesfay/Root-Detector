@@ -1,9 +1,21 @@
-async function download_root_zip(filename, zipdata){
+async function download_root_zip(filename, zipdata, on_progress=undefined){
     const zip = new JSZip()
     for(const [name, value] of Object.entries(zipdata))
         zip.file(name, await value, {binary:true})
-    const blob = await zip.generateAsync({type:'blob'})
+    const blob = await zip.generateAsync({type:'blob'}, update => on_progress?.(update.percent))
     download_blob(filename, blob)
+}
+
+function set_download_all_busy($button, busy, percent=undefined){
+    $button.toggleClass('is-busy', busy)
+        .prop('disabled', busy)
+        .attr('aria-busy', String(busy))
+    $button.find('.download-label').prop('hidden', busy)
+    const $status = $button.find('.download-busy').prop('hidden', !busy)
+    if(busy)
+        $status.find('.download-progress-text').text(
+            percent == undefined ? 'Preparing download…' : `Preparing download… ${Math.round(percent)}%`
+        )
 }
 
 function prepared_companions_for_files(filenames){
@@ -61,14 +73,15 @@ RootDetectionDownload = class extends BaseDownload{
         }
         const $button = $(event?.currentTarget ?? event?.target ?? '#detection-download-all')
         this.download_in_progress = true
-        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        set_download_all_busy($button, true)
         try {
-            await download_root_zip('RootDetector-detection-results.zip', zipdata)
+            await download_root_zip('RootDetector-detection-results.zip', zipdata,
+                percent => set_download_all_busy($button, true, percent))
         } catch(error) {
             $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false
-            $button.removeClass('loading disabled').removeAttr('aria-busy')
+            set_download_all_busy($button, false)
         }
     }
 
@@ -270,7 +283,7 @@ RootTrackingDownload = class extends BaseDownload {
         }
         const $button = $(event?.currentTarget ?? event?.target ?? '#tracking-download-all')
         this.download_in_progress = true
-        $button.addClass('loading disabled').attr('aria-busy', 'true')
+        set_download_all_busy($button, true)
         try {
             const result = await RootSecurity.request(
                 '/compile_tracking_results',
@@ -282,7 +295,7 @@ RootTrackingDownload = class extends BaseDownload {
             $('body').toast({message:`Tracking download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false
-            $button.removeClass('loading disabled').removeAttr('aria-busy')
+            set_download_all_busy($button, false)
         }
     }
 

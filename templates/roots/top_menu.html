@@ -11,7 +11,7 @@
 
 
 {% macro top_menu(app) %}
-<div class="ui container menu page-wide">
+<div class="ui container menu page-wide" id="root-top-menu">
   <div class="header item" style="padding-top:0; padding-bottom:0">
     <img class="logo" src="logo.svg" alt="Root Detector">
   </div>
@@ -32,7 +32,7 @@
              onchange="{{ app }}.FileInput.on_inputfiles_select(event)" accept="image/*,.json,.zip" multiple>
 
       <a href="#" class="ui icon item" id="load-input-folder-button"
-              title="Choose a folder containing root images"
+              title="Choose a folder of root images"
               onclick="if(this.classList.contains('disabled')) return false; document.getElementById('input_folder').click(); return false;">
         <i class="folder outline icon"></i>
         Load Input Folder
@@ -63,13 +63,6 @@
     <span class="text">Settings</span>
   </a>
 
-  <a href="#" class="ui simple item" id="about-button"
-          title="View the installed version and check for a newer release"
-          onclick="RootUpdates.open(); return false;">
-    <i class="info circle icon"></i>
-    <span class="text">About</span>
-  </a>
-
   <a href="#" class="ui primary disabled item" id="pipeline-run-button"
           title="Load input images first. Then run detection for every image and tracking for valid pairs."
           aria-describedby="analysis-prerequisites"
@@ -77,6 +70,13 @@
           onclick="if(this.classList.contains('disabled')) return false; RootPipeline.on_run_analysis(event); return false;">
     <i class="play icon"></i>
     Run Analysis
+  </a>
+
+  <a href="#" class="right icon item" id="about-button"
+          aria-label="About Root Detector"
+          title="About Root Detector: version and updates"
+          onclick="RootUpdates.open(); return false;">
+    <i class="info circle icon" aria-hidden="true"></i>
   </a>
 </div>
 <div class="ui container page-wide" id="workflow-guide" role="note">

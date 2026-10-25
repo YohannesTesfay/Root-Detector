@@ -142,7 +142,6 @@ RootsFileInput = class extends BaseFileInput{
                 input.preparation = file.preparation
             GLOBAL.files[file.name] = input
         }
-        $('.tabs .item[data-tab="detection"]').click()
         const result = await this.refresh_filetable(files)
         RootPipeline.on_files_ready()
         return result
@@ -433,9 +432,10 @@ RootsFileInput = class extends BaseFileInput{
         } catch(error) {
             if(error?.responseJSON?.code != 'companion_confirmation_required')
                 throw error
-            if(!window.confirm(
+            if(!await RootDialogs.confirm(
                 `Crop ${description} ${file.name} using the exact original-pixel rectangle of ${inputfile.name}? `
-                + 'Continue only if this mask is aligned with the original scan. No resizing or automatic alignment will be applied.'
+                + 'Continue only if this mask is aligned with the original scan. No resizing or automatic alignment will be applied.',
+                {title: 'Confirm mask alignment', confirmLabel: 'Crop aligned mask'},
             ))
                 throw new Error('Mask import cancelled; the original mask has not been changed.')
             result = await send(true)
