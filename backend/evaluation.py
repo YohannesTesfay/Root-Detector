@@ -1,6 +1,8 @@
 import numpy as np
 import PIL.Image
 import zipfile, os, io
+import csv
+import typing as tp
 
 
 
@@ -32,25 +34,31 @@ def save_evaluation_results(results:list, destination:str):
             archive.open(outpath, 'w').write(error_map_to_png(r['error_map']))
 
 
-def IoU(a:np.array, b:np.array) -> float:
-    a = np.asarray(a, bool)
-    b = np.asarray(b, bool)
-    #single channel inputs required
-    assert a.ndim==2 or a.shape[-3]==1
+def _mask_pair(a, b):
+    a, b = np.asarray(a, bool), np.asarray(b, bool)
+    if a.ndim != 2 or b.ndim != 2 or a.shape != b.shape:
+        raise ValueError('Evaluation requires two masks with the same two-dimensional shape.')
+    return a, b
+
+
+def _ratio(numerator, denominator):
+    return float(numerator) / float(denominator) if denominator else None
+
+
+def IoU(a:np.array, b:np.array) -> tp.Optional[float]:
+    a, b = _mask_pair(a, b)
     intersection = a & b
     union        = a | b
-    return intersection.sum(-1).sum(-1) / union.sum(-1).sum(-1)
+    return _ratio(intersection.sum(), union.sum())
 
 def precision_recall(ytrue:np.array, ypred:np.array) -> dict:
-    #FIXME: code-duplication
-    ytrue   = np.asarray(ytrue, bool)
-    ypred   = np.asarray(ypred, bool)
-    TP      = (ypred & ytrue).sum(-1).sum(-1)
-    FP      = (ypred & (~ytrue)).sum(-1).sum(-1)
-    FN      = ((~ypred) & ytrue).sum(-1).sum(-1)
-    precision = TP/(TP+FP)
-    recall    = TP/(TP+FN)
-    f1        = 2 / (precision**-1 + recall**-1)
+    ytrue, ypred = _mask_pair(ytrue, ypred)
+    TP      = int((ypred & ytrue).sum())
+    FP      = int((ypred & (~ytrue)).sum())
+    FN      = int(((~ypred) & ytrue).sum())
+    precision = _ratio(TP, TP + FP)
+    recall    = _ratio(TP, TP + FN)
+    f1        = _ratio(2 * TP, 2 * TP + FP + FN)
     return {
         'TP':TP, 
         'FP':FP, 
@@ -67,9 +75,7 @@ GREEN = (0.0, 1.0, 0.0)
 BLUE  = (0.0, 0.0, 1.0)
 
 def create_error_map(ytrue:np.array, ypred:np.array) -> np.array:
-    #FIXME: code-duplication
-    ytrue  = np.asarray(ytrue, bool)
-    ypred  = np.asarray(ypred, bool)
+    ytrue, ypred = _mask_pair(ytrue, ypred)
     TP     =  ypred &  ytrue
     FP     =  ypred & ~ytrue
     FN     = ~ypred &  ytrue
@@ -83,6 +89,8 @@ def create_error_map(ytrue:np.array, ypred:np.array) -> np.array:
 
 
 def results_to_csv(results:list) -> str:
+    def metric(value):
+        return 'N/A' if value is None else '{:.2f}'.format(value)
     csv_header = ['#Filename', 'True Positives (px)', 'False Positives (px)', 'False Negatives (px)', 'IoU', 'Precision', 'Recall', 'F1']
     csv_data   = []
     for r in results:
@@ -92,13 +100,17 @@ def results_to_csv(results:list) -> str:
             f"{r['TP']:d}",
             f"{r['FP']:d}",
             f"{r['FN']:d}",
-            f"{r['IoU']:.2f}",
-            f"{r['precision']:.2f}",
-            f"{r['recall']:.2f}",
-            f"{r['F1']:.2f}",
+            metric(r['IoU']),
+            metric(r['precision']),
+            metric(r['recall']),
+            metric(r['F1']),
         ]]
         assert len(csv_data[-1]) == len(csv_header)
-    return '\n'.join([', '.join(linedata) for linedata in ([csv_header] + csv_data)])
+    buffer = io.StringIO(newline='')
+    writer = csv.writer(buffer)
+    writer.writerow(csv_header)
+    writer.writerows(csv_data)
+    return buffer.getvalue()
     
 def error_map_to_png(error_map:np.array) -> bytes:
     error_map = PIL.Image.fromarray( (error_map*255).astype('uint8') )

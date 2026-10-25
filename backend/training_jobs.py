@@ -1,6 +1,7 @@
 """Asynchronous training runs with explicit state and progress."""
 
 import copy
+import re
 import threading
 import time
 import traceback
@@ -161,6 +162,9 @@ class TrainingManager:
         self.training_func = training_func
         self.max_runs = max_runs
         self.runs = {}
+        # Keep request tombstones after result eviction so a delayed retry cannot
+        # silently train twice. These small IDs live for this application session.
+        self.requests = {}
         self.lock = threading.RLock()
 
     def create(
@@ -168,8 +172,20 @@ class TrainingManager:
         imagefiles:tp.List[str],
         targetfiles:tp.List[str],
         options:tp.Dict[str, tp.Any],
+        request_id:tp.Optional[str]=None,
     ) -> TrainingRun:
         with self.lock:
+            if request_id is not None:
+                if not isinstance(request_id, str) or re.fullmatch(r'[0-9a-f]{32}', request_id) is None:
+                    raise RuntimeError('Invalid training request identity.')
+                if request_id in self.requests:
+                    previous = self.runs.get(self.requests[request_id])
+                    if previous is None:
+                        raise RuntimeError('This training request was already handled, but its result expired. Do not resubmit it.')
+                    if (previous.imagefiles != imagefiles or previous.targetfiles != targetfiles
+                            or previous.options != options):
+                        raise RuntimeError('Training request identity was reused with different inputs or settings.')
+                    return previous
             if self.active_run() is not None:
                 raise RuntimeError('Another training run is already active.')
             run = TrainingRun(
@@ -181,6 +197,8 @@ class TrainingManager:
                 training_func=self.training_func,
             )
             self.runs[run.id] = run
+            if request_id is not None:
+                self.requests[request_id] = run.id
             self._discard_old_runs()
             run.start()
             return run

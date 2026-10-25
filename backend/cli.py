@@ -14,7 +14,7 @@ class CLI(base_cli.CLI):
     @classmethod
     def create_parser(cls):
         parser = super().create_parser(
-            description    = 'DigIT! RootDetector',
+            description    = 'Root Detector',
             default_output = 'output.zip',
         )
         parser.add_argument('--exclusionmask_model', type=pathlib.Path,

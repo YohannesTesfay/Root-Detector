@@ -1,0 +1,54 @@
+name: Core and browser regression tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - 'release/**'
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Build pinned CPU environment
+        run: docker compose -f compose.core.yml build
+      - name: Verify models and run backend tests
+        run: |
+          docker compose -f compose.core.yml run --rm model-fetch
+          docker compose -f compose.core.yml run --rm test-fast
+          docker compose -f compose.core.yml run --rm test-smoke
+          docker compose -f compose.core.yml run --rm test-fast python -m unittest discover -s tests/acceptance -p "test_*.py" -v
+      - name: Browser-side regressions
+        run: |
+          for test in tests/testcases_js/test_*.js; do node "$test" || exit; done
+      - name: Install browser test dependencies
+        working-directory: tests/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Rendered browser acceptance
+        run: |
+          docker compose -f compose.core.yml run -d --name rootdetector-browser-test --no-deps -p 127.0.0.1:5505:5000 app
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:5505/ > /dev/null; then break; fi
+            sleep 1
+          done
+          ROOTDETECTOR_BROWSER_TEST_URL=http://127.0.0.1:5505 ROOTDETECTOR_BROWSER_TEST_ALLOW_CLEAR=1 npm --prefix tests/browser test
+          ROOTDETECTOR_BROWSER_TEST_URL=http://127.0.0.1:5505 ROOTDETECTOR_BROWSER_TEST_ALLOW_CLEAR=1 npm --prefix tests/browser run test:preparation
+      - name: Stop test server
+        if: always()
+        run: docker rm -f rootdetector-browser-test || true
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: browser-acceptance-evidence
+          path: tests/browser/artifacts/
+          if-no-files-found: ignore

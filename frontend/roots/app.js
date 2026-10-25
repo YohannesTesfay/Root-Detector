@@ -8,6 +8,7 @@ RootDetectorApp = class extends BaseApp {
     static Training        = RootsTraining;
 
     static async init(){
+        RootAlerts.init()
         if(!window.location.href.startsWith('file://')){
             await RootSecurity.initialize()
             await this.Settings.load_settings()
@@ -59,7 +60,27 @@ RootDetectorApp = class extends BaseApp {
                 event.currentTarget.click()
         })
         this.FileInput.setup_drag_and_drop()
+        this.setup_sticky_controls()
         this.enhance_accessibility()
+    }
+
+    static setup_sticky_controls(){
+        const toolbar = document.getElementById('root-top-menu')
+        const tabs = document.querySelector('#main-container > .tabs.menu')
+        if(!toolbar || !tabs)
+            return
+        const update_offsets = () => {
+            document.documentElement.style.setProperty('--root-toolbar-height', `${toolbar.getBoundingClientRect().height}px`)
+            document.documentElement.style.setProperty('--root-tabs-height', `${tabs.getBoundingClientRect().height}px`)
+        }
+        update_offsets()
+        if(window.ResizeObserver){
+            const observer = new ResizeObserver(update_offsets)
+            observer.observe(toolbar)
+            observer.observe(tabs)
+        } else {
+            window.addEventListener('resize', update_offsets)
+        }
     }
 
     static enhance_accessibility(){

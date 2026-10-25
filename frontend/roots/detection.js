@@ -14,23 +14,32 @@ RootDetection = class extends BaseDetection{
         $button.siblings('.cancel-processing, .processing').show().removeClass('disabled')
         GLOBAL.cancel_requested = false
         const failed = []
+        let attempted = 0
         for(const filename of filenames){
             if(GLOBAL.cancel_requested)
                 break
+            attempted += 1
             try {
                 await this.process_image(filename)
             } catch(error) {
                 failed.push({filename: filename, error: error})
                 $('body').toast({
-                    message: (
-                        `Processing failed for ${filename}. `
-                        + `${RootSecurity.error_message(error)} `
-                        + 'Continuing with the next image.'
-                    ),
-                    class: 'error', displayTime: 0, closeIcon: true,
+                    key: 'detection-batch-failures',
+                    message: `${failed.length} image(s) failed so far. Processing continues.`,
+                    details: failed.map(({filename, error}) =>
+                        `${filename}: ${RootSecurity.error_message(error)}`),
+                    class: 'error', displayTime: 0,
                 })
             }
         }
+        if(failed.length)
+            $('body').toast({
+                key: 'detection-batch-failures',
+                message: `${failed.length} of ${attempted} processed image(s) failed${GLOBAL.cancel_requested ? ' before cancellation.' : '. The batch continued past those failures.'}`,
+                details: failed.map(({filename, error}) =>
+                    `${filename}: ${RootSecurity.error_message(error)}`),
+                class: 'error', displayTime: 0, closeIcon: true,
+            })
         $button.show()
         $button.siblings('.cancel-processing, .processing').hide()
         return {failed: failed, cancelled: GLOBAL.cancel_requested}

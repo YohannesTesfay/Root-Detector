@@ -242,7 +242,12 @@ def start_training(
         if model is None:
             raise TrainingValidationError('No {} model is loaded.'.format(training_type))
         settings.active_models[training_type] = ''
-        device = 'cuda' if settings.use_gpu and torch.cuda.is_available() else 'cpu'
+        # Training mutates the same in-memory object. Its unnamed model identity
+        # must change even when training fails and a saved model cannot be restored.
+        from backend import root_detection
+        root_detection.mark_model_updated(settings, training_type)
+        from backend.device import resolve_device
+        device = resolve_device(settings)
         jobs.raise_if_cancelled(event=cancel_event)
         with _capture_legacy_fit_result(model, cancel_event) as captured:
             value = model.start_training(

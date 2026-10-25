@@ -25,7 +25,8 @@
   {% else %}
   <button type="button" class="ui button download-all item"
           onclick="{{ callback_on_download_all }}(event)" title="Download all available results">
-    <i class="download icon" aria-hidden="true"></i>Download All
+    <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
+    <span class="download-busy" hidden role="status"><i class="spinner loading icon" aria-hidden="true"></i><span class="download-progress-text">Preparing download…</span></span>
   </button>
   {%- endif %}
 </div>
@@ -71,6 +72,31 @@
 {% endmacro %}
 
 {% macro detection_tab(app) %}
+  <details class="ui segment" id="image-preparation-tools">
+    <summary>Advanced image preparation (optional)</summary>
+    <div class="content">
+      <p>Most supported images can be loaded directly through <strong>Files → Load Input Images</strong>
+         or <strong>Load Input Folder</strong>. Cropping is not required for ordinary detection and
+         tracking. If you need a smaller region, keep the originals and review the same physical
+         area on every date before comparing results.</p>
+      <div class="preparation-actions">
+        <button type="button" class="ui button" id="prepare-images-button"
+                title="Create lossless cropped copies of supported images"
+                onclick="if(this.classList.contains('disabled')) return; document.getElementById('preparation-input').click();">
+          <i class="crop icon" aria-hidden="true"></i>Prepare / Crop Images
+        </button>
+        <button type="button" class="ui button" id="load-prepared-images-button"
+                title="Restore prepared PNG copies and their crop provenance"
+                onclick="if(this.classList.contains('disabled')) return; document.getElementById('prepared-import-input').click();">
+          <i class="archive icon" aria-hidden="true"></i>Load Prepared Images
+        </button>
+      </div>
+      <input type="file" id="preparation-input" style="display:none"
+             onchange="RootPreparation.on_files_select(event)" accept=".png,.jpg,.jpeg,.tif,.tiff" multiple>
+      <input type="file" id="prepared-import-input" style="display:none"
+             onchange="{{ app }}.FileInput.on_preparedfiles_select(event)" accept=".zip,.png,.json" multiple>
+    </div>
+  </details>
   {{ filetable_menu(
       callback_on_process_all=app+".Detection.on_process_all",
       callback_on_cancel=app+".Detection.on_cancel_processing",

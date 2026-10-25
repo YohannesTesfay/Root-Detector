@@ -3,6 +3,9 @@ import backend.evaluation
 import zipfile, tempfile, os
 import PIL.Image
 import numpy as np
+import pytest
+import csv
+import io
 
 
 def test_evaluate_single():
@@ -79,3 +82,29 @@ def test_error_map():
     assert np.all(errormap[:50,50:] == (1,0,0)) #red   false positive
     assert np.all(errormap[50:,:50] == (0,0,1)) #blue  false negative
     assert np.all(errormap[50:,50:] == (0,0,0)) #black true negative
+
+
+def test_empty_masks_have_explicit_undefined_metrics():
+    empty = np.zeros((4, 4), bool)
+    metrics = backend.evaluation.precision_recall(empty, empty)
+    assert backend.evaluation.IoU(empty, empty) is None
+    assert metrics == {'TP': 0, 'FP': 0, 'FN': 0, 'precision': None, 'recall': None, 'F1': None}
+    result = dict(metrics, IoU=None, predictionfile='sample,one.segmentation.png')
+    rows = list(csv.reader(io.StringIO(backend.evaluation.results_to_csv([result]))))
+    assert rows[1] == ['sample,one', '0', '0', '0', 'N/A', 'N/A', 'N/A', 'N/A']
+
+
+def test_one_empty_mask_reports_zero_overlap_without_division_warnings():
+    empty, full = np.zeros((4, 4), bool), np.ones((4, 4), bool)
+    with np.errstate(all='raise'):
+        missed = backend.evaluation.precision_recall(full, empty)
+        false = backend.evaluation.precision_recall(empty, full)
+    assert missed['precision'] is None and missed['recall'] == 0 and missed['F1'] == 0
+    assert false['precision'] == 0 and false['recall'] is None and false['F1'] == 0
+
+
+@pytest.mark.parametrize('function', [backend.evaluation.IoU, backend.evaluation.precision_recall, backend.evaluation.create_error_map])
+def test_evaluation_rejects_broadcasting_and_non_2d_masks(function):
+    for wrong in [np.zeros((1, 4)), np.zeros((4, 4, 1))]:
+        with pytest.raises(ValueError, match='same two-dimensional shape'):
+            function(np.zeros((4, 4)), wrong)

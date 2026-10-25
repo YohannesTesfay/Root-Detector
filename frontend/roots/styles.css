@@ -22,6 +22,194 @@
     white-space: normal;
 }
 
+/* Keep the active workflow actions available while long image lists scroll. */
+body {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: visible;
+}
+
+#root-top-menu {
+    position: sticky;
+    top: 0;
+    z-index: 105;
+    background: white;
+}
+
+#main-container > .tabs.menu {
+    position: sticky;
+    top: var(--root-toolbar-height, 0px);
+    z-index: 104;
+    background: white;
+}
+
+#main-container > .ui.tab.segment > .ui.top.attached.menu {
+    position: sticky;
+    top: calc(var(--root-toolbar-height, 0px) + var(--root-tabs-height, 0px));
+    z-index: 103;
+    background: white;
+}
+
+.download-all .download-busy[hidden],
+.download-all .download-label[hidden] {
+    display: none;
+}
+
+.download-all .download-busy .icon {
+    margin-left: 0.5rem;
+}
+
+.ui.button.download-all.is-busy,
+.ui.button.download-all.is-busy:disabled {
+    opacity: 1 !important;
+    color: #2b3439 !important;
+    cursor: progress;
+}
+
+#root-confirm-layer:not([hidden]) {
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.root-confirm-panel {
+    box-sizing: border-box;
+    width: min(34rem, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    background: white;
+    border-radius: 0.3rem;
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.25);
+    color: #272d31;
+}
+
+.root-confirm-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #d8dce0;
+}
+
+.root-confirm-title {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.root-confirm-message {
+    margin: 0;
+    padding: 1.25rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.root-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background: #f8f9fa;
+    border-top: 1px solid #d8dce0;
+}
+
+.root-confirm-actions > .button {
+    margin: 0;
+}
+
+#root-alerts[hidden],
+#root-alerts [hidden] {
+    display: none !important;
+}
+
+#root-alerts {
+    position: fixed;
+    top: calc(var(--root-toolbar-height, 0px) + 0.5rem);
+    right: 1rem;
+    z-index: 120;
+    box-sizing: border-box;
+    width: min(31rem, calc(100vw - 2rem));
+    max-height: min(60vh, 38rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: white;
+    border: 1px solid #bfc8cd;
+    border-radius: 0.3rem;
+    box-shadow: 0 0.35rem 1.2rem rgba(0, 0, 0, 0.23);
+}
+
+.root-alert-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid #d8dce0;
+}
+
+.root-alert-clear,
+.root-alert-more {
+    border: 0;
+    background: transparent;
+    color: #1369a1;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.root-alert-list {
+    overflow-y: auto;
+}
+
+.root-alert {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid #e2e6e9;
+    border-left: 0.3rem solid #2185d0;
+    overflow-wrap: anywhere;
+}
+
+.root-alert-error { border-left-color: #db2828; background: #fff6f6; }
+.root-alert-warning { border-left-color: #b58105; background: #fffaf0; }
+.root-alert-success { border-left-color: #218356; background: #f3fff8; }
+.root-alert-content { flex: 1; min-width: 0; }
+.root-alert-content details { margin-top: 0.4rem; }
+.root-alert-content ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+.root-alert-close {
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    color: #45515a;
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+}
+
+.root-alert-more { padding: 0.5rem; text-align: left; }
+
+@media (max-height: 550px) {
+    #main-container > .ui.tab.segment > .ui.top.attached.menu {
+        position: static;
+    }
+}
+
+#updates-dialog > .close.button,
+#settings-dialog > .close.button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+}
+
+#updates-dialog > .close.button > .icon,
+#settings-dialog > .close.button > .icon {
+    margin: 0;
+}
+
+#updates-dialog > .close.button,
 #settings-dialog > .close.button {
     top: 0.7rem;
     right: 0.7rem;
@@ -31,14 +219,96 @@
     box-shadow: none;
 }
 
+#updates-dialog > .header,
 #settings-dialog > .header {
     padding-right: 3.5rem;
+}
+
+#updates-dialog > .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#updates-dialog > .actions > .button {
+    margin: 0;
+}
+
+#image-preparation-tools {
+    margin: 0 0 1rem;
+}
+
+#image-preparation-tools > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#image-preparation-tools > .content {
+    margin-top: 0.75rem;
+}
+
+#image-preparation-tools .preparation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+#image-preparation-tools .preparation-actions > .button {
+    margin: 0;
 }
 
 #settings-dialog > .content {
     box-sizing: border-box;
     max-height: calc(100vh - 11rem);
     overflow-y: auto;
+}
+
+#preparation-dialog {
+    max-width: calc(100vw - 1.5rem);
+}
+
+#preparation-dialog #preparation-preview-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    margin: 0 auto 1rem;
+}
+
+#preparation-dialog #preparation-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 38vh;
+    object-fit: contain;
+}
+
+#preparation-dialog #preparation-selection {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #2185d0;
+    background: rgba(33, 133, 208, 0.18);
+    pointer-events: none;
+}
+
+#preparation-dialog > .content {
+    box-sizing: border-box;
+    max-height: calc(100vh - 11rem);
+    overflow-y: auto;
+}
+
+#preparation-dialog .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#preparation-dialog .ui.form .four.fields {
+    flex-wrap: wrap;
+}
+
+#preparation-dialog .ui.form .four.fields > .field {
+    min-width: 7rem;
 }
 
 #file-import-menu.keyboard-open > .menu {
