@@ -126,6 +126,33 @@ async function test_boot_recovery(){
     assert.match(body.box.innerHTML, /could not load its browser files/)
     assert.match(body.box.detail.textContent, /Missing: \/roots\/pipeline\.js/)
     assert.doesNotMatch(body.box.innerHTML, /Start RootDetector\.bat/)
+
+    let replacement
+    context.URL = URL
+    context.setTimeout = callback => callback()
+    context.location = {
+        href: 'http://127.0.0.1:5000/',
+        replace(value){ replacement = value },
+    }
+    body.box = undefined
+    context.RootDetectorBoot.failed_assets = ['/roots/security.js']
+    await context.RootDetectorBoot.start()
+    assert.match(replacement, /rd_asset_retry=1/)
+    assert.equal(body.box, undefined, 'First transient asset failure should retry before showing an error.')
+    context.location.href = replacement
+    await context.RootDetectorBoot.start()
+    assert.match(replacement, /rd_asset_retry=2/)
+    context.location.href = replacement
+    await context.RootDetectorBoot.start()
+    assert.match(body.box.innerHTML, /could not load its browser files/,
+        'Permanent asset failures must stop retrying and remain actionable.')
+
+    let cleanedUrl
+    context.history = {replaceState(_state, _title, url){ cleanedUrl = url }}
+    context.RootDetectorBoot.failed_assets = []
+    context.RootDetectorApp = {init: async () => {}}
+    await context.RootDetectorBoot.start()
+    assert.equal(cleanedUrl, '/', 'A successful retry should clear its URL marker.')
 }
 
 
