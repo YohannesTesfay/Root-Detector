@@ -139,8 +139,17 @@ RootDetectionDownload = class extends BaseDownload{
         var zipdata                     = {};
         var segmentation                = f.results.segmentation
         var skeleton                    = f.results.skeleton
-        zipdata[`${segmentation.name}`] = segmentation
-        zipdata[`${skeleton.name}`]     = skeleton
+        for(const result of [segmentation, skeleton]){
+            const name = is_string(result) ? result : result.name
+            zipdata[name] = is_string(result)
+                ? (async () => {
+                    const blob = await fetch_as_blob(url_for_image(result))
+                    if(!blob)
+                        throw new Error(`Could not load ${name} for download. Retry this image.`)
+                    return blob
+                })()
+                : result
+        }
         zipdata[`statistics.csv`]       = this.csv_data_for_file(filename)
         if(f.preparation)
             zipdata['preparation-manifest.json'] = JSON.stringify({

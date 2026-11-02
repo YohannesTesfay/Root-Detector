@@ -1,7 +1,7 @@
 RootSecurity = class {
     static token = undefined
     static limits = undefined
-    static asset_schema = 'rootdetector-web-app-rc1-2'
+    static asset_schema = 'rootdetector-web-app-rc1-3'
 
     static async initialize(){
         const session = await $.get('/api/session')

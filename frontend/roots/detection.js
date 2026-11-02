@@ -80,18 +80,37 @@ RootDetection = class extends BaseDetection{
         }
     }
 
-    //override
+    // Keep server result names as URLs. Eagerly fetching both PNGs for every
+    // image retains gigabytes of browser Blobs in large batches and can turn a
+    // successful backend detection into a misleading processing failure.
     static async set_results(filename, results){
         RootsTraining.forget_imported_label(filename)
-        if(results!=undefined && is_string(results.skeleton))
-            results.skeleton = await fetch_as_file(url_for_image(results.skeleton))
-        
-        await super.set_results(filename, results);
-
         var clear = (results==undefined)
+        this.hide_dimmer(filename)
+        var $root = $(`#filetable [filename="${filename}"]`)
+        $root.find('.show-results-checkbox')
+            .checkbox({onChange: () => GLOBAL.App.ViewControls.toggle_results(filename)})
+            .checkbox('check')
+        if(clear)
+            GLOBAL.App.ImageLoading.set_image_src($root.find('img.overlay'), undefined)
+        GLOBAL.files[filename].set_results(results)
+        GLOBAL.App.Boxes.refresh_boxes(filename)
+        this.set_processed(filename, clear)
         $(`[filename="${filename}"] .skeletonized-checkbox`)
             .toggleClass('disabled', clear)
             .checkbox({onChange: this.on_toggle_skeleton})
+        if($(`#filetable tr.ui.title[filename="${filename}"]`).hasClass('active'))
+            this.show_result_preview(filename)
+    }
+
+    static show_result_preview(filename){
+        const result = GLOBAL.files[filename]?.results
+        if(!result)
+            return
+        const $root = $(`#filetable [filename="${filename}"]`)
+        const skeleton = $root.find('.skeletonized-checkbox').checkbox('is checked')
+        const source = skeleton ? result.skeleton : result.segmentation
+        GLOBAL.App.ImageLoading.set_image_src($root.find('img.overlay'), source)
     }
 
     static on_toggle_skeleton(){
