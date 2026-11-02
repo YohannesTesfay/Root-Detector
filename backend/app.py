@@ -228,6 +228,10 @@ class App(BaseApp):
                 if run.state not in backend.pipeline.TERMINAL_RUN_STATES
             ]
         training_run = self.training_manager.active_run()
+        detection_results_present = any(
+            entry.is_file() and entry.name.endswith('.segmentation.png')
+            for entry in os.scandir(self.cache_path)
+        )
         return flask.jsonify({
             'pipeline_runs': pipelines,
             'training_run': (
@@ -236,6 +240,7 @@ class App(BaseApp):
             ),
             'detection_export_running': self.detection_exports.active(),
             'detection_download_running': self.detection_exports.transferring(),
+            'detection_results_present': detection_results_present,
         })
 
     def list_detection_exports(self):

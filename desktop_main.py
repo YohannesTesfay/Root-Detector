@@ -174,6 +174,11 @@ class DesktopHost:
         exporting = activity.get('detection_export_running', False)
         downloading = activity.get('detection_download_running', False)
         if not active and not training and not exporting and not downloading:
+            if activity.get('detection_results_present') and not self.window.create_confirmation_dialog(
+                'Verify your results before closing',
+                'Detection results in this session will be cleared when Root Detector closes. Confirm that you saved and checked the ZIP. Close anyway?',
+            ):
+                return False
             self.stop_backend()
             return True
         if exporting or downloading:

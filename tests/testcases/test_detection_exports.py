@@ -147,6 +147,8 @@ def test_api_download_has_stable_name_length_and_range(tmp_path, monkeypatch):
     assert started.status_code in (200, 202)
     export_id = started.get_json()['id']
     assert _await(app.detection_exports, export_id)['state'] == 'ready'
+    activity = client.get('/api/desktop/activity', headers={'Host': 'localhost'})
+    assert activity.get_json()['detection_results_present'] is True
     url = '/api/exports/detection/{}/download'.format(export_id)
     first = client.get(url, headers={'Host': 'localhost'})
     assert first.status_code == 200
@@ -162,6 +164,7 @@ def test_api_download_has_stable_name_length_and_range(tmp_path, monkeypatch):
     assert not app.detection_exports.transferring()
     cleared = client.post('/clear_cache', headers=headers)
     assert cleared.status_code == 200
+    assert client.get('/api/desktop/activity', headers={'Host': 'localhost'}).get_json()['detection_results_present'] is False
     preserved = client.get(url, headers={'Host': 'localhost'})
     assert preserved.status_code == 200
     assert preserved.data == first.data
