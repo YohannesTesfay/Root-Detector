@@ -14,7 +14,8 @@ function set_download_all_busy($button, busy, percent=undefined){
     const $status = $button.find('.download-busy').prop('hidden', !busy)
     if(busy)
         $status.find('.download-progress-text').text(
-            percent == undefined ? 'Preparing download…' : `Preparing download… ${Math.round(percent)}%`
+            typeof percent == 'string' ? percent :
+                percent == undefined ? 'Preparing archive…' : `Preparing archive… ${Math.round(percent)}%`
         )
 }
 
@@ -66,22 +67,66 @@ RootDetectionDownload = class extends BaseDownload{
     static async on_download_all(event){
         if(this.download_in_progress)
             return
-        const zipdata = this.zipdata_for_files(Object.keys(GLOBAL.files))
-        if(!Object.keys(zipdata).length){
+        const filenames = Object.keys(GLOBAL.files).filter(filename => !!GLOBAL.files[filename]?.results)
+        if(!filenames.length){
             $('body').toast({message:'No detection results are available to download.', class:'warning'})
             return
         }
         const $button = $(event?.currentTarget ?? event?.target ?? '#detection-download-all')
         this.download_in_progress = true
-        set_download_all_busy($button, true)
+        set_download_all_busy($button, true, 'Preparing archive on this computer…')
         try {
-            await download_root_zip('RootDetector-detection-results.zip', zipdata,
-                percent => set_download_all_busy($button, true, percent))
+            const files = filenames.map(filename => {
+                const file = GLOBAL.files[filename]
+                return {
+                    filename,
+                    csv_row: this.csv_data_for_file(filename, false),
+                    preparation: file.preparation ?? null,
+                    companions: file.prepared_companions ?? [],
+                }
+            })
+            let archive = await RootSecurity.request('/api/exports/detection', 'POST', {files})
+            while(archive.state == 'preparing'){
+                set_download_all_busy($button, true,
+                    `Preparing archive… ${archive.processed} of ${archive.total} image(s)`)
+                await sleep(500)
+                archive = await RootSecurity.request(`/api/exports/detection/${archive.id}`, 'GET')
+            }
+            if(archive.state != 'ready')
+                throw new Error(archive.error || 'Archive preparation did not finish. Keep this window open and retry.')
+            this.show_ready_archive(archive)
+            this.on_retry_ready_export()
         } catch(error) {
             $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false
             set_download_all_busy($button, false)
+        }
+    }
+
+    static show_ready_archive(archive, restored=false){
+        this.ready_export = archive
+        $('#detection-export-retry').prop('hidden', false)
+        $('#detection-export-notice').prop('hidden', false).text(
+            `${restored ? 'A previously prepared detection archive is available; check that it belongs to the intended images. ' : 'Detection archive ready. '}`
+            + 'After choosing Save, verify the ZIP exists and opens. If the save fails, use Save Ready Archive again; this archive remains available after restarting Root Detector.'
+        )
+    }
+
+    static on_retry_ready_export(){
+        if(!this.ready_export || this.ready_export.state != 'ready')
+            return
+        downloadURI('RootDetector-detection-results.zip',
+            `/api/exports/detection/${this.ready_export.id}/download`)
+    }
+
+    static async restore_recent_export(){
+        try {
+            const response = await RootSecurity.request('/api/exports/detection', 'GET')
+            if(response.exports?.length)
+                this.show_ready_archive(response.exports[0], true)
+        } catch(error) {
+            console.warn('Could not check previous detection archives.', error)
         }
     }
 

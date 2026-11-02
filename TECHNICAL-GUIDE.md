@@ -16,10 +16,11 @@ flowchart LR
     DET --> MODELS["PyTorch model packages"]
     TRACK --> MODELS
     APP <--> CACHE["Ephemeral cache"]
+    APP --> EXPORTS["Persistent detection archives"]
     APP -->|"progress/status"| UI
 ```
 
-`main.py` dispatches CLI operations or starts the browser application. At development startup, Jinja templates and frontend files are compiled into ignored `static/` output. Uploaded sources, intermediate arrays, images, JSON, CSV, and ZIP archives are written under `cache/`.
+`main.py` dispatches CLI operations or starts the browser application. At development startup, Jinja templates and frontend files are compiled into ignored `static/` output. Uploaded sources and intermediate results are written under the startup-cleared `cache/`. Completed Detection ZIPs are written atomically to persistent `exports/` under the instance path so a failed browser save can be retried after restart. Tracking ZIPs still use the temporary cache.
 
 ## Automated Analysis Pipeline
 
@@ -216,7 +217,9 @@ The upstream 2023 Windows-binaries ZIP is a PyInstaller distribution. It used `m
 
 The release builder produces the same directory-bundle/full-ZIP format and adds `RootDetector.exe`, a small WebView2 window host. It writes **only `StartRootDetector.bat`** as the browser fallback. The host starts the unchanged `main/main.exe` analysis process without a console or automatic browser launch, waits for `/api/session`, and displays the loopback UI in one window. The backend remains local and owns all scientific computation. `BUILD-INFO.txt` identifies the source commit and Actions run. Existing older packages are unaffected; scripts that invoke `main.bat` must use the new launcher with a new package.
 
-The window host is built separately with `requirements-desktop-windows.txt` so PyInstaller does not duplicate the large CPU/CUDA runtime. It requires Microsoft WebView2 Runtime; the BAT launcher and the installer's browser-fallback Start-menu shortcut remain available. `GET /api/desktop/activity` lets the host warn before closing active pipeline or training jobs and request cooperative cancellation. Window-host diagnostics go to `logs/desktop-host.log` in a portable package or `%LOCALAPPDATA%\RootDetector\logs\desktop-host.log` for an install. Browser and CLI behavior remain unchanged when `ROOTDETECTOR_DESKTOP_HOST` is unset.
+The window host is built separately with `requirements-desktop-windows.txt` so PyInstaller does not duplicate the large CPU/CUDA runtime. It requires Microsoft WebView2 Runtime; the BAT launcher and the installer's browser-fallback Start-menu shortcut remain available. `GET /api/desktop/activity` lets the host warn before closing active pipeline, training, or Detection export/transfer jobs. Window-host diagnostics go to `logs/desktop-host.log` in a portable package or `%LOCALAPPDATA%\RootDetector\logs\desktop-host.log` for an install. Browser and CLI behavior remain unchanged when `ROOTDETECTOR_DESKTOP_HOST` is unset.
+
+Large Detection Download All requests create an asynchronous ZIP64 archive through `POST /api/exports/detection`; `GET /api/exports/detection/<id>` reports preparation progress, and `GET /api/exports/detection/<id>/download` serves the same disk file with a stable URL, content length, and HTTP range support. `GET /api/exports/detection` lists recent ready archives for restart recovery. The server validates cached result paths and preparation sidecars, writes a temporary ZIP, then atomically publishes it under `exports/` (installed: `%LOCALAPPDATA%\RootDetector\exports`). No bulk browser Blob is generated. The UI deliberately reports only **archive ready**, not **saved**, because a browser Save dialog can fail after the request starts. Finished archives are not automatically deleted; users must verify and remove old exports to reclaim space. The ephemeral cache still clears on startup/exit, so a completed archive must be prepared before closing to preserve that run's detection results.
 
 The desktop host uses an unpacked PyInstaller directory: the earlier self-extracting host was quarantined by Defender on ML-Desk. The pinned pywebview 5.0.4 disables downloads by default, so the host explicitly enables them; WebView2 then opens a Windows Save dialog for detection/tracking ZIP exports. Qualify both Defender behavior and a real window export on each final package, rather than relying on API-only download tests.
 

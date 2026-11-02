@@ -171,7 +171,17 @@ class DesktopHost:
             return confirmed
         active = activity.get('pipeline_runs', [])
         training = activity.get('training_run')
-        if not active and not training:
+        exporting = activity.get('detection_export_running', False)
+        downloading = activity.get('detection_download_running', False)
+        if not active and not training and not exporting and not downloading:
+            self.stop_backend()
+            return True
+        if exporting or downloading:
+            if not self.window.create_confirmation_dialog(
+                'Detection archive is still in use',
+                'Closing now will interrupt archive preparation or download. Keep this window open until the ZIP has been saved and verified. Close anyway?',
+            ):
+                return False
             self.stop_backend()
             return True
         if not self.window.create_confirmation_dialog(

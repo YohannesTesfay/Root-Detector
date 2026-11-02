@@ -1,0 +1,62 @@
+const assert = require('assert')
+const fs = require('fs')
+const path = require('path')
+const vm = require('vm')
+
+const repo = path.resolve(__dirname, '..', '..')
+const element = {
+    find: () => element, toggleClass: () => element, prop: () => element,
+    attr: () => element, text: () => element, toast: () => element,
+}
+global.$ = () => element
+global.BaseDownload = class {}
+global.GLOBAL = {files: {
+    'one.tiff': {name: 'one.tiff', results: {statistics: {
+        sum: 1, sum_negative: 2, sum_mask: 3, sum_skeleton: 4,
+        widths: [5, 6, 7], kimura_length: 8,
+    }}},
+}}
+global.sleep = async () => {}
+global.url_for_image = name => name
+const downloads = []
+global.downloadURI = (name, uri) => downloads.push([name, uri])
+global.download_blob = () => {throw new Error('bulk export must not create a browser Blob')}
+global.JSZip = class {constructor(){throw new Error('bulk export must not use JSZip')}}
+const requests = []
+let pollCount = 0
+global.RootSecurity = {
+    error_message: error => error.message,
+    request: async (url, method, data) => {
+        requests.push([url, method, data])
+        if(method == 'POST')
+            return {id: 'a'.repeat(32), state: 'preparing', processed: 0, total: 1}
+        if(url.endsWith('/' + 'a'.repeat(32))) {
+            pollCount++
+            return {id: 'a'.repeat(32), state: 'ready', processed: 1, total: 1}
+        }
+        return {exports: [{id: 'b'.repeat(32), state: 'ready', processed: null, total: null}]}
+    },
+}
+
+vm.runInThisContext(fs.readFileSync(path.join(repo, 'frontend/roots/download.js'), 'utf8'))
+
+async function main(){
+    await RootDetectionDownload.on_download_all()
+    assert.strictEqual(requests[0][0], '/api/exports/detection')
+    assert.strictEqual(requests[0][1], 'POST')
+    assert.strictEqual(requests[0][2].files[0].filename, 'one.tiff')
+    assert.strictEqual(requests[0][2].files[0].csv_row, 'one.tiff, 1, 2, 3, 4, 5, 6, 7, 8;\n')
+    assert.strictEqual(pollCount, 1)
+    assert.deepStrictEqual(downloads[0], [
+        'RootDetector-detection-results.zip',
+        '/api/exports/detection/' + 'a'.repeat(32) + '/download',
+    ])
+    RootDetectionDownload.on_retry_ready_export()
+    assert.deepStrictEqual(downloads[1], downloads[0])
+    await RootDetectionDownload.restore_recent_export()
+    RootDetectionDownload.on_retry_ready_export()
+    assert.strictEqual(downloads[2][1], '/api/exports/detection/' + 'b'.repeat(32) + '/download')
+    console.log('Detection export retry tests passed.')
+}
+
+main().catch(error => {console.error(error); process.exitCode = 1})
