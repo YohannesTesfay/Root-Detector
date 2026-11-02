@@ -55,6 +55,17 @@ body {
     display: none;
 }
 
+#detection-export-retry[hidden],
+#detection-export-notice[hidden] {
+    display: none;
+}
+
+.detection-export-notice {
+    white-space: normal;
+    line-height: 1.35;
+    color: #24586a;
+}
+
 .download-all .download-busy .icon {
     margin-left: 0.5rem;
 }

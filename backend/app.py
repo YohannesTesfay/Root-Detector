@@ -15,6 +15,7 @@ import urllib.parse
 from pathlib import Path
 import flask
 from werkzeug.exceptions import HTTPException
+from werkzeug.wsgi import ClosingIterator
 
 import backend
 import backend.jobs
@@ -25,6 +26,7 @@ import backend.preparation
 import backend.security
 import backend.settings
 import backend.diagnostics
+import backend.detection_exports
 import backend.release
 from . import root_detection
 from . import root_tracking
@@ -61,6 +63,7 @@ class App(BaseApp):
             self.settings,
             result_sink=self.training_results,
         )
+        self.detection_exports = backend.detection_exports.DetectionExportManager(self.cache_path)
 
         self.view_functions['file_upload'] = self.file_upload
         self.view_functions['images'] = self.images
@@ -71,6 +74,10 @@ class App(BaseApp):
         self.route('/api/updates/check', methods=['POST'])(self.check_updates)
         self.route('/api/diagnostics', methods=['GET'])(self.download_diagnostics)
         self.route('/api/diagnostics/client', methods=['POST'])(self.record_client_diagnostic)
+        self.route('/api/exports/detection', methods=['GET'])(self.list_detection_exports)
+        self.route('/api/exports/detection', methods=['POST'])(self.create_detection_export)
+        self.route('/api/exports/detection/<export_id>', methods=['GET'])(self.get_detection_export)
+        self.route('/api/exports/detection/<export_id>/download', methods=['GET'])(self.download_detection_export)
         self.route('/api/preparation/inspect', methods=['POST'])(self.inspect_preparation_source)
         self.route('/api/preparation/apply', methods=['POST'])(self.apply_preparation_crop)
         self.route('/api/preparation/import', methods=['POST'])(self.import_prepared_images)
@@ -221,13 +228,56 @@ class App(BaseApp):
                 if run.state not in backend.pipeline.TERMINAL_RUN_STATES
             ]
         training_run = self.training_manager.active_run()
+        detection_results_present = any(
+            entry.is_file() and entry.name.endswith('.segmentation.png')
+            for entry in os.scandir(self.cache_path)
+        )
         return flask.jsonify({
             'pipeline_runs': pipelines,
             'training_run': (
                 {'id': training_run.id, 'state': training_run.state}
                 if training_run is not None else None
             ),
+            'detection_export_running': self.detection_exports.active(),
+            'detection_download_running': self.detection_exports.transferring(),
+            'detection_results_present': detection_results_present,
         })
+
+    def list_detection_exports(self):
+        return flask.jsonify({'exports': self.detection_exports.recent()})
+
+    def create_detection_export(self):
+        with self.pipeline_manager.lock:
+            if any(run.state not in backend.pipeline.TERMINAL_RUN_STATES
+                   for run in self.pipeline_manager.runs.values()):
+                return self.json_error(
+                    'pipeline_busy', 'Wait for analysis to finish before preparing an archive.', 409,
+                    retryable=True,
+                )
+        if (flask.request.content_length is not None
+                and flask.request.content_length > backend.detection_exports.MAX_REQUEST_BYTES):
+            raise backend.security.ValidationError(
+                'The export request is too large.', 'detection_export_too_large', 413,
+            )
+        export = self.detection_exports.start(flask.request.get_json(silent=True))
+        return flask.jsonify(export), 202 if export['state'] == 'preparing' else 200
+
+    def get_detection_export(self, export_id):
+        return flask.jsonify(self.detection_exports.status(export_id))
+
+    def download_detection_export(self, export_id):
+        response = flask.send_file(
+            self.detection_exports.archive_path(export_id),
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=backend.detection_exports.ARCHIVE_NAME,
+            conditional=True,
+        )
+        self.detection_exports.begin_download()
+        response.response = ClosingIterator(
+            response.response, [self.detection_exports.end_download],
+        )
+        return response
 
     def get_version(self):
         return flask.jsonify(backend.release.package_info())
@@ -667,12 +717,16 @@ class App(BaseApp):
         return flask.jsonify({'saved': True})
 
     def delete_image(self, path):
+        if self.detection_exports.active():
+            return self.json_error('export_busy', 'Wait for archive preparation before removing images.', 409)
         full_path = backend.security.safe_resolve(self.cache_path, path)
         if os.path.isfile(full_path):
             os.remove(full_path)
         return flask.jsonify({'deleted': os.path.basename(full_path)})
 
     def clear_cache(self):
+        if self.detection_exports.active():
+            return self.json_error('export_busy', 'Wait for archive preparation before clearing images.', 409)
         if any(
             run.state not in backend.pipeline.TERMINAL_RUN_STATES
             for run in self.pipeline_manager.runs.values()
@@ -700,6 +754,8 @@ class App(BaseApp):
         return flask.jsonify({'shutdown': True})
 
     def process_image(self, imagename):
+        if self.detection_exports.active():
+            return self.json_error('export_busy', 'Wait for archive preparation before reprocessing images.', 409)
         full_path = backend.security.safe_resolve(
             self.cache_path,
             imagename,
@@ -710,6 +766,8 @@ class App(BaseApp):
         return flask.jsonify(result)
 
     def postprocess_detection(self, filename):
+        if self.detection_exports.active():
+            return self.json_error('export_busy', 'Wait for archive preparation before replacing detection results.', 409)
         #FIXME: code duplication
         full_path = backend.security.safe_resolve(
             self.cache_path,
@@ -821,6 +879,8 @@ class App(BaseApp):
 
     def create_pipeline_run(self):
         request_data = flask.request.get_json(force=True) or {}
+        if self.detection_exports.active():
+            return self.json_error('export_busy', 'Analysis cannot start while a detection archive is being prepared.', 409, retryable=True)
         if self.training_manager.active_run() is not None:
             return self.json_error(
                 'training_busy',

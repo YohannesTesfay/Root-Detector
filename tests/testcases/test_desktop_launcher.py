@@ -92,6 +92,47 @@ def test_idle_close_does_not_cancel(tmp_path):
     assert host.window.prompts == []
 
 
+def test_archive_preparation_warns_before_close(tmp_path):
+    host = desktop_main.DesktopHost(tmp_path)
+    host.ready = True
+    host.process = RunningProcess()
+    host.window = Window(confirm=False)
+    host.request = lambda path, method='GET': {
+        'pipeline_runs': [], 'training_run': None, 'detection_export_running': True,
+    }
+    assert host.on_closing() is False
+    assert host.process.terminated is False
+    assert 'archive preparation' in host.window.prompts[0][1]
+
+
+def test_archive_transfer_warns_before_close(tmp_path):
+    host = desktop_main.DesktopHost(tmp_path)
+    host.ready = True
+    host.process = RunningProcess()
+    host.window = Window(confirm=False)
+    host.request = lambda path, method='GET': {
+        'pipeline_runs': [], 'training_run': None,
+        'detection_export_running': False, 'detection_download_running': True,
+    }
+    assert host.on_closing() is False
+    assert host.process.terminated is False
+    assert 'download' in host.window.prompts[0][1]
+
+
+def test_unsaved_detection_results_warn_before_close(tmp_path):
+    host = desktop_main.DesktopHost(tmp_path)
+    host.ready = True
+    host.process = RunningProcess()
+    host.window = Window(confirm=False)
+    host.request = lambda path, method='GET': {
+        'pipeline_runs': [], 'training_run': None,
+        'detection_results_present': True,
+    }
+    assert host.on_closing() is False
+    assert host.process.terminated is False
+    assert 'saved and checked' in host.window.prompts[0][1]
+
+
 def test_startup_close_warns_before_stopping_download(tmp_path):
     host = desktop_main.DesktopHost(tmp_path)
     host.process = RunningProcess()

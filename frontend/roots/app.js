@@ -12,6 +12,7 @@ RootDetectorApp = class extends BaseApp {
         if(!window.location.href.startsWith('file://')){
             await RootSecurity.initialize()
             await this.Settings.load_settings()
+            await this.Download.restore_recent_export()
             setup_sse()
         }
 

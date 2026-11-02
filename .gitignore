@@ -3,6 +3,7 @@ builds
 TESTDATA
 static
 cache
+exports/
 models/*
 !models/pretrained_models.txt
 tests/logs

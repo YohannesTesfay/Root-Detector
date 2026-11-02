@@ -6,7 +6,8 @@
     callback_on_process_all="",
     callback_on_cancel="",
     callback_on_download_all="",
-    download_menu=None
+    download_menu=None,
+    show_durable_export=False
 ) %}
 <div class="ui top attached menu" style="border-top-width:0px;">
   <button type="button" class="ui button process-all item"
@@ -28,8 +29,17 @@
     <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
     <span class="download-busy" hidden role="status"><i class="spinner loading icon" aria-hidden="true"></i><span class="download-progress-text">Preparing download…</span></span>
   </button>
+  {% if show_durable_export -%}
+  <button type="button" class="ui button item" id="detection-export-retry" hidden
+          onclick="App.Download.on_retry_ready_export()" title="Save the last prepared detection archive again">
+    <i class="save icon" aria-hidden="true"></i>Save Ready Archive
+  </button>
+  {%- endif %}
   {%- endif %}
 </div>
+{% if show_durable_export -%}
+<div class="ui attached info message detection-export-notice" id="detection-export-notice" hidden role="status"></div>
+{%- endif %}
 {% endmacro %}
 
 {% macro skeleton_checkbox() %}
@@ -100,7 +110,8 @@
   {{ filetable_menu(
       callback_on_process_all=app+".Detection.on_process_all",
       callback_on_cancel=app+".Detection.on_cancel_processing",
-      callback_on_download_all=app+".Download.on_download_all"
+      callback_on_download_all=app+".Download.on_download_all",
+      show_durable_export=True
   ) }}
   {{ base_detection_tab.base_main_table(app) }}
 {% endmacro %}
