@@ -49,6 +49,7 @@ async function run() {
         assert.equal(await page.evaluate(() => RootsTraining.imported_labels.size), 0, 'Restored predictions must not become training labels.');
         const imported = await downloadDetection(page, later);
         await assertDetectionArchive(page, imported, later);
+        await assertBulkRecovery(page);
         await page.locator('#results-input').setInputFiles(path.join(assets, earlier.replace(/\.tiff$/, '.png')));
         await waitDetection(page, earlier);
         console.log('PASS imported ZIP/plain PNG masks and detection re-export');
@@ -66,7 +67,7 @@ async function run() {
         const responsePromise = page.waitForResponse(response => response.url().includes('/process_image/') && response.request().method() === 'POST', {timeout});
         await page.locator('.tab[data-tab="detection"] .process-all').click();
         assert.equal((await responsePromise).status(), 200);
-        await page.waitForFunction(() => !document.querySelector('.tab[data-tab="detection"] .process-all').style.display.includes('none'), null, {timeout});
+        await page.waitForFunction(() => !document.querySelector('.tab[data-tab="detection"] .process-all').disabled, null, {timeout});
         await waitDetection(page, later);
         const second = await assertDetectionArchive(page, await downloadDetection(page, later), later);
         assert.notEqual(first.segmentation, second.segmentation, 'Different released models should not reuse the same prediction for the fixture.');
@@ -149,6 +150,54 @@ async function selectDetectionModel(page, name) {
     await page.locator('#settings-dialog').waitFor({state: 'hidden'});
     const response = await page.request.get(new URL('/settings', baseURL).href);
     assert.equal((await response.json()).settings.active_models.detection, name);
+}
+
+async function assertBulkRecovery(page) {
+    await page.setViewportSize({width: 390, height: 850});
+    const toolbar = page.locator('.detection-actions-menu');
+    const download = toolbar.getByRole('button', {name: 'Download All'});
+    const before = await download.boundingBox();
+    let allowRequest;
+    const gate = new Promise(resolve => { allowRequest = resolve; });
+    const endpoint = '**/api/exports/detection';
+    const holdPreparation = async route => {
+        if (route.request().method() === 'POST') await gate;
+        await route.continue();
+    };
+    await page.route(endpoint, holdPreparation);
+    try {
+        const saved = page.waitForEvent('download');
+        await download.click();
+        const busy = toolbar.getByRole('button', {name: 'Preparing ZIP 0 of 1'});
+        await busy.waitFor();
+        assert(await busy.isDisabled());
+        const during = await busy.boundingBox();
+        assert.deepEqual(during, before, 'Download button should not move or resize while busy');
+        allowRequest();
+        const first = await saved;
+        assert.match(first.suggestedFilename(), /^RootDetector-detection-results_\d{4}-\d\d-\d\d_\d\d-\d\d-\d\dZ_[a-f0-9]{8}\.zip$/);
+        await download.waitFor();
+        await page.reload();
+        await page.locator('#file-import-menu').press('Enter');
+        const retry = page.locator('#detection-export-retry');
+        await retry.waitFor();
+        assert.match(await retry.innerText(), /Prepared .+ · 1 image · .+Previous image selection/);
+        const retried = page.waitForEvent('download');
+        await retry.press('Enter');
+        const second = await retried;
+        assert.equal(second.suggestedFilename(), first.suggestedFilename());
+        assert.deepEqual(await fs.readFile(await second.path()), await fs.readFile(await first.path()));
+    } finally {
+        allowRequest();
+        await page.unroute(endpoint, holdPreparation);
+        await page.setViewportSize({width: 1440, height: 1000});
+    }
+    // Reload resets the in-memory selection, not the recoverable ZIP.
+    await page.locator('#input_images').setInputFiles([path.join(assets, earlier), path.join(assets, later)]);
+    await page.waitForFunction(() => Object.keys(GLOBAL.files).length === 2);
+    await page.locator('#results-input').setInputFiles(path.join(assets, later + '.results.zip'));
+    await waitDetection(page, later);
+    console.log('PASS compact bulk export and keyboard ZIP recovery after reload');
 }
 
 async function downloadDetection(page, name) {

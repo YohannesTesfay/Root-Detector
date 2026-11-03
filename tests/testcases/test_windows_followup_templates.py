@@ -190,7 +190,7 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
-    assert 'rootdetector-web-app-rc1-4' in security
+    assert 'rootdetector-web-app-rc1-5' in security
 
 
 def test_tracking_tab_explains_detection_only_runs():

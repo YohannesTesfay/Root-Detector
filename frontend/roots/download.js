@@ -67,10 +67,12 @@ RootDetectionDownload = class extends BaseDownload{
             return
         }
         const $button = $(event?.currentTarget ?? event?.target ?? '.tab[data-tab="detection"] .download-all')
-        const $status = $('.detection-actions-menu .detection-batch-summary')
+        const $label = $button.find('.download-label')
+        const $announcement = $('#detection-action-announcement')
         this.download_in_progress = true
         set_download_all_busy($button, true)
-        $status.text(`Preparing ZIP: 0/${filenames.length}`).show()
+        $label.text(`Preparing ZIP 0 of ${filenames.length}`)
+        $announcement.text(`Preparing ZIP for ${filenames.length} results`)
         try {
             const files = filenames.map(filename => {
                 const file = GLOBAL.files[filename]
@@ -83,7 +85,7 @@ RootDetectionDownload = class extends BaseDownload{
             })
             let archive = await RootSecurity.request('/api/exports/detection', 'POST', {files})
             while(archive.state == 'preparing'){
-                $status.text(`Preparing ZIP: ${archive.processed}/${archive.total}`)
+                $label.text(`Preparing ZIP ${archive.processed} of ${archive.total}`)
                 await sleep(500)
                 archive = await RootSecurity.request(`/api/exports/detection/${archive.id}`, 'GET')
             }
@@ -91,42 +93,56 @@ RootDetectionDownload = class extends BaseDownload{
                 throw new Error(archive.error || 'Archive preparation did not finish. Keep this window open and retry.')
             this.show_ready_archive(archive)
             this.on_retry_ready_export()
-            $status.text('ZIP ready — check saved file.')
+            $announcement.text('ZIP download started. Check that the saved file opens.')
         } catch(error) {
-            $status.text('ZIP preparation failed — see alert.')
+            $announcement.text('ZIP download failed. See Alerts.')
             $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false
+            $label.text('Download All')
             set_download_all_busy($button, false)
         }
     }
 
     static show_ready_archive(archive, restored=false){
         this.ready_export = archive
-        $('#detection-export-recovery').prop('hidden', false).prop('open', false)
-        $('#detection-export-summary-detail').text(
-            restored ? 'Previous prepared archive available' : 'Prepared archive available to save again'
-        )
-        $('#detection-export-notice').text(
-            `${restored ? 'This archive may belong to a previous image selection. Check its contents before use. ' : ''}`
-            + 'If the ZIP did not save, use this prepared archive again. Verify the saved ZIP exists and opens.'
-        )
+        this.render_ready_archive(restored)
+    }
+
+    static render_ready_archive(previous){
+        const archive = this.ready_export
+        const date = new Date(archive.created_utc || NaN)
+        const details = []
+        if(!Number.isNaN(date.getTime()))
+            details.push(`Prepared ${date.toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'medium'})}`)
+        if(Number.isInteger(archive.total))
+            details.push(`${archive.total.toLocaleString()} ${archive.total == 1 ? 'image' : 'images'}`)
+        if(Number.isFinite(archive.bytes)){
+            const units = ['B', 'KB', 'MB', 'GB', 'TB']
+            let size = archive.bytes
+            let unit = 0
+            while(size >= 1000 && unit < units.length - 1){
+                size /= 1000
+                unit += 1
+            }
+            details.push(`${size.toLocaleString(undefined, {maximumFractionDigits: 1})} ${units[unit]}`)
+        }
+        if(previous)
+            details.push('Previous image selection')
+        $('#detection-export-details').text(details.join(' · '))
+        $('#detection-export-retry').prop('hidden', false)
     }
 
     static mark_archive_previous(){
         if(!this.ready_export)
             return
-        $('#detection-export-summary-detail').text('Previous prepared archive available')
-        $('#detection-export-notice').text(
-            'This archive belongs to a previous image selection. Check its contents before use. '
-            + 'If the ZIP did not save, use this prepared archive again.'
-        )
+        this.render_ready_archive(true)
     }
 
     static on_retry_ready_export(){
         if(!this.ready_export || this.ready_export.state != 'ready')
             return
-        downloadURI('RootDetector-detection-results.zip',
+        downloadURI(this.ready_export.download_name,
             `/api/exports/detection/${this.ready_export.id}/download`)
     }
 

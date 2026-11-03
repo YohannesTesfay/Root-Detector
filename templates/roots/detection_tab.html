@@ -2,6 +2,13 @@
 {% import   'base/content_menu.html'  as base_content_menu %}
 {% import   'base/detection_tab.html' as base_detection_tab %}
 
+{% macro cancel_button(callback) %}
+  <button type="button" class="ui button cancel-processing item"
+          onclick="{{ callback }}(event)" style="display:none" title="Cancel processing">
+    <i class="red times icon" aria-hidden="true"></i>Cancel
+  </button>
+{% endmacro %}
+
 {% macro filetable_menu(
     callback_on_process_all="",
     callback_on_cancel="",
@@ -12,15 +19,14 @@
 <div class="ui top attached menu{% if show_durable_export %} detection-actions-menu{% endif %}" style="border-top-width:0px;">
   <button type="button" class="ui button process-all item"
           onclick="{{ callback_on_process_all }}(event)" title="Process every loaded image">
-    <i class="blue play icon" aria-hidden="true"></i>Process All
+    <i class="blue play icon" aria-hidden="true"></i>{% if show_durable_export %}<span class="process-label">Process All</span>{% else %}Process All{% endif %}
   </button>
+  {% if not show_durable_export %}
   <span class="processing item" style="display:none">
     <i class="loading spinner icon" aria-hidden="true"></i>Processing
   </span>
-  <button type="button" class="ui button cancel-processing item"
-          onclick="{{ callback_on_cancel }}(event)" style="display:none" title="Cancel processing">
-    <i class="red times icon" aria-hidden="true"></i>Cancel
-  </button>
+  {% endif %}
+  {% if not show_durable_export %}{{ cancel_button(callback_on_cancel) }}{% endif %}
   {% if download_menu -%}
     {{ download_menu | indent }}
   {% else %}
@@ -30,21 +36,10 @@
     <span class="download-busy" hidden aria-hidden="true"><i class="spinner loading icon"></i></span>
   </button>
   {%- endif %}
-  {% if show_durable_export -%}
-  <span class="detection-batch-summary item" style="display:none" role="status" aria-live="polite"></span>
-  {%- endif %}
+  {% if show_durable_export %}{{ cancel_button(callback_on_cancel) }}{% endif %}
 </div>
 {% if show_durable_export -%}
-<details class="detection-export-recovery" id="detection-export-recovery" hidden>
-  <summary>Export recovery <span id="detection-export-summary-detail">Prepared archive available</span></summary>
-  <div class="detection-export-recovery-content">
-    <p id="detection-export-notice">If the ZIP did not save, use the prepared archive again. Verify that the saved ZIP exists and opens.</p>
-    <button type="button" class="ui small basic button" id="detection-export-retry"
-            onclick="App.Download.on_retry_ready_export()" title="Save the last prepared detection archive again">
-      <i class="save icon" aria-hidden="true"></i>Save prepared ZIP again
-    </button>
-  </div>
-</details>
+<span id="detection-action-announcement" class="detection-screen-reader-status" role="status"></span>
 {%- endif %}
 {% endmacro %}
 

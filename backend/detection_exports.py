@@ -17,7 +17,8 @@ from backend import preparation, security
 
 
 LOGGER = logging.getLogger('rootdetector')
-ARCHIVE_NAME = 'RootDetector-detection-results.zip'
+MANIFEST_NAME = 'detection-results-manifest.json'
+MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 CSV_HEADER = (
     'Filename, # root pixels, # background pixels, # mask pixels, '
     '# skeleton pixels, # skeleton pixels (<3px width), # skeleton pixels (3-7px width), '
@@ -26,6 +27,18 @@ CSV_HEADER = (
 MAX_IMAGES = 10000
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 ARCHIVE_RE = re.compile(r'^detection-results\.([0-9a-f]{32})\.zip$')
+MANAGED_ARCHIVE_RE = re.compile(r'^managed-detection-results\.([0-9a-f]{32})\.zip$')
+
+
+def _created_utc(timestamp=None):
+    date = (datetime.datetime.utcnow() if timestamp is None
+            else datetime.datetime.utcfromtimestamp(timestamp))
+    return date.replace(microsecond=0).isoformat() + 'Z'
+
+
+def _download_name(export_id, created):
+    stamp = created.replace('T', '_').replace(':', '-')
+    return 'RootDetector-detection-results_{}_{}.zip'.format(stamp, export_id[:8])
 
 
 def _json_bytes(value):
@@ -88,15 +101,25 @@ class DetectionExportManager:
         self.jobs = {}
         self.fingerprints = {}
         self.active_id = None
-        self.active_downloads = 0
+        self.active_downloads = {}
+        managed = self._stored_archives(MANAGED_ARCHIVE_RE)
+        self.latest_managed_id = managed[0][1] if managed else None
+        self._prune_managed()
+
+    def _managed_path(self, export_id):
+        return os.path.join(self.export_path, 'managed-detection-results.{}.zip'.format(export_id))
 
     def _archive_path(self, export_id):
         if not isinstance(export_id, str) or not re.fullmatch(r'[0-9a-f]{32}', export_id):
             raise security.ValidationError('Invalid export ID.', 'invalid_export_id')
+        managed = self._managed_path(export_id)
+        if os.path.lexists(managed):
+            return managed
         return os.path.join(self.export_path, 'detection-results.{}.zip'.format(export_id))
 
     def _snapshot(self, job):
-        return {key: job[key] for key in ('id', 'state', 'processed', 'total', 'bytes', 'error')}
+        return {key: job[key] for key in ('id', 'state', 'processed', 'total', 'bytes', 'error',
+                                         'created_utc', 'download_name')}
 
     def active(self):
         with self.lock:
@@ -104,15 +127,50 @@ class DetectionExportManager:
 
     def transferring(self):
         with self.lock:
-            return self.active_downloads > 0
+            return bool(self.active_downloads)
 
-    def begin_download(self):
+    def begin_download(self, export_id):
+        # Pin before send_file opens the archive, under the same lock as pruning.
         with self.lock:
-            self.active_downloads += 1
+            path = self.archive_path(export_id)
+            name = self.status(export_id)['download_name']
+            self.active_downloads[export_id] = self.active_downloads.get(export_id, 0) + 1
+            return path, name
 
-    def end_download(self):
+    def end_download(self, export_id):
         with self.lock:
-            self.active_downloads = max(0, self.active_downloads - 1)
+            remaining = self.active_downloads.get(export_id, 0) - 1
+            if remaining > 0:
+                self.active_downloads[export_id] = remaining
+            else:
+                self.active_downloads.pop(export_id, None)
+                self._prune_managed()
+
+    def _stored_archives(self, pattern):
+        paths = []
+        for name in os.listdir(self.export_path):
+            match = pattern.fullmatch(name)
+            if match:
+                path = os.path.join(self.export_path, name)
+                if os.path.isfile(path) and not os.path.islink(path):
+                    paths.append((os.path.getmtime(path), match.group(1)))
+        return sorted(paths, reverse=True)
+
+    def _prune_managed(self):
+        # The legacy name is deliberately excluded: never auto-delete pre-RC8 ZIPs.
+        try:
+            for _, export_id in self._stored_archives(MANAGED_ARCHIVE_RE):
+                if export_id == self.latest_managed_id or export_id in self.active_downloads:
+                    continue
+                try:
+                    os.remove(self._managed_path(export_id))
+                except OSError:
+                    LOGGER.warning('Could not prune superseded detection ZIP %s', export_id, exc_info=True)
+                    continue
+                self.jobs.pop(export_id, None)
+                self.fingerprints = {key: value for key, value in self.fingerprints.items() if value != export_id}
+        except OSError:
+            LOGGER.warning('Could not list managed detection ZIPs for cleanup', exc_info=True)
 
     def start(self, payload):
         items = payload.get('files') if isinstance(payload, dict) else None
@@ -140,7 +198,8 @@ class DetectionExportManager:
                 raise security.ValidationError('An archive is already being prepared.', 'export_busy', 409)
             export_id = secrets.token_hex(16)
             job = {'id': export_id, 'state': 'preparing', 'processed': 0,
-                   'total': len(specs), 'bytes': 0, 'error': None}
+                   'total': len(specs), 'bytes': 0, 'error': None,
+                   'created_utc': None, 'download_name': None}
             self.jobs[export_id] = job
             self.fingerprints[fingerprint] = export_id
             self.active_id = export_id
@@ -149,7 +208,7 @@ class DetectionExportManager:
 
     def _build(self, job, specs):
         export_id = job['id']
-        destination = self._archive_path(export_id)
+        destination = self._managed_path(export_id)
         temporary = None
         try:
             source_bytes = sum(
@@ -198,9 +257,10 @@ class DetectionExportManager:
                     }, ensure_ascii=False, indent=2))
                     for name, (path, _) in all_companions.items():
                         archive.write(path, 'preparation-companions/' + name)
-                archive.writestr('detection-results-manifest.json', json.dumps({
+                created = _created_utc()
+                archive.writestr(MANIFEST_NAME, json.dumps({
                     'schema': 1,
-                    'created_utc': datetime.datetime.utcnow().replace(microsecond=0).isoformat() + 'Z',
+                    'created_utc': created,
                     'processed_image_count': len(specs),
                     'image_names': [item['filename'] for item in specs],
                 }, ensure_ascii=False, indent=2))
@@ -209,11 +269,16 @@ class DetectionExportManager:
                     current = os.stat(path)
                     if (current.st_size, current.st_mtime_ns) != (size, modified_ns):
                         raise OSError('A detection result changed while the archive was being prepared.')
-            os.replace(temporary, destination)
-            temporary = None
             with self.lock:
-                job['bytes'] = os.path.getsize(destination)
+                archive_bytes = os.path.getsize(temporary)
+                os.replace(temporary, destination)
+                temporary = None
+                job['bytes'] = archive_bytes
+                job['created_utc'] = created
+                job['download_name'] = _download_name(export_id, created)
                 job['state'] = 'ready'
+                self.latest_managed_id = export_id
+                self._prune_managed()
         except Exception as exc:
             LOGGER.exception('Detection archive %s failed', export_id)
             with self.lock:
@@ -233,15 +298,33 @@ class DetectionExportManager:
                     self.active_id = None
 
     def status(self, export_id):
-        path = self._archive_path(export_id)
         with self.lock:
+            path = self._archive_path(export_id)
             job = self.jobs.get(export_id)
             if job:
                 return self._snapshot(job)
-        if not os.path.isfile(path) or os.path.islink(path):
-            raise security.ValidationError('This archive is not available.', 'export_not_found', 404)
-        return {'id': export_id, 'state': 'ready', 'processed': None, 'total': None,
-                'bytes': os.path.getsize(path), 'error': None}
+            if not os.path.isfile(path) or os.path.islink(path):
+                raise security.ValidationError('This archive is not available.', 'export_not_found', 404)
+            stat = os.stat(path)
+            created, total = _created_utc(stat.st_mtime), None
+            try:
+                with zipfile.ZipFile(path) as archive:
+                    entry = archive.getinfo(MANIFEST_NAME)
+                    if entry.file_size <= MAX_MANIFEST_BYTES:
+                        manifest = json.loads(archive.read(entry))
+                        if isinstance(manifest, dict):
+                            stamp = manifest.get('created_utc')
+                            if isinstance(stamp, str):
+                                date = datetime.datetime.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ')
+                                created = date.isoformat() + 'Z'
+                            count = manifest.get('processed_image_count')
+                            if type(count) is int and 1 <= count <= MAX_IMAGES:
+                                total = count
+            except (OSError, ValueError, KeyError, zipfile.BadZipFile, RuntimeError):
+                pass  # Older archives may lack usable metadata; keep them recoverable.
+            return {'id': export_id, 'state': 'ready', 'processed': total, 'total': total,
+                    'bytes': stat.st_size, 'error': None, 'created_utc': created,
+                    'download_name': _download_name(export_id, created)}
 
     def archive_path(self, export_id):
         path = self._archive_path(export_id)
@@ -250,11 +333,10 @@ class DetectionExportManager:
         return path
 
     def recent(self):
-        paths = []
-        for name in os.listdir(self.export_path):
-            match = ARCHIVE_RE.fullmatch(name)
-            if match:
-                path = os.path.join(self.export_path, name)
+        with self.lock:
+            if self.latest_managed_id:
+                path = self._managed_path(self.latest_managed_id)
                 if os.path.isfile(path) and not os.path.islink(path):
-                    paths.append((os.path.getmtime(path), match.group(1)))
-        return [self.status(export_id) for _, export_id in sorted(paths, reverse=True)[:20]]
+                    return [self.status(self.latest_managed_id)]
+            legacy = self._stored_archives(ARCHIVE_RE)
+            return [self.status(legacy[0][1])] if legacy else []

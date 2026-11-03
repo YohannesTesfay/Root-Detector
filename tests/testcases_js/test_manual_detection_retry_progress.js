@@ -8,16 +8,18 @@ const files = {'one.tiff': {set_results(result){this.results = result}}}
 const delays = []
 const requests = []
 const reported = []
-const summaries = []
-const progressItem = {show(){return this}, hide(){return this}, removeClass(){return this}}
-const summaryItem = {text(value){summaries.push(value); return this}, show(){return this}, hide(){return this}}
+const labels = []
+const announcements = []
+const progressItem = {show(){this.visible = true; return this}, hide(){this.visible = false; return this},
+    prop(key, value){this[key] = value; return this}}
+const label = {text(value){labels.push(value); return this}}
+const icon = {addClass(){return this}, removeClass(){return this}}
+const announcement = {text(value){announcements.push(value); return this}}
 const button = {
-    hide(){return this}, show(){return this},
-    siblings(selector){
-        if(selector == '.processing') return progressItem
-        if(selector == '.detection-batch-summary') return summaryItem
-        return progressItem
-    },
+    addClass(){return this}, removeClass(){return this}, hasClass(){return false},
+    prop(key, value){this[key] = value; return this}, attr(){return this},
+    find(selector){return selector == '.process-label' ? label : icon},
+    siblings(selector){assert.strictEqual(selector, '.cancel-processing'); return progressItem},
 }
 const element = {on(){return this}, off(){return this}, toast(){return this}}
 const context = {
@@ -36,7 +38,8 @@ const context = {
         error_message: error => error?.message || 'Connection interrupted',
     },
     GLOBAL: {files, event_source: {}, cancel_requested: false},
-    $: target => target === button ? button : element,
+    $: target => target === button ? button : target === progressItem ? progressItem :
+        target === '#detection-action-announcement' ? announcement : element,
     sleep: async delay => {delays.push(delay)},
     console: {warn() {}, error() {}, log() {}},
 }
@@ -84,10 +87,23 @@ async function main(){
     }
     const batch = await context.RootDetection.on_process_all({currentTarget: button})
     assert.strictEqual(batch.failed.length, 1)
-    assert(summaries.includes('Processing 0/3'))
-    assert(summaries.includes('Processing 2/3'))
-    assert(summaries.includes('Processing 3/3'))
-    assert(summaries.includes('Done: 3/3 · 1 failed'))
+    assert.deepStrictEqual(labels, ['Processing 0 of 3', 'Processing 1 of 3', 'Processing 2 of 3', 'Processing 3 of 3', 'Process All'])
+    assert(announcements.includes('Finished: 3 of 3; 1 failed'))
+    assert.strictEqual(button.disabled, false)
+    assert.strictEqual(progressItem.visible, false)
+    let processed = 0
+    context.RootDetection.process_image = async () => {
+        processed += 1
+        assert.strictEqual(button.disabled, true)
+        assert.strictEqual(progressItem.visible, true)
+        context.RootDetection.on_cancel_processing({currentTarget: progressItem, target: {}})
+        assert.strictEqual(progressItem.disabled, true)
+    }
+    const cancelled = await context.RootDetection.on_process_all({currentTarget: button})
+    assert.strictEqual(cancelled.cancelled, true)
+    assert.strictEqual(processed, 1)
+    assert.strictEqual(labels[labels.length - 1], 'Process All')
+    assert(announcements.includes('Stopped: 1 of 3'))
     console.log('Manual detection retry and batch progress tests passed.')
 }
 

@@ -129,8 +129,6 @@ RootsFileInput = class extends BaseFileInput{
         if(duplicates.length)
             throw new Error(`Duplicate filenames are not supported: ${[...new Set(duplicates)].join(', ')}`)
 
-        $('.detection-batch-summary').hide().text('')
-
         if(!window.location.href.startsWith('file://'))
             await RootSecurity.request('/clear_cache', 'POST')
 

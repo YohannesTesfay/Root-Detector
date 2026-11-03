@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import time
 import zipfile
 
@@ -42,7 +43,10 @@ def test_export_survives_restart_and_preserves_csv_and_images(tmp_path):
     files = [_source(str(cache), 'one.tiff'), _source(str(cache), 'two.tiff')]
     manager = detection_exports.DetectionExportManager(str(cache), str(exports))
     started = manager.start({'files': files})
-    assert _await(manager, started['id'])['state'] == 'ready'
+    ready = _await(manager, started['id'])
+    assert ready['state'] == 'ready'
+    assert re.fullmatch(r'RootDetector-detection-results_\d{4}-\d\d-\d\d_\d\d-\d\d-\d\dZ_[0-9a-f]{8}\.zip',
+                        ready['download_name'])
     assert manager.start({'files': files})['id'] == started['id']
     path = manager.archive_path(started['id'])
     with zipfile.ZipFile(path) as archive:
@@ -57,9 +61,55 @@ def test_export_survives_restart_and_preserves_csv_and_images(tmp_path):
         )
         manifest = json.loads(archive.read('detection-results-manifest.json'))
         assert manifest['processed_image_count'] == 2
+        assert manifest['created_utc'] == ready['created_utc']
     restarted = detection_exports.DetectionExportManager(str(cache), str(exports))
-    assert restarted.status(started['id'])['state'] == 'ready'
-    assert restarted.recent()[0]['id'] == started['id']
+    assert restarted.status(started['id']) == ready
+    assert restarted.recent() == [ready]
+
+
+def test_managed_retention_waits_for_ready_replacement_and_open_transfers(tmp_path, monkeypatch):
+    cache = tmp_path / 'cache'
+    exports = tmp_path / 'exports'
+    cache.mkdir()
+    exports.mkdir()
+    legacy_id = 'a' * 32
+    legacy = exports / ('detection-results.{}.zip'.format(legacy_id))
+    with zipfile.ZipFile(str(legacy), 'w') as archive:
+        archive.writestr(detection_exports.MANIFEST_NAME, json.dumps({
+            'created_utc': '2026-10-01T09:30:22Z', 'processed_image_count': 12,
+        }))
+    unmanaged = exports / 'my-saved-results.zip'
+    unmanaged.write_bytes(b'user-owned file')
+    manager = detection_exports.DetectionExportManager(str(cache), str(exports))
+    assert manager.recent()[0]['id'] == legacy_id
+    assert manager.recent()[0]['total'] == 12
+    one, two = [_source(str(cache), name) for name in ('one.tiff', 'two.tiff')]
+    first = _await(manager, manager.start({'files': [one]})['id'])
+    old_path, _ = manager.begin_download(first['id'])
+    manager.begin_download(first['id'])  # another concurrent range/transfer
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError('simulated failed replacement')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(detection_exports.zipfile.ZipFile, 'write', fail_write)
+        assert _await(manager, manager.start({'files': [two]})['id'])['state'] == 'failed'
+    assert manager.recent() == [first]
+    assert os.path.isfile(old_path)
+
+    latest = _await(manager, manager.start({'files': [two]})['id'])
+    assert latest['state'] == 'ready'
+    assert manager.recent() == [latest]
+    assert os.path.isfile(old_path)
+    manager.end_download(first['id'])
+    assert os.path.isfile(old_path)
+    manager.end_download(first['id'])
+    assert not os.path.exists(old_path)
+    with pytest.raises(security.ValidationError):
+        manager.status(first['id'])
+    assert legacy.is_file()
+    assert unmanaged.read_bytes() == b'user-owned file'
+    assert len(list(exports.glob('managed-*.zip'))) == 1
 
 
 def test_export_rejects_missing_duplicate_and_unsafe_inputs(tmp_path):
@@ -140,27 +190,31 @@ def test_api_download_has_stable_name_length_and_range(tmp_path, monkeypatch):
     page = client.get('/', headers={'Host': 'localhost'})
     assert page.status_code == 200
     assert page.data.count(b'id="detection-export-retry"') == 1
-    assert page.data.count(b'id="detection-export-notice"') == 1
-    assert page.data.count(b'id="detection-export-recovery"') == 1
-    assert b'<details class="detection-export-recovery"' in page.data
+    assert page.data.count(b'id="detection-export-details"') == 1
+    assert b'Download Last Detection ZIP' in page.data
+    assert page.data.index(b'id="load-results-button"') < page.data.index(b'id="detection-export-retry"')
+    assert b'detection-batch-summary' not in page.data
+    assert b'detection-export-recovery' not in page.data
     headers = {'Host': 'localhost', 'Origin': 'http://localhost',
                'X-RootDetector-Token': app.session_token}
     started = client.post('/api/exports/detection', json={'files': [item]}, headers=headers)
     assert started.status_code in (200, 202)
     export_id = started.get_json()['id']
-    assert _await(app.detection_exports, export_id)['state'] == 'ready'
+    ready = _await(app.detection_exports, export_id)
+    assert ready['state'] == 'ready'
     activity = client.get('/api/desktop/activity', headers={'Host': 'localhost'})
     assert activity.get_json()['detection_results_present'] is True
     url = '/api/exports/detection/{}/download'.format(export_id)
     first = client.get(url, headers={'Host': 'localhost'})
     assert first.status_code == 200
     assert first.headers['Content-Length'] == str(len(first.data))
-    assert 'RootDetector-detection-results.zip' in first.headers['Content-Disposition']
+    assert ready['download_name'] in first.headers['Content-Disposition']
     assert zipfile.ZipFile(io.BytesIO(first.data)).testzip() is None
     assert app.detection_exports.transferring()
     first.close()
     repeated = client.get(url, headers={'Host': 'localhost', 'Range': 'bytes=0-15'})
     assert repeated.status_code == 206
+    assert ready['download_name'] in repeated.headers['Content-Disposition']
     assert repeated.data == first.data[:16]
     repeated.close()
     assert not app.detection_exports.transferring()

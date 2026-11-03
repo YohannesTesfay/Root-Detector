@@ -8,49 +8,67 @@ RootDetection = class extends BaseDetection{
     }
 
     static async on_process_all(event){
+        if(this.batch_in_progress)
+            return
         const filenames = Object.keys(GLOBAL.files)
+        if(!filenames.length)
+            return
         const $button = $(event.currentTarget || event.target)
-        const $summary = $button.siblings('.detection-batch-summary')
-        $button.hide()
-        $summary.hide().text('')
-        $button.siblings('.cancel-processing, .processing').show().removeClass('disabled')
+        const $label = $button.find('.process-label')
+        const $icon = $button.find('i.icon')
+        const $cancel = $button.siblings('.cancel-processing')
+        const $announcement = $('#detection-action-announcement')
+        this.batch_in_progress = true
+        $button.addClass('is-busy').prop('disabled', true).attr('aria-busy', 'true')
+        $icon.removeClass('blue play').addClass('loading spinner')
+        $cancel.show().prop('disabled', false)
         GLOBAL.cancel_requested = false
         const failed = []
-        let attempted = 0
         let completed = 0
-        const progress_text = () => `${completed}/${filenames.length}`
-        $summary.text(`Processing ${progress_text()}`).show()
-        for(const filename of filenames){
-            if(GLOBAL.cancel_requested)
-                break
-            attempted += 1
-            try {
-                await this.process_image(filename, true, {is_cancelled: () => GLOBAL.cancel_requested})
-            } catch(error) {
-                failed.push({filename: filename, error: error})
+        const progress = () => `Processing ${completed} of ${filenames.length}`
+        try {
+            $label.text(progress())
+            $announcement.text(progress())
+            for(const filename of filenames){
+                if(GLOBAL.cancel_requested)
+                    break
+                try {
+                    await this.process_image(filename, true, {is_cancelled: () => GLOBAL.cancel_requested})
+                } catch(error) {
+                    failed.push({filename: filename, error: error})
+                    $('body').toast({
+                        key: 'detection-batch-failures',
+                        message: `${failed.length} image(s) failed so far. Processing continues.`,
+                        details: failed.map(({filename, error}) =>
+                            `${filename}: ${RootSecurity.error_message(error)}`),
+                        class: 'error', displayTime: 0,
+                    })
+                }
+                completed += 1
+                $label.text(progress())
+            }
+            if(failed.length)
                 $('body').toast({
                     key: 'detection-batch-failures',
-                    message: `${failed.length} image(s) failed so far. Processing continues.`,
+                    message: `${failed.length} of ${completed} processed image(s) failed${GLOBAL.cancel_requested ? ' before cancellation.' : '. The batch continued past those failures.'}`,
                     details: failed.map(({filename, error}) =>
                         `${filename}: ${RootSecurity.error_message(error)}`),
-                    class: 'error', displayTime: 0,
+                    class: 'error', displayTime: 0, closeIcon: true,
                 })
-            }
-            completed += 1
-            $summary.text(`Processing ${progress_text()}`)
+            $announcement.text(`${GLOBAL.cancel_requested ? 'Stopped' : 'Finished'}: ${completed} of ${filenames.length}${failed.length ? `; ${failed.length} failed` : ''}`)
+            return {failed: failed, cancelled: GLOBAL.cancel_requested}
+        } finally {
+            this.batch_in_progress = false
+            $label.text('Process All')
+            $icon.removeClass('loading spinner').addClass('blue play')
+            $button.removeClass('is-busy').prop('disabled', $button.hasClass('disabled')).attr('aria-busy', 'false')
+            $cancel.hide()
         }
-        if(failed.length)
-            $('body').toast({
-                key: 'detection-batch-failures',
-                message: `${failed.length} of ${attempted} processed image(s) failed${GLOBAL.cancel_requested ? ' before cancellation.' : '. The batch continued past those failures.'}`,
-                details: failed.map(({filename, error}) =>
-                    `${filename}: ${RootSecurity.error_message(error)}`),
-                class: 'error', displayTime: 0, closeIcon: true,
-            })
-        $button.show()
-        $button.siblings('.cancel-processing, .processing').hide()
-        $summary.text(`${GLOBAL.cancel_requested ? 'Stopped' : 'Done'}: ${progress_text()}${failed.length ? ` · ${failed.length} failed` : ''}`).show()
-        return {failed: failed, cancelled: GLOBAL.cancel_requested}
+    }
+
+    static on_cancel_processing(event){
+        GLOBAL.cancel_requested = true
+        $(event.currentTarget || event.target).prop('disabled', true)
     }
 
     static async process_image(filename, upload_image=true, options={}){

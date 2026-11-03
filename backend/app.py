@@ -268,16 +268,17 @@ class App(BaseApp):
         return flask.jsonify(self.detection_exports.status(export_id))
 
     def download_detection_export(self, export_id):
-        response = flask.send_file(
-            self.detection_exports.archive_path(export_id),
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=backend.detection_exports.ARCHIVE_NAME,
-            conditional=True,
-        )
-        self.detection_exports.begin_download()
+        path, name = self.detection_exports.begin_download(export_id)
+        try:
+            response = flask.send_file(
+                path, mimetype='application/zip', as_attachment=True,
+                download_name=name, conditional=True,
+            )
+        except Exception:
+            self.detection_exports.end_download(export_id)
+            raise
         response.response = ClosingIterator(
-            response.response, [self.detection_exports.end_download],
+            response.response, [lambda: self.detection_exports.end_download(export_id)],
         )
         return response
 

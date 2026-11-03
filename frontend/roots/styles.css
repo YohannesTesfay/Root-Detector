@@ -54,61 +54,49 @@ body {
     flex-wrap: wrap;
 }
 
-.detection-actions-menu .process-all,
-.detection-actions-menu .processing {
+.ui.menu.detection-actions-menu > button.item.process-all,
+.ui.menu.detection-actions-menu > button.item.download-all {
     box-sizing: border-box;
-    flex: 0 0 9rem;
-    justify-content: center;
-}
-
-.detection-actions-menu .download-all {
-    box-sizing: border-box;
-    flex: 0 0 10.5rem;
-    justify-content: center;
-}
-
-.detection-actions-menu .detection-batch-summary {
-    box-sizing: border-box;
-    flex: 0 0 100%;
+    flex: 0 0 auto;
+    width: 14rem;
     max-width: 100%;
-    border-top: 1px solid #e1e5e7;
-    white-space: normal;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.ui.menu.detection-actions-menu > button.item.download-all {
+    width: 15rem;
 }
 
 .download-all .download-busy[hidden] {
     display: none;
 }
 
-#detection-export-recovery[hidden] {
+.detection-actions-menu .download-all.is-busy > .download.icon {
     display: none;
 }
 
-.detection-export-recovery {
-    border: 1px solid #d8e1e5;
-    border-top: 0;
-    background: #fafcfc;
-    padding: 0.5rem 0.9rem;
-    font-size: 0.9rem;
+.detection-screen-reader-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
-.detection-export-recovery summary {
-    cursor: pointer;
-    color: #345768;
+#file-import-menu .menu > #detection-export-retry[hidden] {
+    display: none !important;
 }
 
-#detection-export-summary-detail {
-    color: #687a83;
-    margin-left: 0.4rem;
-}
-
-.detection-export-recovery-content {
-    padding: 0.6rem 0 0.2rem;
-}
-
-.detection-export-recovery-content p {
+#detection-export-retry .detection-export-details {
+    display: block;
+    margin-top: 0.3em;
+    color: #4d5c65;
+    font-size: 0.85em;
+    max-width: min(18rem, calc(100vw - 7rem));
     white-space: normal;
     line-height: 1.35;
-    margin-bottom: 0.5rem;
 }
 
 .download-all .download-busy .icon {
@@ -116,7 +104,8 @@ body {
 }
 
 .ui.button.download-all.is-busy,
-.ui.button.download-all.is-busy:disabled {
+.ui.button.download-all.is-busy:disabled,
+.ui.menu.detection-actions-menu .process-all.is-busy:disabled {
     opacity: 1 !important;
     color: #2b3439 !important;
     cursor: progress;
