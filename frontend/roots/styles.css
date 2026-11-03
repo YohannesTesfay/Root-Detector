@@ -36,11 +36,25 @@ body {
     background: white;
 }
 
+#workflow-guide {
+    margin-block: 0.5rem;
+}
+
+#workflow-guide > p {
+    margin: 0;
+}
+
+/* Suppress the shared template's large spacer only before the root tabs. */
+body > .ui.hidden.section.divider:has(+ #main-container) {
+    display: none;
+}
+
 #main-container > .tabs.menu {
     position: sticky;
     top: var(--root-toolbar-height, 0px);
     z-index: 104;
     background: white;
+    margin-block-start: 0.35rem;
 }
 
 #main-container > .ui.tab.segment > .ui.top.attached.menu {
@@ -50,8 +64,14 @@ body {
     background: white;
 }
 
-.detection-actions-menu {
+.ui.menu.detection-actions-menu {
     flex-wrap: wrap;
+    margin-block-start: 0;
+    min-height: 2.45rem;
+}
+
+.ui.menu.detection-actions-menu > button.item {
+    padding-block: 0.62em;
 }
 
 .ui.menu.detection-actions-menu > button.item.process-all,
@@ -87,16 +107,6 @@ body {
 
 #file-import-menu .menu > #detection-export-retry[hidden] {
     display: none !important;
-}
-
-#detection-export-retry .detection-export-details {
-    display: block;
-    margin-top: 0.3em;
-    color: #4d5c65;
-    font-size: 0.85em;
-    max-width: min(18rem, calc(100vw - 7rem));
-    white-space: normal;
-    line-height: 1.35;
 }
 
 .download-all .download-busy .icon {
@@ -281,7 +291,7 @@ body {
 }
 
 #image-preparation-tools {
-    margin: 0 0 1rem;
+    margin: 0 0 0.25rem;
 }
 
 #image-preparation-tools > summary {

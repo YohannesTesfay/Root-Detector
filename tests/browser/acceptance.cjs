@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const {execFileSync} = require('node:child_process');
 const {chromium} = require('playwright');
 
 const baseURL = process.env.ROOTDETECTOR_BROWSER_TEST_URL;
@@ -33,6 +34,8 @@ async function run() {
     try {
         await page.goto(baseURL);
         await page.waitForFunction(() => window.RootSecurity?.token && Array.isArray(window.GLOBAL?.available_models?.detection));
+        await assertStartupContrast(browser);
+        await assertCompactStickyControls(page);
         savedSettings = await page.evaluate(() => structuredClone(GLOBAL.settings));
         const models = await page.evaluate(() => GLOBAL.available_models.detection.map(model => typeof model === 'string' ? model : model.name));
         assert(models.length >= 2, 'Install both released detection models for the model-switch case.');
@@ -152,6 +155,64 @@ async function selectDetectionModel(page, name) {
     assert.equal((await response.json()).settings.active_models.detection, name);
 }
 
+async function assertStartupContrast(browser) {
+    const python = process.platform === 'win32' ? 'python' : 'python3';
+    const startupHTML = execFileSync(python, ['-c',
+        'from desktop_main import status_page; print(status_page("Starting Root Detector", "Preparing the local analysis process."))'],
+        {cwd: path.resolve(__dirname, '../..'), encoding: 'utf8'});
+    const page = await browser.newPage();
+    try {
+        await page.setContent(startupHTML);
+        for (const colorScheme of ['light', 'dark']) {
+            await page.emulateMedia({colorScheme});
+            const ratio = await page.evaluate(() => {
+                const luminance = color => color.match(/\d+/g).slice(0, 3).map(value => {
+                    const c = Number(value) / 255;
+                    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+                }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+                const bg = luminance(getComputedStyle(document.documentElement).backgroundColor);
+                const fg = luminance(getComputedStyle(document.querySelector('p')).color);
+                return (Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05);
+            });
+            assert(ratio >= 7, `Startup text should have strong contrast in ${colorScheme}: ${ratio}`);
+        }
+    } finally {
+        await page.close();
+    }
+}
+
+async function assertCompactStickyControls(page) {
+    for (const width of [1440, 390]) {
+        await page.setViewportSize({width, height: 850});
+        const geometry = await page.evaluate(async () => {
+            const rect = selector => document.querySelector(selector).getBoundingClientRect();
+            const tab = document.querySelector('[data-tab="detection"].tab.segment');
+            const original = tab.style.minHeight;
+            const workflowGap = rect('#main-container > .tabs.menu').top - rect('#workflow-guide').bottom;
+            const actionGap = rect('.detection-actions-menu').top - rect('#image-preparation-tools').bottom;
+            const buttonHeight = rect('.detection-actions-menu .process-all').height;
+            try {
+                tab.style.minHeight = '1600px';
+                window.scrollTo(0, 500);
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                return {workflowGap, actionGap, buttonHeight, scrolled: window.scrollY,
+                    top: rect('#root-top-menu').top,
+                    tabsOffset: rect('#main-container > .tabs.menu').top - rect('#root-top-menu').bottom,
+                    actionsOffset: rect('.detection-actions-menu').top - rect('#main-container > .tabs.menu').bottom};
+            } finally {
+                window.scrollTo(0, 0);
+                tab.style.minHeight = original;
+            }
+        });
+        assert(geometry.workflowGap <= 16 && geometry.actionGap <= 8 && geometry.buttonHeight <= 42,
+            `Expected compact controls at ${width}px: ${JSON.stringify(geometry)}`);
+        assert(geometry.scrolled > 0 && [geometry.top, geometry.tabsOffset, geometry.actionsOffset]
+            .every(offset => Math.abs(offset) <= 2), `Sticky controls overlap or drift at ${width}px: ${JSON.stringify(geometry)}`);
+    }
+    await page.setViewportSize({width: 1440, height: 1000});
+    console.log('PASS startup contrast and compact sticky controls at desktop and narrow widths');
+}
+
 async function assertBulkRecovery(page) {
     await page.setViewportSize({width: 390, height: 850});
     const toolbar = page.locator('.detection-actions-menu');
@@ -181,7 +242,14 @@ async function assertBulkRecovery(page) {
         await page.locator('#file-import-menu').press('Enter');
         const retry = page.locator('#detection-export-retry');
         await retry.waitFor();
-        assert.match(await retry.innerText(), /Prepared .+ · 1 image · .+Previous image selection/);
+        assert.equal((await retry.innerText()).trim(), 'Download Last Detection ZIP');
+        const tooltip = await retry.getAttribute('title');
+        assert.match(tooltip, /without rerunning detection\.\nPrepared .+ · 1 image · .+Previous image selection/);
+        assert.equal(await retry.getAttribute('aria-describedby'), 'detection-export-details');
+        assert.equal(await page.locator('#detection-export-details').textContent(), tooltip);
+        assert(!(await page.locator('#detection-export-details').isVisible()));
+        const restore = await page.locator('#load-results-button').boundingBox();
+        assert(Math.abs((await retry.boundingBox()).height - restore.height) <= 2, 'Recovery should fit one normal menu row');
         const retried = page.waitForEvent('download');
         await retry.press('Enter');
         const second = await retried;

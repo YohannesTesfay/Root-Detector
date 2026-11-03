@@ -52,11 +52,12 @@
              onchange="{{ app }}.FileInput.on_results_select(event)" accept=".zip,.png" multiple>
 
       <a href="#" class="ui icon item" id="detection-export-retry" hidden
-              title="Download the last prepared detection ZIP again without rerunning detection. It may contain results from a previous image selection."
+              data-tooltip-prefix="Download the last prepared detection ZIP again without rerunning detection."
+              aria-describedby="detection-export-details"
               onclick="{{ app }}.Download.on_retry_ready_export(); return false;">
         <i class="download icon" aria-hidden="true"></i>
         Download Last Detection ZIP
-        <span id="detection-export-details" class="detection-export-details"></span>
+        <span id="detection-export-details" hidden></span>
       </a>
 
       <div class="ui divider"></div>

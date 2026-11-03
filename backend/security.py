@@ -13,7 +13,7 @@ import PIL.Image
 
 SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
 SUPPORTED_IMAGE_FORMATS = {'JPEG', 'PNG', 'TIFF'}
-ASSET_SCHEMA_VERSION = 'rootdetector-web-app-rc1-5'
+ASSET_SCHEMA_VERSION = 'rootdetector-web-app-rc1-6'
 MAX_FILENAME_BYTES = 240
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_CONFIGURABLE_UPLOAD_MIB = 4096

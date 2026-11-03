@@ -18,6 +18,12 @@ global.$ = selector => {
             ...element, find(child){return selector == buttonSelector && child == '.download-label' ? label : element},
             prop(name, value){this[name] = value; return this},
             text(value){this.content = value; return this},
+            attr(name, value){
+                if(value === undefined)
+                    return name == 'data-tooltip-prefix' ? 'Download the last prepared ZIP again.' : this[name]
+                this[name] = value
+                return this
+            },
         })
     return nodes.get(selector)
 }
@@ -70,6 +76,8 @@ async function main(){
     ])
     assert.strictEqual(nodes.get('#detection-export-retry').hidden, false)
     assert.match(nodes.get('#detection-export-details').content, /Prepared .+ · 1 image · .+ KB/)
+    assert.strictEqual(nodes.get('#detection-export-retry').title, nodes.get('#detection-export-details').content)
+    assert.match(nodes.get('#detection-export-retry').title, /^Download the last prepared ZIP again\.\nPrepared /)
     assert(!nodes.get('#detection-export-details').content.includes('Previous image selection'))
     assert.deepStrictEqual(labels, ['Preparing ZIP 0 of 1', 'Preparing ZIP 0 of 1', 'Download All'])
     RootDetectionDownload.on_retry_ready_export()

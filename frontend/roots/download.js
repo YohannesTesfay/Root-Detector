@@ -129,8 +129,10 @@ RootDetectionDownload = class extends BaseDownload{
         }
         if(previous)
             details.push('Previous image selection')
-        $('#detection-export-details').text(details.join(' · '))
-        $('#detection-export-retry').prop('hidden', false)
+        const $retry = $('#detection-export-retry')
+        const tooltip = [$retry.attr('data-tooltip-prefix'), details.join(' · ')].filter(Boolean).join('\n')
+        $('#detection-export-details').text(tooltip)
+        $retry.attr('title', tooltip).prop('hidden', false)
     }
 
     static mark_archive_previous(){

@@ -62,8 +62,10 @@ def status_page(title, detail):
     return (
         '<!doctype html><html><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<style>body{{font:16px system-ui,sans-serif;max-width:48rem;'
-        'margin:12vh auto;padding:0 2rem;color:#183843;line-height:1.5}}'
+        '<style>:root{{color-scheme:light dark;background:#f5f9fa;color:#183843}}'
+        '@media(prefers-color-scheme:dark){{:root{{background:#14181b;color:#e4f2f6}}}}'
+        'body{{font:16px system-ui,sans-serif;max-width:48rem;'
+        'margin:12vh auto;padding:0 2rem;line-height:1.5}}'
         'h1{{font-size:1.5rem}}p{{white-space:pre-wrap}}</style>'
         '<h1>{}</h1><p>{}</p></html>'
     ).format(html.escape(title), html.escape(detail))
