@@ -30,16 +30,19 @@
     <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
     <span class="download-busy" hidden role="status"><i class="spinner loading icon" aria-hidden="true"></i><span class="download-progress-text">Preparing download…</span></span>
   </button>
-  {% if show_durable_export -%}
-  <button type="button" class="ui button item" id="detection-export-retry" hidden
-          onclick="App.Download.on_retry_ready_export()" title="Save the last prepared detection archive again">
-    <i class="save icon" aria-hidden="true"></i>Save Ready Archive
-  </button>
-  {%- endif %}
   {%- endif %}
 </div>
 {% if show_durable_export -%}
-<div class="ui attached info message detection-export-notice" id="detection-export-notice" hidden role="status"></div>
+<details class="detection-export-recovery" id="detection-export-recovery" hidden>
+  <summary>Export recovery <span id="detection-export-summary-detail">Prepared archive available</span></summary>
+  <div class="detection-export-recovery-content">
+    <p id="detection-export-notice">If the ZIP did not save, use the prepared archive again. Verify that the saved ZIP exists and opens.</p>
+    <button type="button" class="ui small basic button" id="detection-export-retry"
+            onclick="App.Download.on_retry_ready_export()" title="Save the last prepared detection archive again">
+      <i class="save icon" aria-hidden="true"></i>Save prepared ZIP again
+    </button>
+  </div>
+</details>
 {%- endif %}
 {% endmacro %}
 

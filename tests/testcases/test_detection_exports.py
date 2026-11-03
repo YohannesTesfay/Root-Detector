@@ -141,6 +141,8 @@ def test_api_download_has_stable_name_length_and_range(tmp_path, monkeypatch):
     assert page.status_code == 200
     assert page.data.count(b'id="detection-export-retry"') == 1
     assert page.data.count(b'id="detection-export-notice"') == 1
+    assert page.data.count(b'id="detection-export-recovery"') == 1
+    assert b'<details class="detection-export-recovery"' in page.data
     headers = {'Host': 'localhost', 'Origin': 'http://localhost',
                'X-RootDetector-Token': app.session_token}
     started = client.post('/api/exports/detection', json={'files': [item]}, headers=headers)

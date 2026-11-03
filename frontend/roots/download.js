@@ -106,10 +106,23 @@ RootDetectionDownload = class extends BaseDownload{
 
     static show_ready_archive(archive, restored=false){
         this.ready_export = archive
-        $('#detection-export-retry').prop('hidden', false)
-        $('#detection-export-notice').prop('hidden', false).text(
-            `${restored ? 'A previously prepared detection archive is available; check that it belongs to the intended images. ' : 'Detection archive ready. '}`
-            + 'After choosing Save, verify the ZIP exists and opens. If the save fails, use Save Ready Archive again; this archive remains available after restarting Root Detector.'
+        $('#detection-export-recovery').prop('hidden', false).prop('open', false)
+        $('#detection-export-summary-detail').text(
+            restored ? 'Previous prepared archive available' : 'Prepared archive available to save again'
+        )
+        $('#detection-export-notice').text(
+            `${restored ? 'This archive may belong to a previous image selection. Check its contents before use. ' : ''}`
+            + 'If the ZIP did not save, use this prepared archive again. Verify the saved ZIP exists and opens.'
+        )
+    }
+
+    static mark_archive_previous(){
+        if(!this.ready_export)
+            return
+        $('#detection-export-summary-detail').text('Previous prepared archive available')
+        $('#detection-export-notice').text(
+            'This archive belongs to a previous image selection. Check its contents before use. '
+            + 'If the ZIP did not save, use this prepared archive again.'
         )
     }
 

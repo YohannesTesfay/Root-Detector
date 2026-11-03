@@ -55,15 +55,36 @@ body {
     display: none;
 }
 
-#detection-export-retry[hidden],
-#detection-export-notice[hidden] {
+#detection-export-recovery[hidden] {
     display: none;
 }
 
-.detection-export-notice {
+.detection-export-recovery {
+    border: 1px solid #d8e1e5;
+    border-top: 0;
+    background: #fafcfc;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.9rem;
+}
+
+.detection-export-recovery summary {
+    cursor: pointer;
+    color: #345768;
+}
+
+#detection-export-summary-detail {
+    color: #687a83;
+    margin-left: 0.4rem;
+}
+
+.detection-export-recovery-content {
+    padding: 0.6rem 0 0.2rem;
+}
+
+.detection-export-recovery-content p {
     white-space: normal;
     line-height: 1.35;
-    color: #24586a;
+    margin-bottom: 0.5rem;
 }
 
 .download-all .download-busy .icon {

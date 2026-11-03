@@ -8,7 +8,16 @@ const element = {
     find: () => element, toggleClass: () => element, prop: () => element,
     attr: () => element, text: () => element, toast: () => element,
 }
-global.$ = () => element
+const nodes = new Map()
+global.$ = selector => {
+    if(!nodes.has(selector))
+        nodes.set(selector, {
+            ...element,
+            prop(name, value){this[name] = value; return this},
+            text(value){this.content = value; return this},
+        })
+    return nodes.get(selector)
+}
 global.BaseDownload = class {}
 global.GLOBAL = {files: {
     'one.tiff': {name: 'one.tiff', results: {statistics: {
@@ -51,11 +60,19 @@ async function main(){
         'RootDetector-detection-results.zip',
         '/api/exports/detection/' + 'a'.repeat(32) + '/download',
     ])
+    assert.strictEqual(nodes.get('#detection-export-recovery').hidden, false)
+    assert.strictEqual(nodes.get('#detection-export-recovery').open, false)
+    assert.match(nodes.get('#detection-export-summary-detail').content, /Prepared archive/)
     RootDetectionDownload.on_retry_ready_export()
     assert.deepStrictEqual(downloads[1], downloads[0])
     await RootDetectionDownload.restore_recent_export()
+    assert.strictEqual(nodes.get('#detection-export-recovery').open, false)
+    assert.match(nodes.get('#detection-export-summary-detail').content, /Previous prepared archive/)
     RootDetectionDownload.on_retry_ready_export()
     assert.strictEqual(downloads[2][1], '/api/exports/detection/' + 'b'.repeat(32) + '/download')
+    RootDetectionDownload.show_ready_archive({id: 'c'.repeat(32), state: 'ready'})
+    RootDetectionDownload.mark_archive_previous()
+    assert.match(nodes.get('#detection-export-notice').content, /previous image selection/)
     console.log('Detection export retry tests passed.')
 }
 

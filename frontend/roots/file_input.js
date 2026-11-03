@@ -135,6 +135,7 @@ RootsFileInput = class extends BaseFileInput{
             await RootSecurity.request('/clear_cache', 'POST')
 
         this.reset_uploaded_files()
+        RootDetectionDownload.mark_archive_previous()
         RootsTraining.clear_imported_labels()
         GLOBAL.files = []
         for(const file of files){
