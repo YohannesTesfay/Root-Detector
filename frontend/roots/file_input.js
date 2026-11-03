@@ -20,8 +20,7 @@ RootsFileInput = class extends BaseFileInput{
     }
 
     static is_retryable_upload_error(error){
-        const status = Number(error?.status ?? 0)
-        return status == 0 || [408, 425, 429].includes(status) || status >= 500
+        return RootSecurity.is_transient_request_error(error)
     }
 
     static async ensure_uploaded(file, options={}){
@@ -134,6 +133,7 @@ RootsFileInput = class extends BaseFileInput{
             await RootSecurity.request('/clear_cache', 'POST')
 
         this.reset_uploaded_files()
+        RootDetectionDownload.mark_archive_previous()
         RootsTraining.clear_imported_labels()
         GLOBAL.files = []
         for(const file of files){

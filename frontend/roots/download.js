@@ -6,17 +6,11 @@ async function download_root_zip(filename, zipdata, on_progress=undefined){
     download_blob(filename, blob)
 }
 
-function set_download_all_busy($button, busy, percent=undefined){
+function set_download_all_busy($button, busy){
     $button.toggleClass('is-busy', busy)
         .prop('disabled', busy)
         .attr('aria-busy', String(busy))
-    $button.find('.download-label').prop('hidden', busy)
-    const $status = $button.find('.download-busy').prop('hidden', !busy)
-    if(busy)
-        $status.find('.download-progress-text').text(
-            typeof percent == 'string' ? percent :
-                percent == undefined ? 'Preparing archive…' : `Preparing archive… ${Math.round(percent)}%`
-        )
+    $button.find('.download-busy').prop('hidden', !busy)
 }
 
 function prepared_companions_for_files(filenames){
@@ -72,9 +66,13 @@ RootDetectionDownload = class extends BaseDownload{
             $('body').toast({message:'No detection results are available to download.', class:'warning'})
             return
         }
-        const $button = $(event?.currentTarget ?? event?.target ?? '#detection-download-all')
+        const $button = $(event?.currentTarget ?? event?.target ?? '.tab[data-tab="detection"] .download-all')
+        const $label = $button.find('.download-label')
+        const $announcement = $('#detection-action-announcement')
         this.download_in_progress = true
-        set_download_all_busy($button, true, 'Preparing archive on this computer…')
+        set_download_all_busy($button, true)
+        $label.text(`Preparing ZIP 0 of ${filenames.length}`)
+        $announcement.text(`Preparing ZIP for ${filenames.length} results`)
         try {
             const files = filenames.map(filename => {
                 const file = GLOBAL.files[filename]
@@ -87,8 +85,7 @@ RootDetectionDownload = class extends BaseDownload{
             })
             let archive = await RootSecurity.request('/api/exports/detection', 'POST', {files})
             while(archive.state == 'preparing'){
-                set_download_all_busy($button, true,
-                    `Preparing archive… ${archive.processed} of ${archive.total} image(s)`)
+                $label.text(`Preparing ZIP ${archive.processed} of ${archive.total}`)
                 await sleep(500)
                 archive = await RootSecurity.request(`/api/exports/detection/${archive.id}`, 'GET')
             }
@@ -96,27 +93,58 @@ RootDetectionDownload = class extends BaseDownload{
                 throw new Error(archive.error || 'Archive preparation did not finish. Keep this window open and retry.')
             this.show_ready_archive(archive)
             this.on_retry_ready_export()
+            $announcement.text('ZIP download started. Check that the saved file opens.')
         } catch(error) {
+            $announcement.text('ZIP download failed. See Alerts.')
             $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false
+            $label.text('Download All')
             set_download_all_busy($button, false)
         }
     }
 
     static show_ready_archive(archive, restored=false){
         this.ready_export = archive
-        $('#detection-export-retry').prop('hidden', false)
-        $('#detection-export-notice').prop('hidden', false).text(
-            `${restored ? 'A previously prepared detection archive is available; check that it belongs to the intended images. ' : 'Detection archive ready. '}`
-            + 'After choosing Save, verify the ZIP exists and opens. If the save fails, use Save Ready Archive again; this archive remains available after restarting Root Detector.'
-        )
+        this.render_ready_archive(restored)
+    }
+
+    static render_ready_archive(previous){
+        const archive = this.ready_export
+        const date = new Date(archive.created_utc || NaN)
+        const details = []
+        if(!Number.isNaN(date.getTime()))
+            details.push(`Prepared ${date.toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'medium'})}`)
+        if(Number.isInteger(archive.total))
+            details.push(`${archive.total.toLocaleString()} ${archive.total == 1 ? 'image' : 'images'}`)
+        if(Number.isFinite(archive.bytes)){
+            const units = ['B', 'KB', 'MB', 'GB', 'TB']
+            let size = archive.bytes
+            let unit = 0
+            while(size >= 1000 && unit < units.length - 1){
+                size /= 1000
+                unit += 1
+            }
+            details.push(`${size.toLocaleString(undefined, {maximumFractionDigits: 1})} ${units[unit]}`)
+        }
+        if(previous)
+            details.push('Previous image selection')
+        const $retry = $('#detection-export-retry')
+        const tooltip = [$retry.attr('data-tooltip-prefix'), details.join(' · ')].filter(Boolean).join('\n')
+        $('#detection-export-details').text(tooltip)
+        $retry.attr('title', tooltip).prop('hidden', false)
+    }
+
+    static mark_archive_previous(){
+        if(!this.ready_export)
+            return
+        this.render_ready_archive(true)
     }
 
     static on_retry_ready_export(){
         if(!this.ready_export || this.ready_export.state != 'ready')
             return
-        downloadURI('RootDetector-detection-results.zip',
+        downloadURI(this.ready_export.download_name,
             `/api/exports/detection/${this.ready_export.id}/download`)
     }
 
@@ -139,8 +167,17 @@ RootDetectionDownload = class extends BaseDownload{
         var zipdata                     = {};
         var segmentation                = f.results.segmentation
         var skeleton                    = f.results.skeleton
-        zipdata[`${segmentation.name}`] = segmentation
-        zipdata[`${skeleton.name}`]     = skeleton
+        for(const result of [segmentation, skeleton]){
+            const name = is_string(result) ? result : result.name
+            zipdata[name] = is_string(result)
+                ? (async () => {
+                    const blob = await fetch_as_blob(url_for_image(result))
+                    if(!blob)
+                        throw new Error(`Could not load ${name} for download. Retry this image.`)
+                    return blob
+                })()
+                : result
+        }
         zipdata[`statistics.csv`]       = this.csv_data_for_file(filename)
         if(f.preparation)
             zipdata['preparation-manifest.json'] = JSON.stringify({

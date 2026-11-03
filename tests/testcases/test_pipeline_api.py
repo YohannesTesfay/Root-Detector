@@ -43,6 +43,53 @@ def png_bytes(color=0):
     return output.getvalue()
 
 
+def test_manual_detection_retries_cannot_process_same_cache_concurrently(tmp_path, monkeypatch):
+    monkeypatch.setenv('ROOT_PATH', os.getcwd())
+    monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
+    monkeypatch.setenv('DO_NOT_RELOAD', '1')
+    monkeypatch.setattr('backend.settings.ensure_pretrained_models', lambda: None)
+    monkeypatch.setattr('backend.settings.Settings', FakeSettings)
+    app = App()
+    app.testing = True
+    filename = 'retry.png'
+    with open(os.path.join(app.cache_path, filename), 'wb') as output:
+        output.write(png_bytes())
+
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def detect(path, _settings):
+        calls.append(path)
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(5)
+        return detection_result(path)
+
+    monkeypatch.setattr('backend.app.root_detection.process_image', detect)
+    responses = []
+
+    def request():
+        with app.test_client() as client:
+            responses.append(client.post('/process_image/' + filename, headers=request_headers(app)))
+
+    first = threading.Thread(target=request)
+    second = threading.Thread(target=request)
+    first.start()
+    assert entered.wait(2)
+    second.start()
+    try:
+        second.join(0.1)
+        assert len(calls) == 1, 'A retry must wait for the first inference to finish'
+    finally:
+        release.set()
+        first.join(5)
+        second.join(5)
+    assert not first.is_alive() and not second.is_alive()
+    assert len(calls) == 2
+    assert [response.status_code for response in responses] == [200, 200]
+
+
 def test_pipeline_api_reports_validation_busy_completion_and_missing_run(tmp_path, monkeypatch):
     monkeypatch.setenv('ROOT_PATH', os.getcwd())
     monkeypatch.setenv('INSTANCE_PATH', str(tmp_path))
@@ -121,7 +168,7 @@ def test_local_request_protection_and_security_headers(tmp_path, monkeypatch):
     session = client.get('/api/session', headers={'Host': 'localhost'})
     assert session.status_code == 200
     assert session.get_json()['token'] == app.session_token
-    assert session.get_json()['asset_schema'] == 'rootdetector-web-app-rc1-2'
+    assert session.get_json()['asset_schema'] == 'rootdetector-web-app-rc1-6'
     assert session.headers['X-Content-Type-Options'] == 'nosniff'
     assert session.headers['X-Frame-Options'] == 'DENY'
     assert "frame-ancestors 'none'" in session.headers['Content-Security-Policy']

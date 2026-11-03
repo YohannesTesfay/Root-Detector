@@ -36,11 +36,25 @@ body {
     background: white;
 }
 
+#workflow-guide {
+    margin-block: 0.5rem;
+}
+
+#workflow-guide > p {
+    margin: 0;
+}
+
+/* Suppress the shared template's large spacer only before the root tabs. */
+body > .ui.hidden.section.divider:has(+ #main-container) {
+    display: none;
+}
+
 #main-container > .tabs.menu {
     position: sticky;
     top: var(--root-toolbar-height, 0px);
     z-index: 104;
     background: white;
+    margin-block-start: 0.35rem;
 }
 
 #main-container > .ui.tab.segment > .ui.top.attached.menu {
@@ -50,20 +64,49 @@ body {
     background: white;
 }
 
-.download-all .download-busy[hidden],
-.download-all .download-label[hidden] {
+.ui.menu.detection-actions-menu {
+    flex-wrap: wrap;
+    margin-block-start: 0;
+    min-height: 2.45rem;
+}
+
+.ui.menu.detection-actions-menu > button.item {
+    padding-block: 0.62em;
+}
+
+.ui.menu.detection-actions-menu > button.item.process-all,
+.ui.menu.detection-actions-menu > button.item.download-all {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 14rem;
+    max-width: 100%;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.ui.menu.detection-actions-menu > button.item.download-all {
+    width: 15rem;
+}
+
+.download-all .download-busy[hidden] {
     display: none;
 }
 
-#detection-export-retry[hidden],
-#detection-export-notice[hidden] {
+.detection-actions-menu .download-all.is-busy > .download.icon {
     display: none;
 }
 
-.detection-export-notice {
-    white-space: normal;
-    line-height: 1.35;
-    color: #24586a;
+.detection-screen-reader-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+#file-import-menu .menu > #detection-export-retry[hidden] {
+    display: none !important;
 }
 
 .download-all .download-busy .icon {
@@ -71,7 +114,8 @@ body {
 }
 
 .ui.button.download-all.is-busy,
-.ui.button.download-all.is-busy:disabled {
+.ui.button.download-all.is-busy:disabled,
+.ui.menu.detection-actions-menu .process-all.is-busy:disabled {
     opacity: 1 !important;
     color: #2b3439 !important;
     cursor: progress;
@@ -247,7 +291,7 @@ body {
 }
 
 #image-preparation-tools {
-    margin: 0 0 1rem;
+    margin: 0 0 0.25rem;
 }
 
 #image-preparation-tools > summary {

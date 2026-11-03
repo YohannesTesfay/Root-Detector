@@ -11,6 +11,7 @@ import shutil
 import signal
 import tempfile
 import threading
+import time
 import urllib.parse
 from pathlib import Path
 import flask
@@ -54,6 +55,7 @@ class App(BaseApp):
         )
         self.preparation_stages = {}
         self.preparation_lock = threading.RLock()
+        self.manual_detection_lock = threading.Lock()
         self.pipeline_manager = backend.pipeline.PipelineManager(
             self.settings,
             cache_path=self.cache_path,
@@ -266,16 +268,17 @@ class App(BaseApp):
         return flask.jsonify(self.detection_exports.status(export_id))
 
     def download_detection_export(self, export_id):
-        response = flask.send_file(
-            self.detection_exports.archive_path(export_id),
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=backend.detection_exports.ARCHIVE_NAME,
-            conditional=True,
-        )
-        self.detection_exports.begin_download()
+        path, name = self.detection_exports.begin_download(export_id)
+        try:
+            response = flask.send_file(
+                path, mimetype='application/zip', as_attachment=True,
+                download_name=name, conditional=True,
+            )
+        except Exception:
+            self.detection_exports.end_download(export_id)
+            raise
         response.response = ClosingIterator(
-            response.response, [self.detection_exports.end_download],
+            response.response, [lambda: self.detection_exports.end_download(export_id)],
         )
         return response
 
@@ -754,16 +757,30 @@ class App(BaseApp):
         return flask.jsonify({'shutdown': True})
 
     def process_image(self, imagename):
-        if self.detection_exports.active():
-            return self.json_error('export_busy', 'Wait for archive preparation before reprocessing images.', 409)
-        full_path = backend.security.safe_resolve(
-            self.cache_path,
-            imagename,
-            backend.security.SUPPORTED_IMAGE_EXTENSIONS,
-            must_exist=True,
-        )
-        result = root_detection.process_image(full_path, self.settings)
-        return flask.jsonify(result)
+        # A lost browser response can cause a retry while the first inference is
+        # still running. Serialize those attempts to avoid concurrent cache writes.
+        with self.manual_detection_lock:
+            if self.detection_exports.active():
+                return self.json_error('export_busy', 'Wait for archive preparation before reprocessing images.', 409)
+            full_path = backend.security.safe_resolve(
+                self.cache_path,
+                imagename,
+                backend.security.SUPPORTED_IMAGE_EXTENSIONS,
+                must_exist=True,
+            )
+            started = time.monotonic()
+            backend.diagnostics.logger().info('Manual detection started: name=%s.', imagename)
+            try:
+                result = root_detection.process_image(full_path, self.settings)
+            except Exception:
+                backend.diagnostics.logger().exception('Manual detection failed: name=%s.', imagename)
+                raise
+            backend.diagnostics.logger().info(
+                'Manual detection completed: name=%s elapsed_ms=%d.',
+                imagename,
+                int((time.monotonic() - started) * 1000),
+            )
+            return flask.jsonify(result)
 
     def postprocess_detection(self, filename):
         if self.detection_exports.active():

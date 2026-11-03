@@ -17,7 +17,7 @@
   </div>
 
   <div class="ui simple dropdown item" id="file-import-menu" role="button" tabindex="0"
-       aria-haspopup="menu" aria-expanded="false" aria-label="Open file import menu">
+       aria-haspopup="menu" aria-expanded="false" aria-label="Open Files menu">
     <i class="file icon"></i>
     <span class="text">Files</span>
     <i class="dropdown icon"></i>
@@ -50,6 +50,15 @@
       </a>
       <input type="file" id="results-input" style="display:none"
              onchange="{{ app }}.FileInput.on_results_select(event)" accept=".zip,.png" multiple>
+
+      <a href="#" class="ui icon item" id="detection-export-retry" hidden
+              data-tooltip-prefix="Download the last prepared detection ZIP again without rerunning detection."
+              aria-describedby="detection-export-details"
+              onclick="{{ app }}.Download.on_retry_ready_export(); return false;">
+        <i class="download icon" aria-hidden="true"></i>
+        Download Last Detection ZIP
+        <span id="detection-export-details" hidden></span>
+      </a>
 
       <div class="ui divider"></div>
       {{ load_exclude_masks_item(app) | indent(6) }}

@@ -18,7 +18,10 @@ RootDetectorApp = class extends BaseApp {
 
         $('#filetable.accordion').accordion({
             duration: 0,
-            onOpening: function() { GLOBAL.App.ImageLoading.on_accordion_open(this) },
+            onOpening: function() {
+                GLOBAL.App.ImageLoading.on_accordion_open(this)
+                RootDetection.show_result_preview($(this).attr('filename'))
+            },
         })
         $('.tabs.menu .item').tab({onLoad: path => {
             if(path == 'training')

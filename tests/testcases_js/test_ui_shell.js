@@ -30,21 +30,18 @@ assert.strictEqual(context.RootAlerts.items.length, 0)
 context.BaseDownload = class {}
 vm.runInContext(fs.readFileSync('frontend/roots/download.js', 'utf8'), context)
 const label = {hidden: false, prop(name, value){this[name] = value; return this}}
-const progress = {text(value){this.value = value; return this}}
-const status = {hidden: true, prop(name, value){this[name] = value; return this},
-    find(){return progress}}
+const status = {hidden: true, prop(name, value){this[name] = value; return this}}
 const button = {busy: false, disabled: false, attributes: {},
     toggleClass(name, value){assert.strictEqual(name, 'is-busy'); this.busy = value; return this},
     prop(name, value){this[name] = value; return this},
     attr(name, value){this.attributes[name] = value; return this},
     find(selector){return selector == '.download-label' ? label : status},
 }
-context.set_download_all_busy(button, true, 42.6)
+context.set_download_all_busy(button, true)
 assert.strictEqual(button.busy, true)
 assert.strictEqual(button.disabled, true)
-assert.strictEqual(label.hidden, true)
+assert.strictEqual(label.hidden, false)
 assert.strictEqual(status.hidden, false)
-assert.strictEqual(progress.value, 'Preparing archive… 43%')
 context.set_download_all_busy(button, false)
 assert.strictEqual(label.hidden, false)
 assert.strictEqual(status.hidden, true)
