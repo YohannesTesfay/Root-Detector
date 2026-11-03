@@ -6,17 +6,11 @@ async function download_root_zip(filename, zipdata, on_progress=undefined){
     download_blob(filename, blob)
 }
 
-function set_download_all_busy($button, busy, percent=undefined){
+function set_download_all_busy($button, busy){
     $button.toggleClass('is-busy', busy)
         .prop('disabled', busy)
         .attr('aria-busy', String(busy))
-    $button.find('.download-label').prop('hidden', busy)
-    const $status = $button.find('.download-busy').prop('hidden', !busy)
-    if(busy)
-        $status.find('.download-progress-text').text(
-            typeof percent == 'string' ? percent :
-                percent == undefined ? 'Preparing archive…' : `Preparing archive… ${Math.round(percent)}%`
-        )
+    $button.find('.download-busy').prop('hidden', !busy)
 }
 
 function prepared_companions_for_files(filenames){
@@ -72,9 +66,11 @@ RootDetectionDownload = class extends BaseDownload{
             $('body').toast({message:'No detection results are available to download.', class:'warning'})
             return
         }
-        const $button = $(event?.currentTarget ?? event?.target ?? '#detection-download-all')
+        const $button = $(event?.currentTarget ?? event?.target ?? '.tab[data-tab="detection"] .download-all')
+        const $status = $('.detection-actions-menu .detection-batch-summary')
         this.download_in_progress = true
-        set_download_all_busy($button, true, 'Preparing archive on this computer…')
+        set_download_all_busy($button, true)
+        $status.text(`Preparing ZIP: 0/${filenames.length}`).show()
         try {
             const files = filenames.map(filename => {
                 const file = GLOBAL.files[filename]
@@ -87,8 +83,7 @@ RootDetectionDownload = class extends BaseDownload{
             })
             let archive = await RootSecurity.request('/api/exports/detection', 'POST', {files})
             while(archive.state == 'preparing'){
-                set_download_all_busy($button, true,
-                    `Preparing archive… ${archive.processed} of ${archive.total} image(s)`)
+                $status.text(`Preparing ZIP: ${archive.processed}/${archive.total}`)
                 await sleep(500)
                 archive = await RootSecurity.request(`/api/exports/detection/${archive.id}`, 'GET')
             }
@@ -96,7 +91,9 @@ RootDetectionDownload = class extends BaseDownload{
                 throw new Error(archive.error || 'Archive preparation did not finish. Keep this window open and retry.')
             this.show_ready_archive(archive)
             this.on_retry_ready_export()
+            $status.text('ZIP ready — check saved file.')
         } catch(error) {
+            $status.text('ZIP preparation failed — see alert.')
             $('body').toast({message:`Detection download failed: ${RootSecurity.error_message(error)}`, class:'error'})
         } finally {
             this.download_in_progress = false

@@ -10,7 +10,6 @@ RootDetection = class extends BaseDetection{
     static async on_process_all(event){
         const filenames = Object.keys(GLOBAL.files)
         const $button = $(event.currentTarget || event.target)
-        const $progress = $button.siblings('.processing')
         const $summary = $button.siblings('.detection-batch-summary')
         $button.hide()
         $summary.hide().text('')
@@ -19,8 +18,8 @@ RootDetection = class extends BaseDetection{
         const failed = []
         let attempted = 0
         let completed = 0
-        const progress_text = () => `${completed} of ${filenames.length} attempted (${filenames.length ? Math.round(100 * completed / filenames.length) : 100}%)`
-        $progress.find('.processing-progress-text').text(`Processing ${progress_text()}`)
+        const progress_text = () => `${completed}/${filenames.length}`
+        $summary.text(`Processing ${progress_text()}`).show()
         for(const filename of filenames){
             if(GLOBAL.cancel_requested)
                 break
@@ -38,7 +37,7 @@ RootDetection = class extends BaseDetection{
                 })
             }
             completed += 1
-            $progress.find('.processing-progress-text').text(`Processing ${progress_text()}`)
+            $summary.text(`Processing ${progress_text()}`)
         }
         if(failed.length)
             $('body').toast({
@@ -50,7 +49,7 @@ RootDetection = class extends BaseDetection{
             })
         $button.show()
         $button.siblings('.cancel-processing, .processing').hide()
-        $summary.text(`${GLOBAL.cancel_requested ? 'Stopped' : 'Finished'}: ${progress_text()}${failed.length ? `; ${failed.length} failed` : ''}`).show()
+        $summary.text(`${GLOBAL.cancel_requested ? 'Stopped' : 'Done'}: ${progress_text()}${failed.length ? ` · ${failed.length} failed` : ''}`).show()
         return {failed: failed, cancelled: GLOBAL.cancel_requested}
     }
 

@@ -9,15 +9,14 @@
     download_menu=None,
     show_durable_export=False
 ) %}
-<div class="ui top attached menu" style="border-top-width:0px;">
+<div class="ui top attached menu{% if show_durable_export %} detection-actions-menu{% endif %}" style="border-top-width:0px;">
   <button type="button" class="ui button process-all item"
           onclick="{{ callback_on_process_all }}(event)" title="Process every loaded image">
     <i class="blue play icon" aria-hidden="true"></i>Process All
   </button>
-  <span class="processing item" style="display:none" role="status">
-    <i class="loading spinner icon" aria-hidden="true"></i><span class="processing-progress-text">Processing...</span>
+  <span class="processing item" style="display:none">
+    <i class="loading spinner icon" aria-hidden="true"></i>Processing
   </span>
-  <span class="detection-batch-summary item" style="display:none" role="status" aria-live="polite"></span>
   <button type="button" class="ui button cancel-processing item"
           onclick="{{ callback_on_cancel }}(event)" style="display:none" title="Cancel processing">
     <i class="red times icon" aria-hidden="true"></i>Cancel
@@ -28,8 +27,11 @@
   <button type="button" class="ui button download-all item"
           onclick="{{ callback_on_download_all }}(event)" title="Download all available results">
     <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
-    <span class="download-busy" hidden role="status"><i class="spinner loading icon" aria-hidden="true"></i><span class="download-progress-text">Preparing download…</span></span>
+    <span class="download-busy" hidden aria-hidden="true"><i class="spinner loading icon"></i></span>
   </button>
+  {%- endif %}
+  {% if show_durable_export -%}
+  <span class="detection-batch-summary item" style="display:none" role="status" aria-live="polite"></span>
   {%- endif %}
 </div>
 {% if show_durable_export -%}

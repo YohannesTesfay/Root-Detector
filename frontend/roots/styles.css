@@ -50,8 +50,32 @@ body {
     background: white;
 }
 
-.download-all .download-busy[hidden],
-.download-all .download-label[hidden] {
+.detection-actions-menu {
+    flex-wrap: wrap;
+}
+
+.detection-actions-menu .process-all,
+.detection-actions-menu .processing {
+    box-sizing: border-box;
+    flex: 0 0 9rem;
+    justify-content: center;
+}
+
+.detection-actions-menu .download-all {
+    box-sizing: border-box;
+    flex: 0 0 10.5rem;
+    justify-content: center;
+}
+
+.detection-actions-menu .detection-batch-summary {
+    box-sizing: border-box;
+    flex: 0 0 100%;
+    max-width: 100%;
+    border-top: 1px solid #e1e5e7;
+    white-space: normal;
+}
+
+.download-all .download-busy[hidden] {
     display: none;
 }
 

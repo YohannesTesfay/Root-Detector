@@ -7,6 +7,7 @@ const repo = path.resolve(__dirname, '..', '..')
 const element = {
     find: () => element, toggleClass: () => element, prop: () => element,
     attr: () => element, text: () => element, toast: () => element,
+    show: () => element, hide: () => element,
 }
 const nodes = new Map()
 global.$ = selector => {
@@ -63,6 +64,10 @@ async function main(){
     assert.strictEqual(nodes.get('#detection-export-recovery').hidden, false)
     assert.strictEqual(nodes.get('#detection-export-recovery').open, false)
     assert.match(nodes.get('#detection-export-summary-detail').content, /Prepared archive/)
+    assert.strictEqual(
+        nodes.get('.detection-actions-menu .detection-batch-summary').content,
+        'ZIP ready — check saved file.',
+    )
     RootDetectionDownload.on_retry_ready_export()
     assert.deepStrictEqual(downloads[1], downloads[0])
     await RootDetectionDownload.restore_recent_export()

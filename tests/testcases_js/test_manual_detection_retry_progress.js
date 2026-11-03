@@ -8,10 +8,8 @@ const files = {'one.tiff': {set_results(result){this.results = result}}}
 const delays = []
 const requests = []
 const reported = []
-const progress = []
 const summaries = []
-const progressText = {text(value){progress.push(value); return this}}
-const progressItem = {find(){return progressText}, show(){return this}, hide(){return this}, removeClass(){return this}}
+const progressItem = {show(){return this}, hide(){return this}, removeClass(){return this}}
 const summaryItem = {text(value){summaries.push(value); return this}, show(){return this}, hide(){return this}}
 const button = {
     hide(){return this}, show(){return this},
@@ -86,10 +84,10 @@ async function main(){
     }
     const batch = await context.RootDetection.on_process_all({currentTarget: button})
     assert.strictEqual(batch.failed.length, 1)
-    assert(progress.includes('Processing 0 of 3 attempted (0%)'))
-    assert(progress.includes('Processing 2 of 3 attempted (67%)'))
-    assert(progress.includes('Processing 3 of 3 attempted (100%)'))
-    assert(summaries.includes('Finished: 3 of 3 attempted (100%); 1 failed'))
+    assert(summaries.includes('Processing 0/3'))
+    assert(summaries.includes('Processing 2/3'))
+    assert(summaries.includes('Processing 3/3'))
+    assert(summaries.includes('Done: 3/3 · 1 failed'))
     console.log('Manual detection retry and batch progress tests passed.')
 }
 
