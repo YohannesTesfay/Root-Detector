@@ -1,7 +1,7 @@
 RootSecurity = class {
     static token = undefined
     static limits = undefined
-    static asset_schema = 'rootdetector-web-app-rc1-3'
+    static asset_schema = 'rootdetector-web-app-rc1-4'
 
     static async initialize(){
         const session = await $.get('/api/session')
@@ -46,6 +46,11 @@ RootSecurity = class {
             contentType: data == undefined ? undefined : 'application/json',
             data: data == undefined ? undefined : JSON.stringify(data),
         })
+    }
+
+    static is_transient_request_error(error){
+        const status = Number(error?.status)
+        return status == 0 || [408, 425, 429].includes(status) || status >= 500
     }
 
     static error_message(error, fallback='The request could not be completed.'){

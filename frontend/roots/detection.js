@@ -10,17 +10,23 @@ RootDetection = class extends BaseDetection{
     static async on_process_all(event){
         const filenames = Object.keys(GLOBAL.files)
         const $button = $(event.currentTarget || event.target)
+        const $progress = $button.siblings('.processing')
+        const $summary = $button.siblings('.detection-batch-summary')
         $button.hide()
+        $summary.hide().text('')
         $button.siblings('.cancel-processing, .processing').show().removeClass('disabled')
         GLOBAL.cancel_requested = false
         const failed = []
         let attempted = 0
+        let completed = 0
+        const progress_text = () => `${completed} of ${filenames.length} attempted (${filenames.length ? Math.round(100 * completed / filenames.length) : 100}%)`
+        $progress.find('.processing-progress-text').text(`Processing ${progress_text()}`)
         for(const filename of filenames){
             if(GLOBAL.cancel_requested)
                 break
             attempted += 1
             try {
-                await this.process_image(filename)
+                await this.process_image(filename, true, {is_cancelled: () => GLOBAL.cancel_requested})
             } catch(error) {
                 failed.push({filename: filename, error: error})
                 $('body').toast({
@@ -31,6 +37,8 @@ RootDetection = class extends BaseDetection{
                     class: 'error', displayTime: 0,
                 })
             }
+            completed += 1
+            $progress.find('.processing-progress-text').text(`Processing ${progress_text()}`)
         }
         if(failed.length)
             $('body').toast({
@@ -42,10 +50,11 @@ RootDetection = class extends BaseDetection{
             })
         $button.show()
         $button.siblings('.cancel-processing, .processing').hide()
+        $summary.text(`${GLOBAL.cancel_requested ? 'Stopped' : 'Finished'}: ${progress_text()}${failed.length ? `; ${failed.length} failed` : ''}`).show()
         return {failed: failed, cancelled: GLOBAL.cancel_requested}
     }
 
-    static async process_image(filename, upload_image=true){
+    static async process_image(filename, upload_image=true, options={}){
         await this.set_results(filename, undefined)
         this.set_processing(filename)
 
@@ -59,10 +68,22 @@ RootDetection = class extends BaseDetection{
         try {
             if(upload_image)
                 await RootsFileInput.ensure_uploaded(GLOBAL.files[filename])
-            const results = await RootSecurity.request(
-                `/process_image/${encodeURIComponent(filename)}`,
-                'POST',
-            )
+            let results
+            for(let attempt = 1; attempt <= 3; attempt += 1){
+                try {
+                    results = await RootSecurity.request(
+                        `/process_image/${encodeURIComponent(filename)}`,
+                        'POST',
+                    )
+                    break
+                } catch(error) {
+                    if(attempt == 3 || !RootSecurity.is_transient_request_error(error)
+                            || options.is_cancelled?.())
+                        throw error
+                    console.warn(`Transient detection request failure for ${filename}; retrying (${attempt + 1}/3).`, error)
+                    await sleep(500 * attempt)
+                }
+            }
             await this.set_results(filename, results)
             return results
         } catch(error) {

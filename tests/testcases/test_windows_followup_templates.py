@@ -168,7 +168,8 @@ def test_large_batch_upload_is_resumable_and_errors_are_readable():
     assert 'RootsFileInput.ensure_uploaded' in pipeline
     assert 'Already uploaded in this session.' in pipeline
     assert 'max_attempts: 3' in pipeline
-    assert "status == 0" in file_input
+    assert 'RootSecurity.is_transient_request_error(error)' in file_input
+    assert 'status == 0' in security
     assert '[object Object]' not in pipeline
     assert 'responseJSON?.message' in security
     assert 'The connection to the local Root Detector process was interrupted.' in security
@@ -189,7 +190,7 @@ def test_root_page_has_mixed_release_recovery_bootstrap():
     assert 'StartRootDetector.bat' in template
     assert "error?.code == 'asset_schema_mismatch'" in template
     assert "error?.status == 0" in template
-    assert 'rootdetector-web-app-rc1-3' in security
+    assert 'rootdetector-web-app-rc1-4' in security
 
 
 def test_tracking_tab_explains_detection_only_runs():

@@ -20,8 +20,7 @@ RootsFileInput = class extends BaseFileInput{
     }
 
     static is_retryable_upload_error(error){
-        const status = Number(error?.status ?? 0)
-        return status == 0 || [408, 425, 429].includes(status) || status >= 500
+        return RootSecurity.is_transient_request_error(error)
     }
 
     static async ensure_uploaded(file, options={}){
@@ -129,6 +128,8 @@ RootsFileInput = class extends BaseFileInput{
         const duplicates = filenames.filter((name, index) => filenames.indexOf(name) != index)
         if(duplicates.length)
             throw new Error(`Duplicate filenames are not supported: ${[...new Set(duplicates)].join(', ')}`)
+
+        $('.detection-batch-summary').hide().text('')
 
         if(!window.location.href.startsWith('file://'))
             await RootSecurity.request('/clear_cache', 'POST')

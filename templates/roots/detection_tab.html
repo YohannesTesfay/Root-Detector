@@ -15,8 +15,9 @@
     <i class="blue play icon" aria-hidden="true"></i>Process All
   </button>
   <span class="processing item" style="display:none" role="status">
-    <i class="loading spinner icon" aria-hidden="true"></i>Processing...
+    <i class="loading spinner icon" aria-hidden="true"></i><span class="processing-progress-text">Processing...</span>
   </span>
+  <span class="detection-batch-summary item" style="display:none" role="status" aria-live="polite"></span>
   <button type="button" class="ui button cancel-processing item"
           onclick="{{ callback_on_cancel }}(event)" style="display:none" title="Cancel processing">
     <i class="red times icon" aria-hidden="true"></i>Cancel
