@@ -36,7 +36,8 @@ def test_associate_predictions_to_annotations_basic():
         (predictions[2], annotations[0]),
     ]
 
-def test_associate_predictions_to_annotations_zipped():
+def test_associate_predictions_to_annotations_zipped(tmp_path, monkeypatch):
+    monkeypatch.setattr(backend.cli, 'get_cache_path', lambda name='': str(tmp_path / name))
     annotations = [
         'some_other_folder/BBB.tif.png',
         'AAA.png',
@@ -167,4 +168,3 @@ def test_cli_processing_keyboard_interrupt_returns_130(tmp_path, monkeypatch):
         lambda *_args: (_ for _ in ()).throw(KeyboardInterrupt()),
     )
     assert backend.cli.CLI.process(args) == 130
-

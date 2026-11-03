@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 import PIL.Image
+import pytest
 
 from backend import root_detection
 from backend import root_tracking
@@ -99,6 +100,18 @@ def test_exclusionmask_cache_tracks_model_and_custom_mask_hashes(tmp_path, monke
     assert changed is not None
     assert changed.all()
     assert changed_paths != custom_paths
+
+
+def test_mismatched_custom_exclusion_mask_cannot_be_cached(tmp_path):
+    image_path = str(tmp_path / 'input.png')
+    custom_path = str(tmp_path / 'input.exclusionmask.png')
+    PIL.Image.new('RGB', (8, 8)).save(image_path)
+    PIL.Image.new('L', (7, 8)).save(custom_path)
+
+    with pytest.raises(ValueError, match='same original-pixel rectangle'):
+        root_detection.maybe_compute_exclusionmask(image_path, FakeSettings())
+    paths = root_detection.exclusionmask_cache_paths(image_path, FakeSettings())
+    assert not os.path.exists(paths['array'])
 
 
 def test_segmentation_cache_key_includes_model_file_hash(tmp_path, monkeypatch):

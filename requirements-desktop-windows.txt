@@ -1,0 +1,3 @@
+# Separate lightweight WebView2 host; installed only for Windows packaging.
+pywebview==5.0.4
+pythonnet==3.0.4

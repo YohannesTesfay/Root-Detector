@@ -2,33 +2,45 @@
 {% import   'base/content_menu.html'  as base_content_menu %}
 {% import   'base/detection_tab.html' as base_detection_tab %}
 
+{% macro cancel_button(callback) %}
+  <button type="button" class="ui button cancel-processing item"
+          onclick="{{ callback }}(event)" style="display:none" title="Cancel processing">
+    <i class="red times icon" aria-hidden="true"></i>Cancel
+  </button>
+{% endmacro %}
+
 {% macro filetable_menu(
     callback_on_process_all="",
     callback_on_cancel="",
     callback_on_download_all="",
-    download_menu=None
+    download_menu=None,
+    show_durable_export=False
 ) %}
-<div class="ui top attached menu" style="border-top-width:0px;">
+<div class="ui top attached menu{% if show_durable_export %} detection-actions-menu{% endif %}" style="border-top-width:0px;">
   <button type="button" class="ui button process-all item"
           onclick="{{ callback_on_process_all }}(event)" title="Process every loaded image">
-    <i class="blue play icon" aria-hidden="true"></i>Process All
+    <i class="blue play icon" aria-hidden="true"></i>{% if show_durable_export %}<span class="process-label">Process All</span>{% else %}Process All{% endif %}
   </button>
-  <span class="processing item" style="display:none" role="status">
-    <i class="loading spinner icon" aria-hidden="true"></i>Processing...
+  {% if not show_durable_export %}
+  <span class="processing item" style="display:none">
+    <i class="loading spinner icon" aria-hidden="true"></i>Processing
   </span>
-  <button type="button" class="ui button cancel-processing item"
-          onclick="{{ callback_on_cancel }}(event)" style="display:none" title="Cancel processing">
-    <i class="red times icon" aria-hidden="true"></i>Cancel
-  </button>
+  {% endif %}
+  {% if not show_durable_export %}{{ cancel_button(callback_on_cancel) }}{% endif %}
   {% if download_menu -%}
     {{ download_menu | indent }}
   {% else %}
   <button type="button" class="ui button download-all item"
           onclick="{{ callback_on_download_all }}(event)" title="Download all available results">
-    <i class="download icon" aria-hidden="true"></i>Download All
+    <i class="download icon" aria-hidden="true"></i><span class="download-label">Download All</span>
+    <span class="download-busy" hidden aria-hidden="true"><i class="spinner loading icon"></i></span>
   </button>
   {%- endif %}
+  {% if show_durable_export %}{{ cancel_button(callback_on_cancel) }}{% endif %}
 </div>
+{% if show_durable_export -%}
+<span id="detection-action-announcement" class="detection-screen-reader-status" role="status"></span>
+{%- endif %}
 {% endmacro %}
 
 {% macro skeleton_checkbox() %}
@@ -71,10 +83,36 @@
 {% endmacro %}
 
 {% macro detection_tab(app) %}
+  <details class="ui segment" id="image-preparation-tools">
+    <summary>Advanced image preparation (optional)</summary>
+    <div class="content">
+      <p>Most supported images can be loaded directly through <strong>Files → Load Input Images</strong>
+         or <strong>Load Input Folder</strong>. Cropping is not required for ordinary detection and
+         tracking. If you need a smaller region, keep the originals and review the same physical
+         area on every date before comparing results.</p>
+      <div class="preparation-actions">
+        <button type="button" class="ui button" id="prepare-images-button"
+                title="Create lossless cropped copies of supported images"
+                onclick="if(this.classList.contains('disabled')) return; document.getElementById('preparation-input').click();">
+          <i class="crop icon" aria-hidden="true"></i>Prepare / Crop Images
+        </button>
+        <button type="button" class="ui button" id="load-prepared-images-button"
+                title="Restore prepared PNG copies and their crop provenance"
+                onclick="if(this.classList.contains('disabled')) return; document.getElementById('prepared-import-input').click();">
+          <i class="archive icon" aria-hidden="true"></i>Load Prepared Images
+        </button>
+      </div>
+      <input type="file" id="preparation-input" style="display:none"
+             onchange="RootPreparation.on_files_select(event)" accept=".png,.jpg,.jpeg,.tif,.tiff" multiple>
+      <input type="file" id="prepared-import-input" style="display:none"
+             onchange="{{ app }}.FileInput.on_preparedfiles_select(event)" accept=".zip,.png,.json" multiple>
+    </div>
+  </details>
   {{ filetable_menu(
       callback_on_process_all=app+".Detection.on_process_all",
       callback_on_cancel=app+".Detection.on_cancel_processing",
-      callback_on_download_all=app+".Download.on_download_all"
+      callback_on_download_all=app+".Download.on_download_all",
+      show_durable_export=True
   ) }}
   {{ base_detection_tab.base_main_table(app) }}
 {% endmacro %}

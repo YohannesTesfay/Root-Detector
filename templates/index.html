@@ -4,13 +4,13 @@
 {% import 'base/modals.html'          as     base_modals %}
 {% from   'roots/main_container.html' import main_container %}
 {% from   'roots/detection_tab.html'  import filetable_row_template %}
-{% from   'roots/modals.html'         import modal_settings, modal_pipeline, modal_training_progress %}
+{% from   'roots/modals.html'         import modal_settings, modal_pipeline, modal_training_progress, modal_preparation, modal_about %}
 
 {% set app = "RootDetectorApp" %}
 
 <html>
 <head>
-    <title>DigIT RootDetector</title>
+    <title>Root Detector</title>
     <script>
       window.RootDetectorBoot = {
         failed_assets: [],
@@ -31,22 +31,23 @@
         show_recovery: function(kind, error) {
           const messages = {
             assets: [
-              'RootDetector could not load its browser files.',
-              'Start <code>StartRootDetector.bat</code> from one complete extracted folder, '
-                + 'then reload. If you changed packages, close old RootDetector tabs first.',
+              'Root Detector could not load its browser files.',
+              'Close and reopen this Root Detector window. If you use the browser fallback, '
+                + 'start <code>StartRootDetector.bat</code> from one complete extracted folder. '
+                + 'Close old windows and tabs from other packages first.',
             ],
             connection: [
-              'RootDetector is not reachable.',
+              'Root Detector is not reachable.',
               'Start <code>StartRootDetector.bat</code> from the extracted folder, '
                 + 'keep its console window open, then reload this tab.',
             ],
             version: [
-              'This tab belongs to a different RootDetector version.',
-              'Close old RootDetector tabs, keep only the intended copy running, '
+              'This tab belongs to a different Root Detector version.',
+              'Close old Root Detector tabs, keep only the intended copy running, '
                 + 'then open the address shown by <code>StartRootDetector.bat</code>.',
             ],
             startup: [
-              'RootDetector could not initialize this page.',
+              'Root Detector could not initialize this page.',
               'Reload once. If the problem continues, restart <code>StartRootDetector.bat</code> '
                 + 'and check its console or diagnostics.',
             ],
@@ -63,8 +64,38 @@
           document.body.innerHTML = ''
           document.body.appendChild(box)
         },
+        retry_missing_assets: async function() {
+          if(!window.location || typeof window.location.replace != 'function')
+            return false
+          const url = new URL(window.location.href)
+          const raw = url.searchParams.get('rd_asset_retry') || '0'
+          if(!/^[0-2]$/.test(raw) || Number(raw) >= 2)
+            return false
+          url.searchParams.set('rd_asset_retry', String(Number(raw) + 1))
+          // A WebView can fail one localhost script request while the packaged
+          // backend is finishing startup. Reload the whole page so script order
+          // is restored; bound the attempts so an incomplete package is visible.
+          await new Promise(resolve => setTimeout(resolve, 750))
+          window.location.replace(url.toString())
+          return true
+        },
+        clear_asset_retry: function() {
+          if(!window.location || !window.history || typeof window.history.replaceState != 'function')
+            return
+          try {
+            const url = new URL(window.location.href)
+            if(!url.searchParams.has('rd_asset_retry'))
+              return
+            url.searchParams.delete('rd_asset_retry')
+            window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+          } catch(_error) {
+            // URL tidying must not turn a working page into a startup error.
+          }
+        },
         start: async function() {
           if(this.failed_assets.length || typeof RootDetectorApp == 'undefined') {
+            if(await this.retry_missing_assets())
+              return
             const missing = this.failed_assets.length
               ? 'Missing: ' + this.failed_assets.join(', ')
               : 'A required application script did not load.'
@@ -73,8 +104,9 @@
           }
           try {
             await RootDetectorApp.init()
+            this.clear_asset_retry()
           } catch(error) {
-            console.error('RootDetector startup failed.', error)
+            console.error('Root Detector startup failed.', error)
             const kind = error?.code == 'asset_schema_mismatch' ? 'version'
               : error?.status == 0 ? 'connection' : 'startup'
             this.show_recovery(kind, error)
@@ -94,11 +126,36 @@
 
     {{ top_menu(app)             | indent }}
 
+    <aside id="root-alerts" aria-label="Root Detector alerts" hidden>
+      <div class="root-alert-heading">
+        <strong>Alerts</strong>
+        <button type="button" class="root-alert-clear">Clear all</button>
+      </div>
+      <div class="root-alert-list"></div>
+      <button type="button" class="root-alert-more" hidden></button>
+    </aside>
+
     {{ main_container(app)       | indent }}
 
+    <div id="root-confirm-layer" hidden>
+      <div class="root-confirm-panel" role="alertdialog" aria-modal="true"
+           aria-labelledby="root-confirm-heading" aria-describedby="root-confirm-description" tabindex="-1">
+        <div class="root-confirm-header">
+          <h2 class="root-confirm-title" id="root-confirm-heading">Please confirm</h2>
+        </div>
+        <p class="root-confirm-message" id="root-confirm-description"></p>
+        <div class="root-confirm-actions">
+          <button type="button" class="ui button root-confirm-cancel">Cancel</button>
+          <button type="button" class="ui primary button root-confirm-approve">Continue</button>
+        </div>
+      </div>
+    </div>
+
     {{ modal_settings()          | indent }}
+    {{ modal_about()             | indent }}
     {{ modal_pipeline()          | indent }}
     {{ modal_training_progress()                  | indent }}
+    {{ modal_preparation()                         | indent }}
     {{ base_modals.modal_loading_files_progress() | indent }}
 
 </body>

@@ -1,0 +1,6 @@
+# Apply AFTER requirements.txt for Windows installer builds (Python 3.7 x64).
+# CUDA libraries also support CPU execution; no CUDA toolkit is needed on users' PCs.
+# Official wheel digests: https://download.pytorch.org/whl/cu113/torch/
+# and https://download.pytorch.org/whl/cu113/torchvision/
+torch @ https://download.pytorch.org/whl/cu113/torch-1.10.1%2Bcu113-cp37-cp37m-win_amd64.whl#sha256=1db379fd49122aae782ef06b538a8b15a1f438bb47be0e35a3e9c01d6171eafc
+torchvision @ https://download.pytorch.org/whl/cu113/torchvision-0.11.2%2Bcu113-cp37-cp37m-win_amd64.whl#sha256=5c187c6374359f80adf0faaba385138e30c9198ce9f117b3e345f0dee8754433

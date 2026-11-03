@@ -263,6 +263,7 @@ def test_interrupted_training_cannot_be_saved(tmp_path, monkeypatch):
 
         def save(self, path):
             self.saved_path = path
+            path.write_bytes(b'test model package')
 
     class Settings:
         active_models = {'detection': 'test-model'}
@@ -304,7 +305,7 @@ def test_interrupted_training_cannot_be_saved(tmp_path, monkeypatch):
     }, headers=headers)
 
     assert response.status_code == 200
-    assert settings.models['detection'].saved_path.endswith(
-        os.path.join('models', 'detection', 'completed-model')
-    )
+    assert settings.models['detection'].saved_path.parent == tmp_path / 'models' / 'detection'
+    assert (tmp_path / 'models' / 'detection' / 'completed-model.pt.zip').read_bytes() == b'test model package'
+    assert not settings.models['detection'].saved_path.exists()
     assert settings.active_models['detection'] == 'completed-model'

@@ -3,14 +3,27 @@
 {% macro number_of_files_infobox() %}
 <div class="ui hidden message" id="training-number-of-files-info-message">
   <p>Imported training labels: <b id="training-number-of-files-info-label">0</b></p>
-  <p id="training-label-file-list">No annotations imported yet.</p>
+  <p id="training-label-file-list">No reviewed labels imported yet.</p>
 </div>
 {% endmacro %}
 
 
-{% macro training_controls(trainingmodule) %}
+{% macro training_controls(trainingmodule, filemodule) %}
 <div>
 <div class="ui segment form" style="margin-top:0px;">
+    <h3 class="ui header">Optional model training</h3>
+    <p>Ordinary analysis uses the selected pretrained model; you do not need to train before running detection or tracking.</p>
+    <p>Load the original images under <strong>Files</strong>, then import matching, independently reviewed and corrected PNG masks here. An earlier detection-results ZIP contains predictions, not reviewed labels; restore it under <strong>Files → Restore Detection Results</strong> instead.</p>
+    <a href="#" class="ui basic button" id="load-annotations-button"
+       title="Import matching PNG masks that a person has independently reviewed and corrected"
+       onclick="if(this.classList.contains('disabled')) return false; document.getElementById('annotations-input').click(); return false;">
+      <i class="images icon" aria-hidden="true"></i>Import Reviewed Labels
+    </a>
+    <input type="file" id="annotations-input" style="display:none"
+           onchange="{{ filemodule }}.on_annotations_select(event)" accept=".png,image/png" multiple>
+    <p id="training-import-help">Load original images first; import will be rejected without them. Mask filenames must match those images. The review confirmation below is required before Start Training becomes available.</p>
+
+    <div class="ui divider"></div>
     <!--<h4 class="ui dividing header">Training options</h4>-->
     <div class="field" id="training-model-type-field">
         <div class="field">
@@ -55,7 +68,7 @@
 
     {{ number_of_files_infobox() }}
 
-    <p>Load original images, then use <strong>Files → Load Annotations</strong> to add a small, reviewed label set. Detection results and an exported results ZIP are predictions, not ground truth.</p>
+    <p><strong>Start Training is disabled</strong> until matching labels are imported and you confirm that each was independently reviewed. Imported predictions do not count as reviewed labels.</p>
     <div class="field">
       <div class="ui checkbox">
         <input type="checkbox" id="training-reviewed-labels-checkbox"
@@ -67,7 +80,7 @@
     <div class="ui divider"></div>
 
     <button type="button" class="ui violet basic fluid button" id="start-training-button"
-            onclick="{{ trainingmodule }}.on_start_training()" title="Train only with reviewed annotations" disabled aria-disabled="true">
+            onclick="{{ trainingmodule }}.on_start_training()" title="Requires matching reviewed labels and the review confirmation above" disabled aria-disabled="true" aria-describedby="training-import-help">
       <i class="shuffle icon" aria-hidden="true"></i>
       Start Training
     </button>
@@ -88,7 +101,7 @@
 {% macro training_tab(app) %}
 <div id="training-tab">
     
-    {{ training_controls(trainingmodule = app+".Training") }}
+    {{ training_controls(trainingmodule = app+".Training", filemodule = app+".FileInput") }}
 
 </div>
 {% endmacro %}

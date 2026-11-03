@@ -1,14 +1,14 @@
 RootSecurity = class {
     static token = undefined
     static limits = undefined
-    static asset_schema = 'rootdetector-web-rc2-1'
+    static asset_schema = 'rootdetector-web-app-rc1-6'
 
     static async initialize(){
         const session = await $.get('/api/session')
         if(session.asset_schema != this.asset_schema){
             const error = new Error(
-                'RootDetector browser files do not match the running application. '
-                + 'Close old RootDetector tabs, start the intended extracted folder, and reload.'
+                'Root Detector browser files do not match the running application. '
+                + 'Close old Root Detector tabs, start the intended extracted folder, and reload.'
             )
             error.code = 'asset_schema_mismatch'
             throw error
@@ -48,6 +48,11 @@ RootSecurity = class {
         })
     }
 
+    static is_transient_request_error(error){
+        const status = Number(error?.status)
+        return status == 0 || [408, 425, 429].includes(status) || status >= 500
+    }
+
     static error_message(error, fallback='The request could not be completed.'){
         const candidates = [
             error?.responseJSON?.message,
@@ -65,7 +70,7 @@ RootSecurity = class {
         }
         if(Number(error?.status) == 0)
             candidates.push(
-                'The connection to the local RootDetector process was interrupted. '
+                'The connection to the local Root Detector process was interrupted. '
                 + 'Keep this window open, verify the selected file is still available, and retry.'
             )
         if(error?.statusText && error.statusText != 'error')
